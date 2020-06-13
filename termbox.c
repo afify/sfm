@@ -29,7 +29,6 @@ struct cellbuf {
 #define CELL(buf, x, y) (buf)->cells[(y) * (buf)->width + (x)]
 #define IS_CURSOR_HIDDEN(cx, cy) (cx == -1 || cy == -1)
 #define LAST_COORD_INIT -1
-#define _XOPEN_SOURCE  
 
 static struct termios orig_tios;
 

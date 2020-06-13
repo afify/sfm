@@ -1,4 +1,5 @@
 /* See LICENSE file for copyright and license details. */
+
 #include <dirent.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -19,33 +20,30 @@
 struct Panel{
 	char dirn[256];     // directory name
 	char *dir;          // list of files in dir
-	unsigned int dirx;  // directory name x position
-	unsigned int dirc;  // total files in dir
-	unsigned int hdir;  // highlighted_dir
-	unsigned int nw[2];
-	unsigned int ne[2];
-	unsigned int sw[2];
-	unsigned int se[2]; // max xy positions
+	int dirx;  // directory name x position
+	int dirc;  // total files in dir
+	int hdir;  // highlighted_dir
+	int nw[2];
+	int ne[2];
+	int sw[2];
+	int se[2]; // max xy positions
 };
 
 /* function declarations */
 static void print_tb(const char*, int, int, uint16_t, uint16_t);
 static void printf_tb(int, int, uint16_t, uint16_t, const char*, ...);
-static void printf_tb_c(int, int, uint16_t, uint16_t, const char*, ...);
-static int compare(const void*, const void*);
 static int set_panels(struct Panel*, struct Panel*, char*);
-static int listdir(char*, int);
-static void print_insert_mode(const char*, ...);
+static int listdir(char*, char);
+static void print_status(const char*, ...);
 static void press(struct tb_event*);
 static void draw_frame(void);
 static int start(void);
 
 /* global variables */
-static const int nmode = 0;
-static const int imode = 1;
-static unsigned int current_mode = nmode;
-static unsigned int highlighted_dir = 1;
-static unsigned int input_mode_line;
+static int highlighted_dir = 1;
+static int max_dir = 0;
+// static char *current_dir;
+// static int current_panel = 0;
 
 /* function implementations */
 static void
@@ -70,33 +68,6 @@ printf_tb(int x, int y, uint16_t fg, uint16_t bg, const char *fmt, ...)
 	print_tb(buf, x, y, fg, bg);
 }
 
-static void
-printf_tb_c(int max_width, int y, uint16_t fg, uint16_t bg, const char *fmt, ...)
-{
-	char buf[4096];
-	va_list vl;
-	va_start(vl, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, vl);
-	va_end(vl);
-	int x = ((max_width - strlen(fmt)) / 2 );
-	print_tb(buf, x, y, fg, bg);
-}
-
-static int
-compare( const void* a, const void* b)
-{
-	int int_a = * ( (int*) a );
-	int int_b = * ( (int*) b );
-
-	if ( int_a == int_b ) {
-		return 0;
-	} else if ( int_a < int_b ) {
-		return -1;
-	} else {
-		return 1;
-	}
-}
-
 static int
 set_panels(struct Panel *panel_l, struct Panel *panel_r, char *home)
 {
@@ -104,10 +75,7 @@ set_panels(struct Panel *panel_l, struct Panel *panel_r, char *home)
 	width = tb_width(); // width of the terminal screen
 	height = tb_height(); // height of the terminal screen
 
-	int title1_total_w = width / 2;
-
 	strcpy(panel_l->dirn, home);
-	size_t title1_len = strlen(panel_l->dirn);
 	panel_l->dirx = 2;
 // 	panel_l->dir = sorted_dir(panel_l.dirn);
 // 	panel_l->dirc = count_dir(panel_l.dirn);
@@ -123,7 +91,6 @@ set_panels(struct Panel *panel_l, struct Panel *panel_r, char *home)
 	panel_l->se[1] = height - 1;
 
 	strcpy(panel_r->dirn, home);
-	size_t title2_len = strlen(panel_r->dirn);
 	panel_r->dirx = (width / 2) + 1;
 // 	panel_r->dir = sorted_dir(panel_l.dirn);
 // 	panel_r->dirc = count_dir(panel_l.dirn);
@@ -144,141 +111,103 @@ set_panels(struct Panel *panel_l, struct Panel *panel_r, char *home)
 	printf_tb(panel_r->dirx, 0, panel2_dir_f | TB_BOLD, panel2_dir_b,
 		" %s ", panel_r->dirn);
 
-// 	listdir(panel_l.dirn);
-// 	printf_tb(title2_x, 0, TB_BLUE | TB_BOLD, TB_DEFAULT, " %s ", title2_str);
-
-// 	tb_change_cell(panel_r.nw[0], panel_r.nw[1], u_cnw, TB_RED, frame_bcol);
-// 	tb_change_cell(panel_r.ne[0], panel_r.ne[1], u_cne, TB_BLUE, frame_bcol);
-// 	tb_change_cell(panel_r.sw[0], panel_r.sw[1], u_csw, TB_YELLOW, frame_bcol);
-// 	tb_change_cell(panel_r.se[0], panel_r.se[1], u_cse, TB_MAGENTA, frame_bcol);
+	return 0;
 
 }
 
 static int
-listdir(char *dirname, int x)
+listdir(char *dirname, char pos)
 {
-	int y = 1;
-	char *all_dirs[256];
-	int all_dirs_l;
-	DIR *dir;
-	struct dirent *ent;
-	struct stat buf;
-	off_t size;
-	char *full_path;
-	size_t full_path_size = (size_t)1024;
+	int x, y, i, n, width;
+	struct dirent **namelist;
+	uint16_t bg;
 
+	y = 1;
+	n = scandir(dirname, &namelist, 0, alphasort);
 
-	dir = opendir(dirname);
-	if (dir == NULL)
-		return -1;
+	if (pos == 'l') {
+		x = 1;
+	} else if (pos == 'r') {
+		width = tb_width();
+		x = (width / 2) + 1;
+	}
 
-	while ((ent = readdir (dir)) != NULL) {
-		if (!(strcmp(ent->d_name, ".") == 0  ||
-			strcmp(ent->d_name, "..") == 0 )) {
+	if (n < 0)
+		die("++%s++ scandir:", dirname);
+	else {
+		for (i = 0; i < n; i++) {
+			if (!(strcmp(namelist[i]->d_name, ".") == 0  ||
+				strcmp(namelist[i]->d_name, "..") == 0 )) {
+				bg = file_nor_b;
+				if (y == highlighted_dir)
+					bg = file_hig_b;
 
-			full_path = ecalloc(full_path_size, sizeof(char));
-
-			(void)snprintf(full_path, full_path_size, "%s/%s",
-				dirname, ent->d_name);
-
-
-			stat(full_path, &buf);
-// 			fstat(ent->d_name, &buf);
-			size = buf.st_size;
-
-			/* is directory */
-			if (S_ISDIR(buf.st_mode)) {
-				if (y == highlighted_dir) {
-					printf_tb(x, y, dir_hig_f| TB_BOLD,
-					file_hig_b," %s %jd ",
-					full_path, size);
-				} else {
-					printf_tb(x, y, dir_nor_f,
-					file_nor_b, " %s %jd ",
-					full_path, size);
-				}
-
-			/* is regular file */
-			} else if (S_ISREG(buf.st_mode)) {
-
-				if (y == highlighted_dir) {
-					printf_tb(x, y, file_hig_f| TB_BOLD,
-					file_hig_b," %s %jd ",
-					full_path, size);
-				} else {
-					printf_tb(x, y, file_nor_f,
-					file_nor_b, " %s %jd ",
-					full_path, size);
-				}
-
-			/* other files */
-			} else {
-				if (y == highlighted_dir) {
-					printf_tb(x, y, other_hig_f| TB_BOLD,
-					file_hig_b," %s %jd ",
-					full_path, size);
-				} else {
-					printf_tb(x, y, other_nor_f,
-					file_nor_b, " %s %jd ",
-					full_path, size);
-				}
+				printf_tb(x, y, file_nor_f,
+					bg," %s ",
+					namelist[i]->d_name);
+				free(namelist[i]);
+				y++;
 			}
-			y++;
-			all_dirs_l++;
-			free(full_path);
 		}
 	}
 
-		(void)closedir(dir);
-
-// 	all_dirs_l = LEN(all_dirs);
-// 	qsort(all_dirs, all_dirs_l, sizeof(char), compare)
-
+	free(namelist);
+	max_dir = n - 2;
 	return 0;
 }
 
 static void
-print_insert_mode(const char *fmt, ...)
+clear_status(void)
+{
+	int i, width, height;
+	width = tb_width();
+	height = tb_height();
+	for (i = 1; i < (width-1)/2 ; i++) {
+		tb_change_cell(i, height-2, 0x0000, frame_fcol, frame_bcol);
+	}
+}
+
+static void
+print_status(const char *fmt, ...)
 {
 	int height, width;
 	width = tb_width(); // width of the terminal screen
 	height = tb_height(); // height of the terminal screen
 
-	char buf[4096];
+	char buf[256];
 	va_list vl;
 	va_start(vl, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
-	print_tb(buf, 2, height-2, TB_CYAN, TB_DEFAULT);
+	clear_status();
+	print_tb(buf, 2, height-2, TB_DEFAULT, TB_DEFAULT);
 
-// 	printf_tb(2, height-2, TB_CYAN, TB_DEFAULT, "%s", input);
 }
 
 static void
 press(struct tb_event *ev)
 {
-	int total_dirs = 23;
-
 	switch (ev->ch) {
 	case 'j':
-		if (highlighted_dir < total_dirs)
+		if (highlighted_dir < max_dir) {
 			highlighted_dir++;
-			print_insert_mode("%i", highlighted_dir);
+			print_status("%i", highlighted_dir);
+		}
 		break;
 	case 'k':
-		if (highlighted_dir > 1)
+		if (highlighted_dir > 1) {
 			highlighted_dir--;
-			print_insert_mode("%i", highlighted_dir);
+			print_status("%i", highlighted_dir);
+		}
 		break;
-
 	case 'h':
-		print_insert_mode("go to parent");
+		print_status("go to parent");
 		break;
 	case 'l':
-		print_insert_mode("open dir or file");
+// 		listdir(current_dir, 'l');
+		print_status("open dir or file");
 		break;
 	}
-
 }
 
 static void
@@ -318,51 +247,48 @@ draw_frame(void)
 static int
 start(void)
 {
-	int ret;
-	int mode;
-	int height, width;
+	int ret, mode, support_256, support_n, init_height, init_width;
 	struct tb_event ev;
 	struct Panel panel_r, panel_l;
 	char *home;
 	char *editor;
+	uint32_t q = (uint32_t)0x0071;
 
-	width = tb_width();          /* width of the terminal screen */
-	height = tb_height();        /* height of the terminal screen */
-	home = getenv("HOME");       /* default directory */
-	editor = getenv("EDITOR");   /* open files with */
+	home = getenv("HOME");
+	editor = getenv("EDITOR");
 
-	if (home == NULL) /* failed to read env var HOME */
+	if (home == NULL)
 		home = "/mnt/data/dev/sandbox/calcurse";
 
 	ret = tb_init();
 	if (ret != 0)
 		die("tb_init() failed with error code %d\n", ret);
 
+	init_width = tb_width();
+	init_height = tb_height();
 	mode = tb_select_input_mode(TB_INPUT_ESC);
-	tb_select_output_mode(TB_OUTPUT_256);
+	support_256 = tb_select_output_mode(TB_OUTPUT_256);
+
+	if (support_256 != TB_OUTPUT_256)
+		support_n = tb_select_output_mode(TB_OUTPUT_NORMAL);
 
 	tb_clear();
 	draw_frame();
 	set_panels(&panel_l, &panel_r, home);
-	listdir(panel_l.dirn, 1);
-// 	listdir(panel_r.dirn, (width/2) + 1);
+	listdir(panel_l.dirn, 'l');
+	listdir(panel_r.dirn, 'r');
 	tb_present();
 
 	while (tb_poll_event(&ev) != 0) {
 		switch (ev.type) {
 		case TB_EVENT_KEY:
-
-			if (ev.ch == 'q') {
+			if (ev.ch == q) {
 				tb_shutdown();
 				return 0;
 			}
-
-			tb_clear();
-			draw_frame();
-			set_panels(&panel_l, &panel_r, home);
 			press(&ev);
-			listdir(panel_l.dirn, 1);
-// 	listdir(panel_r.dirn, (width/2) + 1);
+			listdir(panel_l.dirn, 'l');
+			listdir(panel_r.dirn, 'r');
 			tb_present();
 			break;
 
@@ -370,10 +296,8 @@ start(void)
 			tb_clear();
 			draw_frame();
 			set_panels(&panel_l, &panel_r, home);
-			press(&ev);
-			listdir(panel_l.dirn, 1);
-// 			listdir(panel_r.dirn, (width/2) + 1);
-// 			pretty_print_resize(&ev);
+			listdir(panel_l.dirn, 'l');
+			listdir(panel_r.dirn, 'r');
 			tb_present();
 			break;
 
@@ -390,7 +314,7 @@ int
 main(int argc, char *argv[])
 {
 #ifdef __OpenBSD__
-	if (pledge("stdio", NULL) == -1)
+	if (pledge("stdio tty rpath proc exec", NULL) == -1)
 		die("pledge");
 #endif /* __OpenBSD__ */
 	if (argc == 1) {
@@ -399,9 +323,9 @@ main(int argc, char *argv[])
 	} else if (
 		argc == 2 && strlen(argv[1]) == (size_t)2 &&
 		strcmp("-v", argv[1]) == 0) {
-			die("smp-"VERSION);
+			die("sfm-"VERSION);
 	} else {
-		die("usage: smp [-v]");
+		die("usage: sfm [-v]");
 	}
 	return 0;
 }
