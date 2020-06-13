@@ -6,16 +6,15 @@
 #include "termbox.h"
 
 /* normal mode keybind */
-const char up = 'j';
-const char down = 'k';
-const char open_dir = 'l';
-const char back = 'h';
-const char last  = 'G';
-const char top  = 'g';
-const char switch_panel = ' ';
-
-// char go_home[2][] = { "/home/hassan", "\\" };
-// char go_usr[2][] = { "/usr", "u" };
+const char up           = 'j';
+const char down         = 'k';
+const char open_dir     = 'l';
+const char back         = 'h';
+const char last_dir     = 'G';
+const char top          = 'g';
+const char switch_panel = TB_KEY_SPACE;
+const uint32_t q        = 0x0071;
+const uint32_t quit_key = q;
 
 const char copy_p  = 'c'; // copy to other panel
 const char move_p  = 'm'; // move to other panel
@@ -40,8 +39,8 @@ uint32_t u_ms = 0x2534;
 uint16_t frame_fcol = TB_DEFAULT;
 uint16_t frame_bcol = TB_DEFAULT;
 
-uint16_t panel1_dir_f = 243;
-uint16_t panel2_dir_f = 243;
+uint16_t panel1_dir_f = 220;
+uint16_t panel2_dir_f = 27;
 uint16_t panel1_dir_b = TB_DEFAULT;
 uint16_t panel2_dir_b = TB_DEFAULT;
 
@@ -52,7 +51,7 @@ uint16_t dir_hig_b = 233;
 
 uint16_t file_nor_f = TB_DEFAULT;
 uint16_t file_nor_b = TB_DEFAULT;
-uint16_t file_hig_f = 214;
+uint16_t file_hig_f = 2;
 uint16_t file_hig_b = 233;
 
 uint16_t other_nor_f = 3;

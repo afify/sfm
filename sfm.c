@@ -17,33 +17,30 @@
 /* macros */
 
 /* typedef */
-struct Panel{
+typedef struct {
 	char dirn[256];     // directory name
 	char *dir;          // list of files in dir
-	int dirx;  // directory name x position
 	int dirc;  // total files in dir
+	int dirx;  // position of dirname
 	int hdir;  // highlighted_dir
 	int nw[2];
 	int ne[2];
 	int sw[2];
 	int se[2]; // max xy positions
-};
+} Panel;
 
 /* function declarations */
 static void print_tb(const char*, int, int, uint16_t, uint16_t);
 static void printf_tb(int, int, uint16_t, uint16_t, const char*, ...);
-static int set_panels(struct Panel*, struct Panel*, char*);
-static int listdir(char*, char);
+static int set_panels(Panel*, Panel*, char*);
+static int listdir(Panel*);
 static void print_status(const char*, ...);
-static void press(struct tb_event*);
+static void press(struct tb_event*, Panel*);
 static void draw_frame(void);
 static int start(void);
 
 /* global variables */
-static int highlighted_dir = 1;
-static int max_dir = 0;
-// static char *current_dir;
-// static int current_panel = 0;
+static int current_panel = 0;
 
 /* function implementations */
 static void
@@ -69,11 +66,12 @@ printf_tb(int x, int y, uint16_t fg, uint16_t bg, const char *fmt, ...)
 }
 
 static int
-set_panels(struct Panel *panel_l, struct Panel *panel_r, char *home)
+set_panels(Panel *panel_l, Panel *panel_r, char *home)
 {
 	int height, width;
 	width = tb_width(); // width of the terminal screen
 	height = tb_height(); // height of the terminal screen
+	char *root = "/";
 
 	strcpy(panel_l->dirn, home);
 	panel_l->dirx = 2;
@@ -90,7 +88,7 @@ set_panels(struct Panel *panel_l, struct Panel *panel_r, char *home)
 	panel_l->se[0] = (width - 1) / 2;
 	panel_l->se[1] = height - 1;
 
-	strcpy(panel_r->dirn, home);
+	strcpy(panel_r->dirn, root);
 	panel_r->dirx = (width / 2) + 1;
 // 	panel_r->dir = sorted_dir(panel_l.dirn);
 // 	panel_r->dirc = count_dir(panel_l.dirn);
@@ -116,33 +114,29 @@ set_panels(struct Panel *panel_l, struct Panel *panel_r, char *home)
 }
 
 static int
-listdir(char *dirname, char pos)
+listdir(Panel *cpanel)
 {
-	int x, y, i, n, width;
+	int  y, i, n;
 	struct dirent **namelist;
-	uint16_t bg;
+	uint16_t bg, fg;
 
 	y = 1;
-	n = scandir(dirname, &namelist, 0, alphasort);
-
-	if (pos == 'l') {
-		x = 1;
-	} else if (pos == 'r') {
-		width = tb_width();
-		x = (width / 2) + 1;
-	}
+	n = scandir(cpanel->dirn, &namelist, 0, alphasort);
 
 	if (n < 0)
-		die("++%s++ scandir:", dirname);
+		die("++%s++ scandir:", cpanel->dirn);
 	else {
 		for (i = 0; i < n; i++) {
 			if (!(strcmp(namelist[i]->d_name, ".") == 0  ||
 				strcmp(namelist[i]->d_name, "..") == 0 )) {
 				bg = file_nor_b;
-				if (y == highlighted_dir)
+				fg = file_nor_f;
+				if (y == cpanel->hdir) {
 					bg = file_hig_b;
+					fg = file_hig_f;
+				}
 
-				printf_tb(x, y, file_nor_f,
+				printf_tb(cpanel->dirx, y, fg,
 					bg," %s ",
 					namelist[i]->d_name);
 				free(namelist[i]);
@@ -152,7 +146,7 @@ listdir(char *dirname, char pos)
 	}
 
 	free(namelist);
-	max_dir = n - 2;
+	cpanel->dirc = n - 2;
 	return 0;
 }
 
@@ -185,19 +179,20 @@ print_status(const char *fmt, ...)
 }
 
 static void
-press(struct tb_event *ev)
+press(struct tb_event *ev, Panel *cpanel)
 {
 	switch (ev->ch) {
 	case 'j':
-		if (highlighted_dir < max_dir) {
-			highlighted_dir++;
-			print_status("%i", highlighted_dir);
+		if (cpanel->hdir < cpanel->dirc) {
+			cpanel->hdir++;
+			listdir(cpanel);
 		}
 		break;
 	case 'k':
-		if (highlighted_dir > 1) {
-			highlighted_dir--;
-			print_status("%i", highlighted_dir);
+		if (cpanel->hdir > 1) {
+			cpanel->hdir--;
+			listdir(cpanel);
+			print_status("%i", cpanel->hdir);
 		}
 		break;
 	case 'h':
@@ -206,6 +201,21 @@ press(struct tb_event *ev)
 	case 'l':
 // 		listdir(current_dir, 'l');
 		print_status("open dir or file");
+		break;
+	case 'g':
+		cpanel->hdir = 1;
+		listdir(cpanel);
+		print_status("go to top");
+		break;
+	case last_dir:
+		cpanel->hdir = cpanel->dirc;
+		listdir(cpanel);
+		print_status("go to bottom");
+		break;
+	case 'M':
+		cpanel->hdir = (cpanel->dirc/2);
+		listdir(cpanel);
+		print_status("go to middel");
 		break;
 	}
 }
@@ -249,10 +259,9 @@ start(void)
 {
 	int ret, mode, support_256, support_n, init_height, init_width;
 	struct tb_event ev;
-	struct Panel panel_r, panel_l;
+	Panel panel_r, panel_l;
 	char *home;
 	char *editor;
-	uint32_t q = (uint32_t)0x0071;
 
 	home = getenv("HOME");
 	editor = getenv("EDITOR");
@@ -275,29 +284,44 @@ start(void)
 	tb_clear();
 	draw_frame();
 	set_panels(&panel_l, &panel_r, home);
-	listdir(panel_l.dirn, 'l');
-	listdir(panel_r.dirn, 'r');
+	listdir(&panel_l);
+	listdir(&panel_r);
+	print_status("%i/%i", panel_l.hdir, panel_l.dirc);
 	tb_present();
 
 	while (tb_poll_event(&ev) != 0) {
 		switch (ev.type) {
 		case TB_EVENT_KEY:
-			if (ev.ch == q) {
+			if (ev.ch == quit_key) {
 				tb_shutdown();
 				return 0;
+			} else if (ev.key == TB_KEY_SPACE) {
+				current_panel = !current_panel;
 			}
-			press(&ev);
-			listdir(panel_l.dirn, 'l');
-			listdir(panel_r.dirn, 'r');
+
+			if (current_panel == 0) {
+				press(&ev, &panel_l);
+				print_status("%i/%i", panel_l.hdir, panel_l.dirc);
+
+			} else if (current_panel == 1) {
+				press(&ev, &panel_r);
+				print_status("%i/%i", panel_r.hdir, panel_r.dirc);
+			}
+
 			tb_present();
 			break;
 
 		case TB_EVENT_RESIZE:
 			tb_clear();
 			draw_frame();
-			set_panels(&panel_l, &panel_r, home);
-			listdir(panel_l.dirn, 'l');
-			listdir(panel_r.dirn, 'r');
+			(void)set_panels(&panel_l, &panel_r, home);
+			(void)listdir(&panel_l);
+			(void)listdir(&panel_r);
+			if (current_panel == 0) {
+				print_status("%i/%i", panel_l.hdir, panel_l.dirc);
+			} else if (current_panel == 1) {
+				print_status("%i/%i", panel_r.hdir, panel_r.dirc);
+			}
 			tb_present();
 			break;
 
