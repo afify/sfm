@@ -39,6 +39,8 @@ static void press(struct tb_event*);
 static void draw_frame(void);
 static int start(void);
 
+static char* get_extentions(Panel);
+
 /* global variables */
 static int highlighted_dir = 1;
 static int max_dir = 0;
