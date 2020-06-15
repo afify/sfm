@@ -38,8 +38,7 @@ static void print_status(const char*, ...);
 static void press(struct tb_event*);
 static void draw_frame(void);
 static int start(void);
-
-static char* get_extentions(Panel);
+static const char* get_extentions(char *str);
 
 /* global variables */
 static int highlighted_dir = 1;
@@ -244,6 +243,26 @@ draw_frame(void)
 	tb_change_cell((width-1)/2, 0,        u_mn, frame_fcol, frame_bcol);
 	tb_change_cell((width-1)/2, height-1, u_ms, frame_fcol, frame_bcol);
 
+}
+
+static char*
+get_extentions(char *str)
+{
+    char *ext;
+    char *dot = ".";
+    int len = strlen(str);
+    int counter = 0;
+
+    for(int i = len-1; i >= 0; i--){
+        if(str[i] == *dot){
+            break;
+        }else{
+            counter++;
+        }
+    }
+	
+    ext = &str[len-counter];
+    return ext;
 }
 
 static int
