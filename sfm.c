@@ -38,7 +38,7 @@ static void print_status(const char*, ...);
 static void press(struct tb_event*);
 static void draw_frame(void);
 static int start(void);
-static const char* get_extentions(char *str);
+static char* get_extentions(char *str);
 
 /* global variables */
 static int highlighted_dir = 1;
@@ -260,7 +260,7 @@ get_extentions(char *str)
             counter++;
         }
     }
-	
+
     ext = &str[len-counter];
     return ext;
 }
