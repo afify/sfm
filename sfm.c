@@ -38,7 +38,7 @@ static void print_status(const char*, ...);
 static void press(struct tb_event*);
 static void draw_frame(void);
 static int start(void);
-static char* get_extentions(char *str);
+static char *get_extentions(char*);
 
 /* global variables */
 static int highlighted_dir = 1;
@@ -245,24 +245,25 @@ draw_frame(void)
 
 }
 
-static char*
+static char *
 get_extentions(char *str)
 {
-    char *ext;
-    char *dot = ".";
-    int len = strlen(str);
-    int counter = 0;
+	char *ext;
+	char *dot = ".";
+	size_t len, i;
+	len = strlen(str);
+	int counter = 0;
 
-    for(int i = len-1; i >= 0; i--){
-        if(str[i] == *dot){
-            break;
-        }else{
-            counter++;
-        }
-    }
+	for (i = len-1; i >= 0; i--) {
+		if(str[i] == *dot){
+			break;
+		} else {
+			counter++;
+		}
+	}
 
-    ext = &str[len-counter];
-    return ext;
+	ext = &str[len-counter];
+	return ext;
 }
 
 static int
