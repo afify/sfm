@@ -41,6 +41,7 @@ static void print_test1(const char*, ...);
 static void press(struct tb_event*, Panel*);
 static void draw_frame(void);
 static int start(void);
+static char *get_extentions(char*);
 
 /* global variables */
 static const size_t MAX_P = 4096;
@@ -407,6 +408,30 @@ draw_frame(void)
 	tb_change_cell((width-1)/2, 0,        u_mn, frame_fcol, frame_bcol);
 	tb_change_cell((width-1)/2, height-1, u_ms, frame_fcol, frame_bcol);
 
+}
+
+static char *
+get_extentions(char *str)
+{
+	char *ext;
+    char *dot;
+	size_t counter, len, i;
+
+	dot = ".";
+	counter = 0;
+    len = strlen(str);
+
+    for (i = len-1; i > 0; i--) {
+        if(str[i] == *dot){
+            break;
+        } else {
+            counter++;
+        }
+    }
+
+    ext = calloc(counter, sizeof(char));
+    strncpy(ext, &str[len-counter], counter);
+    return ext;
 }
 
 static int
