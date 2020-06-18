@@ -249,25 +249,24 @@ static char *
 get_extentions(char *str)
 {
 	char *ext;
-	char *dot;
-	size_t max, counter, len, i;
+    char *dot;
+	size_t counter, len, i;
 
 	dot = ".";
-	max = 8;
 	counter = 0;
-	len = strlen(str);
-	ext = ecalloc(max, sizeof(char));
+    len = strlen(str);
 
-	for (i = len-1; i > 0; i--) {
-		if (str[i] == *dot) {
-			break;
-		} else {
-			counter++;
-		}
-	}
+    for (i = len-1; i > 0; i--) {
+        if(str[i] == *dot){
+            break;
+        } else {
+            counter++;
+        }
+    }
 
-	strncpy(ext, &str[len-counter], max);
-	return ext;
+    ext = calloc(counter, sizeof(char));
+    strncpy(ext, &str[len-counter], counter);
+    return ext;
 }
 
 static int
