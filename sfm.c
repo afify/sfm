@@ -42,6 +42,7 @@ static void press(struct tb_event*, Panel*);
 static void draw_frame(void);
 static int start(void);
 static char *get_extentions(char*);
+static char *get_permission(char*);
 
 /* global variables */
 static const size_t MAX_P = 4096;
@@ -432,6 +433,40 @@ get_extentions(char *str)
     ext = calloc(counter, sizeof(char));
     strncpy(ext, &str[len-counter], counter);
     return ext;
+}
+
+static char *
+get_permission(char *full_path)
+{
+    // still not finished, works on files only
+
+    int buffSize = 128;
+    char buf[buffSize], *permission, *cmd, *space;
+    FILE *fp;
+
+    cmd = calloc(strlen(full_path) + 5, sizeof(char)); // full path + "ls -l"
+    space = calloc(strlen(full_path) + 1, sizeof(char)); // full path + " ";
+    
+    strcpy(space, " ");
+    strcpy(cmd, "ls -l");
+    strcat(cmd, strcat(space, full_path));
+    
+    if ((fp = popen(cmd, "r")) == NULL) {
+        printf("error opening pipe for this path\n");
+
+    }
+
+    if (fgets(buf, buffSize, fp) != NULL) {
+        permission = calloc(strlen(buf), sizeof(char));
+        strncpy(permission, buf, strlen(buf));
+        
+    }
+
+    pclose(fp);
+    free(cmd);
+    free(space);
+
+    return permission;
 }
 
 static int
