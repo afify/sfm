@@ -9,7 +9,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-
+#include <ctype.h>
+#include <pwd.h>
+#include <grp.h>
+#include <time.h>
 #include "config.h"
 #include "termbox.h"
 #include "util.h"
@@ -24,6 +27,17 @@ typedef struct {
 	int width;
 	int height;
 } Panel;
+
+typedef struct fileInfo
+{
+	char *rights;	// Rights over this file/directory
+	char *group;	// Group owner of this file/directory
+	char *user;		// User owner of this file/directory
+	char* date;		// date of modification
+	char* time;		// time of modification
+	char* size;		// size of the file/directory
+
+}fileInfo;
 
 /* function declarations */
 static void print_tb(const char*, int, int, uint16_t, uint16_t);
@@ -42,7 +56,7 @@ static void press(struct tb_event*, Panel*);
 static void draw_frame(void);
 static int start(void);
 static char *get_extentions(char*);
-static char *get_permission(char*);
+static fileInfo get_file_info(char*);
 
 /* global variables */
 static const size_t MAX_P = 4096;
@@ -435,38 +449,57 @@ get_extentions(char *str)
     return ext;
 }
 
-static char *
-get_permission(char *full_path)
+fileInfo
+get_file_info(char *full_path)
 {
-    // still not finished, works on files only
+	fileInfo fileinfo;
+	char *time, *date, *perm, *size;
+	struct passwd *pw;
+	struct group *gr;
+	struct stat status;
+	struct tm lt;
+	time_t timebuf;
 
-    int buffSize = 128;
-    char buf[buffSize], *permission, *cmd, *space;
-    FILE *fp;
+	if (stat(full_path, &status) == 0) {
 
-    cmd = calloc(strlen(full_path) + 5, sizeof(char)); // full path + "ls -l"
-    space = calloc(strlen(full_path) + 1, sizeof(char)); // full path + " ";
-    
-    strcpy(space, " ");
-    strcpy(cmd, "ls -l");
-    strcat(cmd, strcat(space, full_path));
-    
-    if ((fp = popen(cmd, "r")) == NULL) {
-        printf("error opening pipe for this path\n");
+		pw = calloc(32, sizeof(char));
+		gr = calloc(32, sizeof(char));
+		time = calloc(9, sizeof(char));
+		date = calloc(9, sizeof(char));
+		perm = calloc(4, sizeof(char));
+		//size = calloc(6, sizeof(char));
 
-    }
+		pw = getpwuid(status.st_uid);
+		gr = getgrgid(status.st_gid);
+		timebuf = status.st_ctime;
+		localtime_r(&timebuf, &lt);
+		size = coolsize(status.st_size);
+		strftime(time, 9, "%I:%M %p", &lt);
+		strftime(date, 9, "%d/%m", &lt);
 
-    if (fgets(buf, buffSize, fp) != NULL) {
-        permission = calloc(strlen(buf), sizeof(char));
-        strncpy(permission, buf, strlen(buf));
-        
-    }
+		if (status.st_mode & S_IRUSR) {
+			strcat(perm, "r");
+		} else {
+			strcat(perm, "-");
+		}
+		if (status.st_mode & S_IWUSR) {
+			strcat(perm, "w");
+		} else {
+			strcat(perm, "-");
+		}
+		if (status.st_mode & S_IXUSR) {
+			strcat(perm, "x");
+		} else {
+			strcat(perm, "-");
+		}
 
-    pclose(fp);
-    free(cmd);
-    free(space);
-
-    return permission;
+		fileinfo.user = pw->pw_name;
+		fileinfo.group = gr->gr_name;
+		//fileinfo.size = size;
+		fileinfo.time = time;
+		fileinfo.date = date;
+	}
+    return fileinfo;
 }
 
 static int
