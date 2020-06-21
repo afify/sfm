@@ -1,6 +1,7 @@
 /* See LICENSE file for copyright and license details. */
 
 #include <dirent.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -8,8 +9,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
-#include <errno.h>
+#include <fcntl.h>
 
 #include "config.h"
 #include "termbox.h"
@@ -20,11 +22,13 @@
 
 /* typedef */
 typedef struct {
-	char *dirn;           // directory name
-	size_t dirc;          // total files in dir
+	char dirn[MAX_P];     // directory name
+	int dirc;             // total files in dir
 	int dirx;             // position of title
 	unsigned long hdir;   // highlighted_dir
 	char high_dir[MAX_P]; // highlighted_dir fullpath
+	uint16_t dir_fg;
+	uint16_t dir_bg;
 	int width;
 	int height;
 } Panel;
@@ -42,24 +46,26 @@ typedef struct {
 static void print_tb(const char*, int, int, uint16_t, uint16_t);
 static void printf_tb(int, int, uint16_t, uint16_t, const char*, ...);
 static int sort_name(const void *const, const void *const);
-// static int get_file_size(char*);
 static char *get_full_path(char*, char*);
 static char *get_parent(char*);
+static int open_files(char*);
 static int set_panels(Panel*, Panel*);
 static int listdir(Panel*);
 static int check_dir(char*);
-static void clear(int);
+static void clear(int, int, int, uint16_t);
 static void clear_status(void);
-static void clear_test(void);
+static void clear_error(void);
 static void clear_panel(int);
 static void print_status(const char*, ...);
-static void print_test(const char*, ...);
+static void print_error(const char*, ...);
 static void press(struct tb_event*, Panel*);
 static void draw_frame(void);
+static void t_resize(void);
 static int start(void);
 static char *get_extentions(char*);
 
 /* global variables */
+static Panel panel_r, panel_l;
 static int current_panel = 0;
 static int resize = 0;
 
@@ -95,17 +101,6 @@ sort_name(const void *const A, const void *const B)
 	return result;
 }
 
-// static int
-// get_file_size(char *full_path)
-// {
-// 	int size;
-// 	struct stat buf;
-
-// 	stat(full_path, &buf);
-// 	size = buf.st_size;
-// 	return size;
-// }
-
 static char *
 get_full_path(char *first, char *second)
 {
@@ -139,26 +134,95 @@ get_parent(char *dir)
 
 	for (i = len-1; i > 0; i--) {
 		if (dir[i] == *dot) {
-		break;
+			break;
 		} else {
-		counter++;
+			counter++;
 		}
 	}
 
-	parent = ecalloc(len, sizeof(char));
-	strncpy(parent, dir, len-counter-1);
+	i = len - counter - 1;
+	if (i == 0 )
+		i = len - counter;
+	parent = ecalloc(i+1, sizeof(char));
+	strncpy(parent, dir, i);
 
 	return parent;
+}
+
+static int
+open_files(char *filename)
+{
+	char *term;
+	term = getenv("TERM");
+
+	char software[1000];
+	char *file_ex = get_extentions(filename);
+
+	if (strcmp(file_ex, "png") == 0) {
+		strcpy(software, "sxiv");
+	} else if (strcmp(file_ex, "mp4") == 0) {
+		strcpy(software, "mpv");
+	} else if (strcmp(file_ex, "pdf") == 0) {
+		strcpy(software, "mupdf");
+	} else {
+		strcpy(software, "vi");
+	}
+
+	free(file_ex);
+
+	pid_t pid;
+	int status, r;
+	char *filex[] = {software, filename, NULL};
+
+	pid = fork();
+	switch (pid) {
+	case -1:
+		return -1;
+	case 0:
+		(void)execvp(filex[0], filex);
+		_exit(1);
+// 	default:
+// 		while ((r = waitpid(pid, &status, 0)) == -1 && errno == EINTR)
+// 			continue;
+// 		if (r == -1)
+// 			return -1;
+// 		if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+// 			return -1;
+	}
+
+	return 0;
+
+// 	int exitc;
+// 	char *ext;
+
+// 	ext = get_extentions(filename);
+// 	if (strcmp(ext, "mp4") == 0) {
+// 		char *filex[] = {"mpv", filename, NULL};
+// 		exitc = execvp(filex[0], filex);
+// 		free(ext);
+// 		return exitc;
+// 	} else if (strcmp(ext, "c") == 0) {
+// // 			if (fork() == 0) {
+
+// // 		setsid();
+// 		char *filex[] = {"vim", filename, NULL};
+// 		exitc = execvp(filex[0], filex);
+// 		free(ext);
+// 		return exitc;
+// // 			}
+
+// 	} else {
+// 		free(ext);
+// 		return 0;
+// 	}
 }
 
 static int
 set_panels(Panel *panel_l, Panel *panel_r)
 {
 	int height, width;
-	char *root;
 	char *home;
 
-	root = "/mnt/data/dev/sfm";
 	home = getenv("HOME");
 	width = tb_width();   // width of the terminal screen
 	height = tb_height(); // height of the terminal screen
@@ -166,38 +230,40 @@ set_panels(Panel *panel_l, Panel *panel_r)
 	if (home == NULL)
 		home = "/";
 
-	panel_l->dirn = &*home;
+	strcpy(panel_l->dirn, home);
+// 	panel_l->dirn = &*home;
 	panel_l->dirx = 2;
 	panel_l->width = width / 2;
 	panel_l->height = height;
+	panel_l->dir_fg = panel1_dir_f;
+	panel_l->dir_bg = panel1_dir_b;
 	if (resize == 0)
-		panel_l->hdir = 0;
+		panel_l->hdir = 1;
 
-	panel_r->dirn = root;
-	panel_r->dirx = (width / 2) + 1;
+	strcpy(panel_r->dirn, "/");
+// 	panel_r->dirn = root;
+	panel_r->dirx = (width / 2) + 2;
 	panel_r->width = width / 2;
 	panel_r->height = height;
+	panel_r->dir_fg = panel2_dir_f;
+	panel_r->dir_bg = panel2_dir_b;
 	if (resize == 0)
-		panel_r->hdir = 0;
-
-	printf_tb(panel_l->dirx, 0, panel1_dir_f | TB_BOLD, panel1_dir_b,
-		" %s ", panel_l->dirn);
-
-	printf_tb(panel_r->dirx, 0, panel2_dir_f | TB_BOLD, panel2_dir_b,
-		" %s ", panel_r->dirn);
+		panel_r->hdir = 1;
 
 	return 0;
 }
 
 static void
-clear(int y)
+clear(int sx, int ex, int y, uint16_t bg)
 {
-	int i, width, height;
-	width = tb_width();
-	height = tb_height();
-	for (i = 1; i < (width-1)/2 ; i++) {
-		tb_change_cell(i, y, 0x0000, frame_fcol, frame_bcol);
+	/* clear line from to */
+	/* x = line number  vertical */
+	/* y = column number horizontal */
+	int i;
+	for (i = sx; i < ex; i++) {
+		tb_change_cell(i, y, 0x0000, TB_DEFAULT, bg);
 	}
+
 }
 
 static void
@@ -206,35 +272,42 @@ clear_status(void)
 	int width, height;
 	width = tb_width();
 	height = tb_height();
-	clear(height-2);
+	clear(1, width-10, height-2, status_bcol);
 }
 
 static void
-clear_test(void)
+clear_error(void)
 {
 	int width, height;
 	width = tb_width();
 	height = tb_height();
-	clear(height-3);
+	clear(width-20, width-1, height-2, status_bcol);
 }
 
 static void
-clear_panel(int x)
+clear_panel(int panel)
 {
-	int width, height;
+	int x, ex, y, width, height;
 	width = tb_width();
 	height = tb_height();
+	y = 1;
 
-	while (x < height-1) {
-		clear(x);
-		x++;
+	if (panel == panel_l.dirx){
+		x = 2;
+		ex = (width/2) - 1;
+	} else if (panel == panel_r.dirx) {
+		x = (width/2) + 1;
+		ex = width -1;
 	}
 
-// 	if (panel == 0){
+int i = 0;
+	while (i < height-2) {
+// 		clear(x, ex, y, dir_nor_f);
+		clear(x, ex, y, TB_DEFAULT);
+		i++;
+		y++;
+	}
 
-// 	} else {
-
-// 	}
 }
 
 static void
@@ -250,12 +323,12 @@ print_status(const char *fmt, ...)
 	vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
 	clear_status();
-	print_tb(buf, 2, height-2, TB_DEFAULT, TB_DEFAULT);
+	print_tb(buf, 2, height-2, TB_DEFAULT, status_bcol);
 
 }
 
 static void
-print_test(const char *fmt, ...)
+print_error(const char *fmt, ...)
 {
 	int height, width;
 	width = tb_width();   // width of the terminal screen
@@ -266,8 +339,8 @@ print_test(const char *fmt, ...)
 	va_start(vl, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
-	clear_test();
-	print_tb(buf, 2, height-3, 124, TB_DEFAULT);
+	clear_error();
+	print_tb(buf, width-20, height-2, 124, status_bcol);
 
 }
 
@@ -284,18 +357,18 @@ listdir(Panel *cpanel)
 
 	y = 1;
 	i = 0;
-	cpanel->dirc = 0;
+	cpanel->dirc = -2;
 
 	dir = opendir(cpanel->dirn);
 	if (dir == NULL) {
-		print_test("%s", strerror(errno));
+		print_error("%s", strerror(errno));
 		return -1;
 	}
 
 	/* get content sum */
 	while ((entry = readdir(dir)) != 0) {
 // 		if (entry < 0) {
-// 			print_test("%s", strerror(errno));
+// 			print_erro("%s", strerror(errno));
 // 			return -1;
 // 		}
 		cpanel->dirc++;
@@ -307,7 +380,10 @@ listdir(Panel *cpanel)
 	list = ecalloc(cpanel->dirc, sizeof(*list));
 
 	while ((entry = readdir(dir)) != 0) {
-		list[i++] = entry;
+		if (!(strcmp(entry->d_name, ".") == 0  ||
+			strcmp(entry->d_name, "..") == 0 )) {
+			list[i++] = entry;
+		}
 	}
 
 	qsort(list, cpanel->dirc, sizeof(*list), sort_name);
@@ -316,7 +392,7 @@ listdir(Panel *cpanel)
 		/* highlighted (cursor) */
 		bg = file_nor_b;
 		fg = file_nor_f;
-		if (y-1 == cpanel->hdir) {
+		if (y == cpanel->hdir) {
 			bg = file_hig_b;
 			fg = file_hig_f;
 		}
@@ -326,16 +402,24 @@ listdir(Panel *cpanel)
 
 	/* get full path of cursor */
 	fullpath = get_full_path(cpanel->dirn,
-			list[cpanel->hdir]->d_name);
+			list[cpanel->hdir-1]->d_name);
 	strncpy(cpanel->high_dir, fullpath, (size_t)MAX_P);
 
-	/* print info in statusbar and testbar */
+	/* print info in statusbar */
 	print_status("%d/%d %s",
 		cpanel->hdir,
-		cpanel->dirc-1,
+		cpanel->dirc,
 		cpanel->high_dir);
 
-// 	print_test("%s", cpanel->dirn);
+	print_error("%s", cpanel->dirn);
+
+	char *parent;
+	parent = get_parent(cpanel->dirn);
+	print_error("%s", parent);
+	free(parent);
+
+	printf_tb(cpanel->dirx, 0, cpanel->dir_fg | TB_BOLD, cpanel->dir_bg,
+		" %s ", cpanel->dirn);
 
 	free(fullpath);
 	free(list);
@@ -352,45 +436,57 @@ check_dir(char *path)
 	dir = opendir(path);
 
 	if (dir == NULL) {
-		return -1;
+		if (errno == ENOTDIR) {
+			return 1;
+		} else {
+			return -1;
+		}
 	}
 
 	if (closedir(dir) < 0)
 		return -1;
 
 	return 0;
-
 }
 
 static void
 press(struct tb_event *ev, Panel *cpanel)
 {
 	char *parent;
+	int isdir;
 // 	char *old;
 // 	char *fullpath;
+	clear_error();
 
 	switch (ev->ch) {
 	case 'j':
-		clear_test();
-		if (cpanel->hdir < cpanel->dirc-1) {
+// 		case SEL_PGDN:
+// 			if (cur < ndents - 1)
+// 				cur += MIN((LINES - 4) / 2, ndents - 1 - cur);
+// 			break;
+// 		case SEL_PGUP:
+// 			if (cur > 0)
+// 				cur -= MIN((LINES - 4) / 2, cur);
+// 			break;
+
+		if (cpanel->hdir < cpanel->dirc) {
 			cpanel->hdir++;
 			(void)listdir(cpanel);
 		}
 		break;
 	case 'k':
-		clear_test();
-		if (cpanel->hdir > 0) {
+		if (cpanel->hdir > 1) {
 			cpanel->hdir--;
 			(void)listdir(cpanel);
 		}
 		break;
 	case 'h':
-		clear_test();
 		parent = get_parent(cpanel->dirn);
-// 		print_test("%s", parent);
+		print_error("%s", parent);
 		if (check_dir(parent) == 0) {
+// 			cpanel->dirn = parent;
 			strcpy(cpanel->dirn, parent);
-			clear_panel(0);
+			clear_panel(cpanel->dirx);
 			cpanel->hdir = 1;
 			(void)listdir(cpanel);
 			/* print the new directory */
@@ -400,39 +496,46 @@ press(struct tb_event *ev, Panel *cpanel)
 
 		/* failed to open directory */
 		} else {
-			print_test("%s", strerror(errno));
+			print_error("%s", strerror(errno));
 		}
 		free(parent);
 
 		break;
 
 	case 'l':
-		clear_test();
 
 		/* try current cursor directory */
-		if (check_dir(cpanel->high_dir) == 0) {
+		isdir = check_dir(cpanel->high_dir);
+
+		switch (isdir) {
+		case 0:
 // 			cpanel->dirn = cpanel->high_dir;
 			strcpy(cpanel->dirn, cpanel->high_dir);
-			clear_panel(0);
+			clear_panel(cpanel->dirx);
 			cpanel->hdir = 1;
 			(void)listdir(cpanel);
 			/* print the new directory */
 			printf_tb(cpanel->dirx, 0,
 				panel1_dir_f | TB_BOLD, panel1_dir_b,
 				" %s ", cpanel->dirn);
+			break;
+		case 1:
+		/* is not a directory open it */
+			(void)open_files(cpanel->high_dir);
+			break;
 
-		/* failed to open directory */
-		} else {
-			print_test("%s", strerror(errno));
+		default:
+			print_error("%s", strerror(errno));
+
 		}
 
 		break;
 	case 'g':
-		cpanel->hdir = 0;
+		cpanel->hdir = 1;
 		(void)listdir(cpanel);
 		break;
 	case 'G':
-		cpanel->hdir = cpanel->dirc-1;
+		cpanel->hdir = cpanel->dirc;
 		(void)listdir(cpanel);
 		break;
 	case 'M':
@@ -450,7 +553,7 @@ draw_frame(void)
 	width = tb_width();   // width of the terminal screen
 	height = tb_height(); // height of the terminal screen
 
-	/* 3 horizontal lines */
+	/* 2 horizontal lines */
 	for (i = 1; i < width-1 ; ++i) {
 		tb_change_cell(i, 0,        u_hl, frame_fcol, frame_bcol);
 		tb_change_cell(i, height-1, u_hl, frame_fcol, frame_bcol);
@@ -459,7 +562,7 @@ draw_frame(void)
 	/* 3 vertical lines */
 	for (i = 1; i < height-1 ; ++i) {
 		tb_change_cell(0,           i, u_vl, frame_fcol, frame_bcol);
-		tb_change_cell((width-1)/2, i, u_vl, frame_fcol, frame_bcol);
+		tb_change_cell((width-1)/2, i-1, u_vl, frame_fcol, frame_bcol);
 		tb_change_cell(width-1,     i, u_vl, frame_fcol, frame_bcol);
 	}
 
@@ -471,7 +574,7 @@ draw_frame(void)
 
 	/* 2 middel top and bottom */
 	tb_change_cell((width-1)/2, 0,        u_mn, frame_fcol, frame_bcol);
-	tb_change_cell((width-1)/2, height-1, u_ms, frame_fcol, frame_bcol);
+// 	tb_change_cell((width-1)/2, height-1, u_ms, frame_fcol, frame_bcol);
 
 }
 
@@ -499,12 +602,24 @@ get_extentions(char *str)
 	return ext;
 }
 
+static void
+t_resize(void)
+{
+	tb_clear();
+	draw_frame();
+	resize = 1;
+	(void)set_panels(&panel_l, &panel_r);
+	(void)listdir(&panel_r);
+	(void)listdir(&panel_l);
+	tb_present();
+
+}
+
 static int
 start(void)
 {
 	int ret, mode, support_256, support_n, init_height, init_width;
 	struct tb_event ev;
-	Panel panel_r, panel_l;
 	char *editor;
 
 	editor = getenv("EDITOR");
@@ -531,7 +646,7 @@ start(void)
 	while (tb_poll_event(&ev) != 0) {
 		switch (ev.type) {
 		case TB_EVENT_KEY:
-			if (ev.ch == quit_key) {
+			if (ev.ch == q) {
 				tb_shutdown();
 				return 0;
 			} else if (ev.key == TB_KEY_SPACE) {
@@ -549,13 +664,7 @@ start(void)
 			break;
 
 		case TB_EVENT_RESIZE:
-			tb_clear();
-			draw_frame();
-			resize = 1;
-			(void)set_panels(&panel_l, &panel_r);
-			(void)listdir(&panel_r);
-			(void)listdir(&panel_l);
-			tb_present();
+			t_resize();
 			break;
 
 		default:
