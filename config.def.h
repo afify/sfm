@@ -14,13 +14,12 @@ const char last_dir     = 'G';
 const char top          = 'g';
 const char switch_panel = TB_KEY_SPACE;
 const uint32_t q        = 0x0071;
-const uint32_t quit_key = q;
 
 const char copy_p  = 'c'; // copy to other panel
 const char move_p  = 'm'; // move to other panel
-const char yank  = 'y';
-const char past  = 'p'; // past yanked
-const char move  = 'P'; // move yanked
+const char yank    = 'y';
+const char past    = 'p'; // past yanked
+const char move    = 'P'; // move yanked
 const char delete  = 'D';
 
 /* unicode chars */
@@ -38,6 +37,9 @@ uint32_t u_ms = 0x2534;
 /* colors */
 uint16_t frame_fcol = TB_DEFAULT;
 uint16_t frame_bcol = TB_DEFAULT;
+
+uint16_t status_fcol = TB_DEFAULT;
+uint16_t status_bcol = 234;
 
 uint16_t panel1_dir_f = 220;
 uint16_t panel2_dir_f = 27;
