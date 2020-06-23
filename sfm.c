@@ -28,14 +28,14 @@ typedef struct {
 	int height;
 } Panel;
 
-typedef struct fileInfo
+typedef struct
 {
 	char *rights;	// Rights over this file/directory
 	char *group;	// Group owner of this file/directory
 	char *user;		// User owner of this file/directory
-	char* date;		// date of modification
-	char* time;		// time of modification
-	char* size;		// size of the file/directory
+	char *date;		// date of modification
+	char *time;		// time of modification
+	char *size;		// size of the file/directory
 
 }fileInfo;
 
@@ -452,8 +452,12 @@ get_extentions(char *str)
 fileInfo
 get_file_info(char *full_path)
 {
-	fileInfo fileinfo;
-	char *time, *date, *perm, *size;
+	/* Declaration */
+	fileInfo file_info;
+	char *time, *date, *perm, *Rsize;
+	off_t size;
+	double lsize;
+	int counter;
 	struct passwd *pw;
 	struct group *gr;
 	struct stat status;
@@ -461,20 +465,24 @@ get_file_info(char *full_path)
 	time_t timebuf;
 
 	if (stat(full_path, &status) == 0) {
-
+		
+		/* Allocation */
 		pw = calloc(32, sizeof(char));
 		gr = calloc(32, sizeof(char));
 		time = calloc(9, sizeof(char));
 		date = calloc(9, sizeof(char));
 		perm = calloc(4, sizeof(char));
-		//size = calloc(6, sizeof(char));
+		Rsize = calloc(9, sizeof(char));
 
+		/* Initialization */
+		counter = 0;
+		size = status.st_size;
 		pw = getpwuid(status.st_uid);
 		gr = getgrgid(status.st_gid);
 		timebuf = status.st_ctime;
 		localtime_r(&timebuf, &lt);
-		size = coolsize(status.st_size);
-		strftime(time, 9, "%I:%M %p", &lt);
+
+		strftime(time, 9, "%I:%M%p", &lt);
 		strftime(date, 9, "%d/%m", &lt);
 
 		if (status.st_mode & S_IRUSR) {
@@ -493,13 +501,42 @@ get_file_info(char *full_path)
 			strcat(perm, "-");
 		}
 
-		fileinfo.user = pw->pw_name;
-		fileinfo.group = gr->gr_name;
-		//fileinfo.size = size;
-		fileinfo.time = time;
-		fileinfo.date = date;
+		lsize = size;
+
+		while (lsize >= 1000) {
+			lsize /= 1024.0;
+			++counter;
+		}
+
+		float_to_string(lsize, Rsize);
+
+		switch (counter)
+		{
+			case 0:
+				strcat(Rsize, "B");
+				break;
+			case 1:
+				strcat(Rsize, "KB");
+				break;
+			case 2:
+				strcat(Rsize, "MB");
+				break;
+			case 3:
+				strcat(Rsize, "GB");
+				break;
+			case 4:
+				strcat(Rsize, "TB");
+				break;
+		}
+
+		file_info.user = pw->pw_name;
+		file_info.group = gr->gr_name;
+		file_info.size = Rsize;
+		file_info.time = time;
+		file_info.date = date;
 	}
-    return fileinfo;
+
+    return file_info;
 }
 
 static int

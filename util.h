@@ -11,5 +11,6 @@
 
 void *ecalloc(size_t, size_t);
 void die(const char *fmt, ...);
+void float_to_string(float, char *);
 
 #endif /* UTIL_H */
