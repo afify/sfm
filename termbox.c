@@ -16,9 +16,624 @@
 
 #include "termbox.h"
 
-#include "bytebuffer.inl"
-#include "term.inl"
-#include "input.inl"
+/* bytebuffer.inl --------------------------------------------------------- */
+
+struct bytebuffer {
+	char *buf;
+	int len;
+	int cap;
+};
+
+static void bytebuffer_reserve(struct bytebuffer *b, int cap) {
+	if (b->cap >= cap) {
+		return;
+	}
+
+	// prefer doubling capacity
+	if (b->cap * 2 >= cap) {
+		cap = b->cap * 2;
+	}
+
+	char *newbuf = realloc(b->buf, cap);
+	b->buf = newbuf;
+	b->cap = cap;
+}
+
+static void bytebuffer_init(struct bytebuffer *b, int cap) {
+	b->cap = 0;
+	b->len = 0;
+	b->buf = 0;
+
+	if (cap > 0) {
+		b->cap = cap;
+		b->buf = malloc(cap); // just assume malloc works always
+	}
+}
+
+static void bytebuffer_free(struct bytebuffer *b) {
+	if (b->buf)
+		free(b->buf);
+}
+
+static void bytebuffer_clear(struct bytebuffer *b) {
+	b->len = 0;
+}
+
+static void bytebuffer_append(struct bytebuffer *b, const char *data, int len) {
+	bytebuffer_reserve(b, b->len + len);
+	memcpy(b->buf + b->len, data, len);
+	b->len += len;
+}
+
+static void bytebuffer_puts(struct bytebuffer *b, const char *str) {
+	bytebuffer_append(b, str, strlen(str));
+}
+
+static void bytebuffer_resize(struct bytebuffer *b, int len) {
+	bytebuffer_reserve(b, len);
+	b->len = len;
+}
+
+static void bytebuffer_flush(struct bytebuffer *b, int fd) {
+	write(fd, b->buf, b->len);
+	bytebuffer_clear(b);
+}
+
+static void bytebuffer_truncate(struct bytebuffer *b, int n) {
+	if (n <= 0)
+		return;
+	if (n > b->len)
+		n = b->len;
+	const int nmove = b->len - n;
+	memmove(b->buf, b->buf+n, nmove);
+	b->len -= n;
+}
+
+/* term.inl --------------------------------------------------------------- */
+enum {
+	T_ENTER_CA,
+	T_EXIT_CA,
+	T_SHOW_CURSOR,
+	T_HIDE_CURSOR,
+	T_CLEAR_SCREEN,
+	T_SGR0,
+	T_UNDERLINE,
+	T_BOLD,
+	T_BLINK,
+	T_REVERSE,
+	T_ENTER_KEYPAD,
+	T_EXIT_KEYPAD,
+	T_ENTER_MOUSE,
+	T_EXIT_MOUSE,
+	T_FUNCS_NUM,
+};
+
+#define ENTER_MOUSE_SEQ "\x1b[?1000h\x1b[?1002h\x1b[?1015h\x1b[?1006h"
+#define EXIT_MOUSE_SEQ "\x1b[?1006l\x1b[?1015l\x1b[?1002l\x1b[?1000l"
+
+#define EUNSUPPORTED_TERM -1
+
+// rxvt-256color
+static const char *rxvt_256color_keys[] = {
+	"\033[11~","\033[12~","\033[13~","\033[14~","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[7~","\033[8~","\033[5~","\033[6~","\033[A","\033[B","\033[D","\033[C", 0
+};
+static const char *rxvt_256color_funcs[] = {
+	"\0337\033[?47h", "\033[2J\033[?47l\0338", "\033[?25h", "\033[?25l", "\033[H\033[2J", "\033[m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "\033=", "\033>", ENTER_MOUSE_SEQ, EXIT_MOUSE_SEQ,
+};
+
+// Eterm
+static const char *eterm_keys[] = {
+	"\033[11~","\033[12~","\033[13~","\033[14~","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[7~","\033[8~","\033[5~","\033[6~","\033[A","\033[B","\033[D","\033[C", 0
+};
+static const char *eterm_funcs[] = {
+	"\0337\033[?47h", "\033[2J\033[?47l\0338", "\033[?25h", "\033[?25l", "\033[H\033[2J", "\033[m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "", "", "", "",
+};
+
+// screen
+static const char *screen_keys[] = {
+	"\033OP","\033OQ","\033OR","\033OS","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[1~","\033[4~","\033[5~","\033[6~","\033OA","\033OB","\033OD","\033OC", 0
+};
+static const char *screen_funcs[] = {
+	"\033[?1049h", "\033[?1049l", "\033[34h\033[?25h", "\033[?25l", "\033[H\033[J", "\033[m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "\033[?1h\033=", "\033[?1l\033>", ENTER_MOUSE_SEQ, EXIT_MOUSE_SEQ,
+};
+
+// rxvt-unicode
+static const char *rxvt_unicode_keys[] = {
+	"\033[11~","\033[12~","\033[13~","\033[14~","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[7~","\033[8~","\033[5~","\033[6~","\033[A","\033[B","\033[D","\033[C", 0
+};
+static const char *rxvt_unicode_funcs[] = {
+	"\033[?1049h", "\033[r\033[?1049l", "\033[?25h", "\033[?25l", "\033[H\033[2J", "\033[m\033(B", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "\033=", "\033>", ENTER_MOUSE_SEQ, EXIT_MOUSE_SEQ,
+};
+
+// linux
+static const char *linux_keys[] = {
+	"\033[[A","\033[[B","\033[[C","\033[[D","\033[[E","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[1~","\033[4~","\033[5~","\033[6~","\033[A","\033[B","\033[D","\033[C", 0
+};
+static const char *linux_funcs[] = {
+	"", "", "\033[?25h\033[?0c", "\033[?25l\033[?1c", "\033[H\033[J", "\033[0;10m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "", "", "", "",
+};
+
+// xterm
+static const char *xterm_keys[] = {
+	"\033OP","\033OQ","\033OR","\033OS","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033OH","\033OF","\033[5~","\033[6~","\033OA","\033OB","\033OD","\033OC", 0
+};
+static const char *xterm_funcs[] = {
+	"\033[?1049h", "\033[?1049l", "\033[?12l\033[?25h", "\033[?25l", "\033[H\033[2J", "\033(B\033[m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "\033[?1h\033=", "\033[?1l\033>", ENTER_MOUSE_SEQ, EXIT_MOUSE_SEQ,
+};
+
+static struct term {
+	const char *name;
+	const char **keys;
+	const char **funcs;
+} terms[] = {
+	{"rxvt-256color", rxvt_256color_keys, rxvt_256color_funcs},
+	{"Eterm", eterm_keys, eterm_funcs},
+	{"screen", screen_keys, screen_funcs},
+	{"rxvt-unicode", rxvt_unicode_keys, rxvt_unicode_funcs},
+	{"linux", linux_keys, linux_funcs},
+	{"xterm", xterm_keys, xterm_funcs},
+	{0, 0, 0},
+};
+
+static bool init_from_terminfo = false;
+static const char **keys;
+static const char **funcs;
+
+static int try_compatible(const char *term, const char *name,
+			  const char **tkeys, const char **tfuncs)
+{
+	if (strstr(term, name)) {
+		keys = tkeys;
+		funcs = tfuncs;
+		return 0;
+	}
+
+	return EUNSUPPORTED_TERM;
+}
+
+static int init_term_builtin(void)
+{
+	int i;
+	const char *term = getenv("TERM");
+
+	if (term) {
+		for (i = 0; terms[i].name; i++) {
+			if (!strcmp(terms[i].name, term)) {
+				keys = terms[i].keys;
+				funcs = terms[i].funcs;
+				return 0;
+			}
+		}
+
+		/* let's do some heuristic, maybe it's a compatible terminal */
+		if (try_compatible(term, "xterm", xterm_keys, xterm_funcs) == 0)
+			return 0;
+		if (try_compatible(term, "rxvt", rxvt_unicode_keys, rxvt_unicode_funcs) == 0)
+			return 0;
+		if (try_compatible(term, "linux", linux_keys, linux_funcs) == 0)
+			return 0;
+		if (try_compatible(term, "Eterm", eterm_keys, eterm_funcs) == 0)
+			return 0;
+		if (try_compatible(term, "screen", screen_keys, screen_funcs) == 0)
+			return 0;
+		if (try_compatible(term, "tmux", screen_keys, screen_funcs) == 0)
+			return 0;
+		/* let's assume that 'cygwin' is xterm compatible */
+		if (try_compatible(term, "cygwin", xterm_keys, xterm_funcs) == 0)
+			return 0;
+	}
+
+	return EUNSUPPORTED_TERM;
+}
+
+//----------------------------------------------------------------------
+// terminfo
+//----------------------------------------------------------------------
+
+static char *read_file(const char *file) {
+	FILE *f = fopen(file, "rb");
+	if (!f)
+		return 0;
+
+	struct stat st;
+	if (fstat(fileno(f), &st) != 0) {
+		fclose(f);
+		return 0;
+	}
+
+	char *data = malloc(st.st_size);
+	if (!data) {
+		fclose(f);
+		return 0;
+	}
+
+	if (fread(data, 1, st.st_size, f) != (size_t)st.st_size) {
+		fclose(f);
+		free(data);
+		return 0;
+	}
+
+	fclose(f);
+	return data;
+}
+
+static char *terminfo_try_path(const char *path, const char *term) {
+	char tmp[4096];
+	snprintf(tmp, sizeof(tmp), "%s/%c/%s", path, term[0], term);
+	tmp[sizeof(tmp)-1] = '\0';
+	char *data = read_file(tmp);
+	if (data) {
+		return data;
+	}
+
+	// fallback to darwin specific dirs structure
+	snprintf(tmp, sizeof(tmp), "%s/%x/%s", path, term[0], term);
+	tmp[sizeof(tmp)-1] = '\0';
+	return read_file(tmp);
+}
+
+static char *load_terminfo(void) {
+	char tmp[4096];
+	const char *term = getenv("TERM");
+	if (!term) {
+		return 0;
+	}
+
+	// if TERMINFO is set, no other directory should be searched
+	const char *terminfo = getenv("TERMINFO");
+	if (terminfo) {
+		return terminfo_try_path(terminfo, term);
+	}
+
+	// next, consider ~/.terminfo
+	const char *home = getenv("HOME");
+	if (home) {
+		snprintf(tmp, sizeof(tmp), "%s/.terminfo", home);
+		tmp[sizeof(tmp)-1] = '\0';
+		char *data = terminfo_try_path(tmp, term);
+		if (data)
+			return data;
+	}
+
+	// next, TERMINFO_DIRS
+	const char *dirs = getenv("TERMINFO_DIRS");
+	if (dirs) {
+		snprintf(tmp, sizeof(tmp), "%s", dirs);
+		tmp[sizeof(tmp)-1] = '\0';
+		char *dir = strtok(tmp, ":");
+		while (dir) {
+			const char *cdir = dir;
+			if (strcmp(cdir, "") == 0) {
+				cdir = "/usr/share/terminfo";
+			}
+			char *data = terminfo_try_path(cdir, term);
+			if (data)
+				return data;
+			dir = strtok(0, ":");
+		}
+	}
+
+	// fallback to /usr/share/terminfo
+	return terminfo_try_path("/usr/share/terminfo", term);
+}
+
+#define TI_MAGIC 0432
+#define TI_ALT_MAGIC 542
+#define TI_HEADER_LENGTH 12
+#define TB_KEYS_NUM 22
+
+static const char *terminfo_copy_string(char *data, int str, int table) {
+	const int16_t off = *(int16_t*)(data + str);
+	const char *src = data + table + off;
+	int len = strlen(src);
+	char *dst = malloc(len+1);
+	strcpy(dst, src);
+	return dst;
+}
+
+static const int16_t ti_funcs[] = {
+	28, 40, 16, 13, 5, 39, 36, 27, 26, 34, 89, 88,
+};
+
+static const int16_t ti_keys[] = {
+	66, 68 /* apparently not a typo; 67 is F10 for whatever reason */, 69,
+	70, 71, 72, 73, 74, 75, 67, 216, 217, 77, 59, 76, 164, 82, 81, 87, 61,
+	79, 83,
+};
+
+static int init_term(void) {
+	int i;
+	char *data = load_terminfo();
+	if (!data) {
+		init_from_terminfo = false;
+		return init_term_builtin();
+	}
+
+	int16_t *header = (int16_t*)data;
+
+	const int number_sec_len = header[0] == TI_ALT_MAGIC ? 4 : 2;
+
+	if ((header[1] + header[2]) % 2) {
+		// old quirk to align everything on word boundaries
+		header[2] += 1;
+	}
+
+	const int str_offset = TI_HEADER_LENGTH +
+		header[1] + header[2] +	number_sec_len * header[3];
+	const int table_offset = str_offset + 2 * header[4];
+
+	keys = malloc(sizeof(const char*) * (TB_KEYS_NUM+1));
+	for (i = 0; i < TB_KEYS_NUM; i++) {
+		keys[i] = terminfo_copy_string(data,
+			str_offset + 2 * ti_keys[i], table_offset);
+	}
+	keys[TB_KEYS_NUM] = 0;
+
+	funcs = malloc(sizeof(const char*) * T_FUNCS_NUM);
+	// the last two entries are reserved for mouse. because the table offset is
+	// not there, the two entries have to fill in manually
+	for (i = 0; i < T_FUNCS_NUM-2; i++) {
+		funcs[i] = terminfo_copy_string(data,
+			str_offset + 2 * ti_funcs[i], table_offset);
+	}
+
+	funcs[T_FUNCS_NUM-2] = ENTER_MOUSE_SEQ;
+	funcs[T_FUNCS_NUM-1] = EXIT_MOUSE_SEQ;
+
+	init_from_terminfo = true;
+	free(data);
+	return 0;
+}
+
+static void shutdown_term(void) {
+	if (init_from_terminfo) {
+		int i;
+		for (i = 0; i < TB_KEYS_NUM; i++) {
+			free((void*)keys[i]);
+		}
+		// the last two entries are reserved for mouse. because the table offset
+		// is not there, the two entries have to fill in manually and do not
+		// need to be freed.
+		for (i = 0; i < T_FUNCS_NUM-2; i++) {
+			free((void*)funcs[i]);
+		}
+		free(keys);
+		free(funcs);
+	}
+}
+
+/* input.inl -------------------------------------------------------------- */
+
+// if s1 starts with s2 returns true, else false
+// len is the length of s1
+// s2 should be null-terminated
+static bool starts_with(const char *s1, int len, const char *s2)
+{
+	int n = 0;
+	while (*s2 && n < len) {
+		if (*s1++ != *s2++)
+			return false;
+		n++;
+	}
+	return *s2 == 0;
+}
+
+static int parse_mouse_event(struct tb_event *event, const char *buf, int len) {
+	if (len >= 6 && starts_with(buf, len, "\033[M")) {
+		// X10 mouse encoding, the simplest one
+		// \033 [ M Cb Cx Cy
+		int b = buf[3] - 32;
+		switch (b & 3) {
+		case 0:
+			if ((b & 64) != 0)
+				event->key = TB_KEY_MOUSE_WHEEL_UP;
+			else
+				event->key = TB_KEY_MOUSE_LEFT;
+			break;
+		case 1:
+			if ((b & 64) != 0)
+				event->key = TB_KEY_MOUSE_WHEEL_DOWN;
+			else
+				event->key = TB_KEY_MOUSE_MIDDLE;
+			break;
+		case 2:
+			event->key = TB_KEY_MOUSE_RIGHT;
+			break;
+		case 3:
+			event->key = TB_KEY_MOUSE_RELEASE;
+			break;
+		default:
+			return -6;
+		}
+		event->type = TB_EVENT_MOUSE; // TB_EVENT_KEY by default
+		if ((b & 32) != 0)
+			event->mod |= TB_MOD_MOTION;
+
+		// the coord is 1,1 for upper left
+		event->x = (uint8_t)buf[4] - 1 - 32;
+		event->y = (uint8_t)buf[5] - 1 - 32;
+
+		return 6;
+	} else if (starts_with(buf, len, "\033[<") || starts_with(buf, len, "\033[")) {
+		// xterm 1006 extended mode or urxvt 1015 extended mode
+		// xterm: \033 [ < Cb ; Cx ; Cy (M or m)
+		// urxvt: \033 [ Cb ; Cx ; Cy M
+		int i, mi = -1, starti = -1;
+		int isM, isU, s1 = -1, s2 = -1;
+		int n1 = 0, n2 = 0, n3 = 0;
+
+		for (i = 0; i < len; i++) {
+			// We search the first (s1) and the last (s2) ';'
+			if (buf[i] == ';') {
+				if (s1 == -1)
+					s1 = i;
+				s2 = i;
+			}
+
+			// We search for the first 'm' or 'M'
+			if ((buf[i] == 'm' || buf[i] == 'M') && mi == -1) {
+				mi = i;
+				break;
+			}
+		}
+		if (mi == -1)
+			return 0;
+
+		// whether it's a capital M or not
+		isM = (buf[mi] == 'M');
+
+		if (buf[2] == '<') {
+			isU = 0;
+			starti = 3;
+		} else {
+			isU = 1;
+			starti = 2;
+		}
+
+		if (s1 == -1 || s2 == -1 || s1 == s2)
+			return 0;
+
+		n1 = strtoul(&buf[starti], NULL, 10);
+		n2 = strtoul(&buf[s1 + 1], NULL, 10);
+		n3 = strtoul(&buf[s2 + 1], NULL, 10);
+		
+		if (isU)
+			n1 -= 32;
+
+		switch (n1 & 3) {
+		case 0:
+			if ((n1&64) != 0) {
+				event->key = TB_KEY_MOUSE_WHEEL_UP;
+			} else {
+				event->key = TB_KEY_MOUSE_LEFT;
+			}
+			break;
+		case 1:
+			if ((n1&64) != 0) {
+				event->key = TB_KEY_MOUSE_WHEEL_DOWN;
+			} else {
+				event->key = TB_KEY_MOUSE_MIDDLE;
+			}
+			break;
+		case 2:
+			event->key = TB_KEY_MOUSE_RIGHT;
+			break;
+		case 3:
+			event->key = TB_KEY_MOUSE_RELEASE;
+			break;
+		default:
+			return mi + 1;
+		}
+
+		if (!isM) {
+			// on xterm mouse release is signaled by lowercase m
+			event->key = TB_KEY_MOUSE_RELEASE;
+		}
+
+		event->type = TB_EVENT_MOUSE; // TB_EVENT_KEY by default
+		if ((n1&32) != 0)
+			event->mod |= TB_MOD_MOTION;
+
+		event->x = (uint8_t)n2 - 1;
+		event->y = (uint8_t)n3 - 1;
+
+		return mi + 1;
+	}
+
+	return 0;
+}
+
+// convert escape sequence to event, and return consumed bytes on success (failure == 0)
+static int parse_escape_seq(struct tb_event *event, const char *buf, int len)
+{
+	int mouse_parsed = parse_mouse_event(event, buf, len);
+
+	if (mouse_parsed != 0)
+		return mouse_parsed;
+
+	// it's pretty simple here, find 'starts_with' match and return
+	// success, else return failure
+	int i;
+	for (i = 0; keys[i]; i++) {
+		if (starts_with(buf, len, keys[i])) {
+			event->ch = 0;
+			event->key = 0xFFFF-i;
+			return strlen(keys[i]);
+		}
+	}
+	return 0;
+}
+
+static bool extract_event(struct tb_event *event, struct bytebuffer *inbuf, int inputmode)
+{
+	const char *buf = inbuf->buf;
+	const int len = inbuf->len;
+	if (len == 0)
+		return false;
+
+	if (buf[0] == '\033') {
+		int n = parse_escape_seq(event, buf, len);
+		if (n != 0) {
+			bool success = true;
+			if (n < 0) {
+				success = false;
+				n = -n;
+			}
+			bytebuffer_truncate(inbuf, n);
+			return success;
+		} else {
+			// it's not escape sequence, then it's ALT or ESC,
+			// check inputmode
+			if (inputmode&TB_INPUT_ESC) {
+				// if we're in escape mode, fill ESC event, pop
+				// buffer, return success
+				event->ch = 0;
+				event->key = TB_KEY_ESC;
+				event->mod = 0;
+				bytebuffer_truncate(inbuf, 1);
+				return true;
+			} else if (inputmode&TB_INPUT_ALT) {
+				// if we're in alt mode, set ALT modifier to
+				// event and redo parsing
+				event->mod = TB_MOD_ALT;
+				bytebuffer_truncate(inbuf, 1);
+				return extract_event(event, inbuf, inputmode);
+			}
+			assert(!"never got here");
+		}
+	}
+
+	// if we're here, this is not an escape sequence and not an alt sequence
+	// so, it's a FUNCTIONAL KEY or a UNICODE character
+
+	// first of all check if it's a functional key
+	if ((unsigned char)buf[0] <= TB_KEY_SPACE ||
+	    (unsigned char)buf[0] == TB_KEY_BACKSPACE2)
+	{
+		// fill event, pop buffer, return success */
+		event->ch = 0;
+		event->key = (uint16_t)buf[0];
+		bytebuffer_truncate(inbuf, 1);
+		return true;
+	}
+
+	// feh... we got utf8 here
+
+	// check if there is all bytes
+	if (len >= tb_utf8_char_length(buf[0])) {
+		/* everything ok, fill event, pop buffer, return success */
+		tb_utf8_char_to_unicode(&event->ch, buf);
+		event->key = 0;
+		bytebuffer_truncate(inbuf, tb_utf8_char_length(buf[0]));
+		return true;
+	}
+
+	// event isn't recognized, perhaps there is not enough bytes in utf8
+	// sequence
+	return false;
+}
+
+/* -------------------------------------------------------- */
 
 struct cellbuf {
 	int width;
