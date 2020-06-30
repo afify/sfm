@@ -1,0 +1,43 @@
+.TH sfm 1 sfm\-VERSION
+.SH NAME
+sfm \- a simple file manager for unix-like systems
+.SH SYNOPSIS
+.B sfm
+.RB [ \-v ]
+.SH DESCRIPTION
+sfm is a simple file manager based on termbox.
+.P
+.SH OPTIONS
+.TP
+.B \-v
+print version.
+.SH USAGE
+.TP
+.B q
+quit
+.TP
+.B h
+back
+.TP
+.B j
+down
+.TP
+.B k
+up
+.TP
+.B l
+open dir|file
+.TP
+.B g
+top
+.TP
+.B G
+bottom
+.TP
+.B space
+switch pane
+.SH CUSTOMIZATION
+sfm is customized by creating a custom config.h and (re)compiling the source
+code. This keeps it fast, secure and simple.
+.SH AUTHORS
+Hassan Afify <hassan at afify dot dev>
