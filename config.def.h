@@ -15,9 +15,9 @@ uint16_t frame_f  = TB_DEFAULT;
 uint16_t other_b  = TB_DEFAULT;
 uint16_t other_f  = 3;
 uint16_t pane_l_b = TB_DEFAULT;
-uint16_t pane_l_f = 5;
+uint16_t pane_l_f = 166;
 uint16_t pane_r_b = TB_DEFAULT;
-uint16_t pane_r_f = 166;
+uint16_t pane_r_f = 5;
 uint16_t status_b = 234;
 uint16_t status_f = TB_DEFAULT;
 

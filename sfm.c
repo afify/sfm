@@ -65,7 +65,6 @@ static void get_file_perm(mode_t, char*);
 static int check_dir(char*);
 static int open_files(char*);
 static int sort_name(const void *const, const void *const);
-static double xfloorf(double);
 static void float_to_string(float, char*);
 static int get_memory_usage(void);
 static void print_col(Entry*, size_t, size_t, size_t, int, int);
@@ -173,8 +172,7 @@ clear_pane(int pane)
 	int i, x, ex, y, width, height;
 	width = tb_width();
 	height = tb_height();
-	y = 0;
-	i = 0;
+	x = 0, y = 0, i = 0, ex = 0;
 
 	if (pane == 2){
 		x = 2;
@@ -300,7 +298,7 @@ get_file_size(off_t size)
 	int counter;
 	counter = 0;
 
-	Rsize = calloc(9, sizeof(char));
+	Rsize = calloc(10, sizeof(char));
 	lsize = size;
 
 	while (lsize >= 1000)
@@ -454,10 +452,17 @@ open_files(char *filename)
 	editor = getenv("EDITOR");
 	term = getenv("TERM");
 
+	if (term == NULL)
+ 		term = "xterm-256color";
+
+ 	if (editor == NULL)
+ 		editor = "vi";
+
 	file_ex = get_extentions(filename);
 
 	if (strcmp(file_ex, "png") == 0) {
 		software = images;
+		wait_finish = 1;
 	} else if (strcmp(file_ex, "mp4") == 0) {
 		software = videos;
 		wait_finish = 1;
@@ -470,9 +475,6 @@ open_files(char *filename)
 
 	free(file_ex);
 
-	if (software == NULL)
-		term = "vi";
-
 	char *filex[] = {software, filename, NULL};
 
 	pid = fork();
@@ -484,11 +486,11 @@ open_files(char *filename)
 		exit(EXIT_SUCCESS);
 	default:
 		if (wait_finish == 1) {
-		while ((r = waitpid(pid, &status, 0)) == -1 && errno == EINTR)
+		while ((r = (int)waitpid(pid, &status, 0)) == -1 && errno == EINTR)
 			continue;
 		if (r == -1)
 			return -1;
-		if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+		if ((WIFEXITED(status) != 0) && (WEXITSTATUS(status) != 0))
 			return -1;
 		}
 	}
@@ -500,8 +502,8 @@ static int
 sort_name(const void *const A, const void *const B)
 {
 	int result;
-	int data1 = (*(Entry*) A).mode;
-	int data2 = (*(Entry*) B).mode;
+	mode_t data1 = (*(Entry*) A).mode;
+	mode_t data2 = (*(Entry*) B).mode;
 
 	if (data1 < data2) {
 		return -1;
@@ -513,57 +515,36 @@ sort_name(const void *const A, const void *const B)
 	}
 }
 
-static double
-xfloorf(double num)
-{
-	return (int)num;
-}
-
 static void
 float_to_string(float f, char *r)
 {
-	long long int length, length2, i, number, position, sign, tenth, temp;
+	long long int length, length2, i, number, position, tenth; /* length is size of decimal part, length2 is size of tenth part */
 	float number2;
 
-	f = xfloorf(f * 100) / 100;
-
-	sign = -1; // -1 == positive number
-	if (f < 0)
-	{
-		sign = '-';
-		f *= -1;
-	}
+	f = (float)(int)(f * 10) / 10;
 
 	number2 = f;
-	number = f;
-	temp = 1;
-	length = 0;	// Size of decimal part
-	length2 = 0; // Size of tenth
+	number = (long long)f;
+	length2 = (long long)0;
+	tenth = (long long)1;
 
 	/* Calculate length2 tenth part */
 	while ((number2 - (float)number) != 0.0 && !((number2 - (float)number) < 0.0))
 	{
-		temp *= 10.0;
-		tenth = temp;
-		number2 = f * tenth;
-		number = number2;
+		tenth *= 10.0;
+		number2 = f * (float)tenth;
+		number = (long long)number2;
 
 		length2++;
 	}
 
 	/* Calculate length decimal part */
-	for (length = (f > 1) ? 0 : 1; f > 1; length++)
-		f /= 10;
+	for (length = (f > 1.0) ? 0 : 1; f > 1.0; length++)
+		f /= 10.0;
 
 	position = length;
 	length = length + 1 + length2;
-	number = number2;
-
-	if (sign == '-')
-	{
-		length++;
-		position++;
-	}
+	number = (long long)number2;
 
 	if (length2 > 0)
 	{
@@ -573,11 +554,9 @@ float_to_string(float f, char *r)
 				r[i] = '\0';
 			else if (i == (position))
 				r[i] = '.';
-			else if (sign == '-' && i == 0)
-				r[i] = '-';
 			else
 			{
-				r[i] = (number % 10) + '0';
+				r[i] = (char)(number % 10) + '0';
 				number /= 10;
 			}
 		}
@@ -589,11 +568,9 @@ float_to_string(float f, char *r)
 		{
 			if (i == (length))
 				r[i] = '\0';
-			else if (sign == '-' && i == 0)
-				r[i] = '-';
 			else
 			{
-				r[i] = (number % 10) + '0';
+				r[i] = (char)(number % 10) + '0';
 				number /= 10;
 			}
 		}
@@ -854,7 +831,9 @@ set_panes(Pane *pane_l, Pane *pane_r, int resize)
 	char *home;
 	char cwd[MAX_P];
 
-	(void)getcwd(cwd, sizeof(cwd));
+	if ((getcwd(cwd, sizeof(cwd)) == NULL))
+		return -1;
+
 	home = getenv("HOME");
 	width = tb_width();
 	height = tb_height();
