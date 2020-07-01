@@ -47,6 +47,12 @@ typedef struct {
 	char path[MAX_P];
 } Bookmark;
 
+typedef struct {
+	char *soft;
+	const char **ext;
+	size_t len;
+} Rule;
+
 #include "config.h"
 
 /* function declarations */
@@ -446,44 +452,41 @@ check_dir(char *path)
 static int
 open_files(char *filename)
 {
-	tb_clear();
 	// TODO
 	/* open editor in other window */
 	/* wait option */
 	char *editor, *file_ex, *software, *term;
-	int status, r;
-	pid_t pid;
-	int wait_finish = 0;
+	int status;
+	size_t d, c;
+	pid_t pid, r;
 
 	editor = getenv("EDITOR");
 	term = getenv("TERM");
-
-	if (term == NULL)
- 		term = "xterm-256color";
-
- 	if (editor == NULL)
- 		editor = "vi";
-
 	file_ex = get_extentions(filename);
+	software = NULL;
 
-	if (strcmp(file_ex, "png") == 0) {
-		software = images;
-		wait_finish = 1;
-	} else if (strcmp(file_ex, "mp4") == 0) {
-		software = videos;
-		wait_finish = 1;
-	} else if (strcmp(file_ex, "pdf") == 0) {
-		software = pdf;
-	} else {
-		software = editor;
-		wait_finish = 1;
+	/* find software in rules */
+	for (c = 0; c < LEN(rules); c++) {
+		for (d = 0; d < rules[c].len; d++){
+			if (strcmp(rules[c].ext[d], file_ex) == 0) {
+				software = rules[c].soft;
+			}
+		}
 	}
 
+	/* default softwares */
+	if (term == NULL)
+		term = "xterm-256color";
+	if (editor == NULL)
+		editor = "vi";
+	if (software == NULL)
+		software = editor;
+
 	free(file_ex);
-
 	char *filex[] = {software, filename, NULL};
-
+	tb_shutdown();
 	pid = fork();
+
 	switch (pid) {
 	case -1:
 		return -1;
@@ -491,14 +494,12 @@ open_files(char *filename)
 		(void)execvp(filex[0], filex);
 		exit(EXIT_SUCCESS);
 	default:
-		if (wait_finish == 1) {
-		while ((r = (int)waitpid(pid, &status, 0)) == -1 && errno == EINTR)
+		while ((r = waitpid(pid, &status, 0)) == -1 && errno == EINTR)
 			continue;
 		if (r == -1)
 			return -1;
 		if ((WIFEXITED(status) != 0) && (WEXITSTATUS(status) != 0))
 			return -1;
-		}
 	}
 
 	return 0;
@@ -758,7 +759,7 @@ static void
 press(struct tb_event *ev, Pane *cpane, Pane *opane)
 {
 	char *parent;
-	int isdir, ret, b;
+	int b;
 	clear_error();
 
 	if (ev->ch == 'j') {
@@ -784,8 +785,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		}
 		free(parent);
 	} else if (ev->ch == 'l') {
-		isdir = check_dir(cpane->high_dir);
-		switch (isdir) {
+		switch (check_dir(cpane->high_dir)) {
 		case 0:
 			strcpy(cpane->dirn, cpane->high_dir);
 			clear_pane(cpane->dirx);
@@ -796,17 +796,15 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		case 1:
 			/* is not a directory open file */
 			if (open_files(cpane->high_dir) < 0) {
-				print_error("%s", strerror(errno));
+				print_error("procces failed");
+				return;
 			}
-			tb_shutdown();
-			ret = tb_init();
-			if (ret != 0)
-				die("tb_init() %d\n", ret);
+			if (tb_init() != 0)
+				die("tb_init");
 			if (cpane->dirx == 2) /* if current left pane */
 				t_resize(cpane, opane);
 			else
 				t_resize(opane, cpane);
-
 			break;
 		case -1:
 			/* failed to open directory */

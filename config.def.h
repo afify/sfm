@@ -29,11 +29,24 @@ static Bookmark bmarks[] = {
 };
 
 /* openwith */
-static char audio[]  = "mpv";
-static char html[]   = "firefox";
-static char images[] = "sxiv";
-static char pdf[]    = "mupdf";
-static char videos[] = "mpv";
+static const char *images[] = { "bmp", "jpg", "jpeg", "png", "gif", "xpm" };
+static const char *web[] = { "htm", "html" };
+static const char *pdf[] = { "epub", "pdf" };
+static const char *videos[] = { "ac3", "avi", "divx", "flc", "fli", "flv",
+	"m2v", "m4a", "m4v", "mkv", "mov", "mp3", "mp4", "mpeg", "mpg",
+	"mts", "opus", "qt", "ra", "rm", "ts", "wav", "webm", "wma", "wmv" };
+static const char *documents[] = { "odt", "doc", "docx", "xls", "xlsx", "odp",
+	"ods", "pptx", "odg" };
+static const char *arts[] = { "xcf" };
+
+static Rule rules[] = {
+	{"mpv",         videos,    LEN(videos)    },
+	{"sxiv",        images,    LEN(images)    },
+	{"firefox",     web,       LEN(web)       },
+	{"mupdf",       pdf,       LEN(pdf)       },
+	{"libreoffice", documents, LEN(documents) },
+	{"gimp",        arts,      LEN(arts)      },
+};
 
 /* unicode chars */
 static const uint32_t u_cne = 0x2510;
