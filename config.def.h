@@ -6,36 +6,43 @@
 #include "termbox.h"
 
 /* colors */
-uint16_t dir_b    = TB_DEFAULT;
-uint16_t dir_f    = 33;
-uint16_t file_b   = TB_DEFAULT;
-uint16_t file_f   = TB_DEFAULT;
-uint16_t frame_b  = TB_DEFAULT;
-uint16_t frame_f  = TB_DEFAULT;
-uint16_t other_b  = TB_DEFAULT;
-uint16_t other_f  = 3;
-uint16_t pane_l_b = TB_DEFAULT;
-uint16_t pane_l_f = 166;
-uint16_t pane_r_b = TB_DEFAULT;
-uint16_t pane_r_f = 5;
-uint16_t status_b = 234;
-uint16_t status_f = TB_DEFAULT;
+static const uint16_t dir_b    = TB_DEFAULT;
+static const uint16_t dir_f    = 33;
+static const uint16_t file_b   = TB_DEFAULT;
+static const uint16_t file_f   = TB_DEFAULT;
+static const uint16_t frame_b  = TB_DEFAULT;
+static const uint16_t frame_f  = TB_DEFAULT;
+static const uint16_t other_b  = TB_DEFAULT;
+static const uint16_t other_f  = 3;
+static const uint16_t pane_l_b = TB_DEFAULT;
+static const uint16_t pane_l_f = 166;
+static const uint16_t pane_r_b = TB_DEFAULT;
+static const uint16_t pane_r_f = 5;
+static const uint16_t status_b = 234;
+static const uint16_t status_f = TB_DEFAULT;
+
+/* bookmarks */
+static Bookmark bmarks[] = {
+	{'\\', "/root"},
+	{'e', "/etc"},
+	{'u', "/usr/local/bin"},
+};
 
 /* openwith */
-char audio[]  = "mpv";
-char html[]   = "firefox";
-char images[] = "sxiv";
-char pdf[]    = "mupdf";
-char videos[] = "mpv";
+static char audio[]  = "mpv";
+static char html[]   = "firefox";
+static char images[] = "sxiv";
+static char pdf[]    = "mupdf";
+static char videos[] = "mpv";
 
 /* unicode chars */
-uint32_t u_cne = 0x2510;
-uint32_t u_cnw = 0x250C;
-uint32_t u_cse = 0x2518;
-uint32_t u_csw = 0x2514;
-uint32_t u_hl  = 0x2500;
-uint32_t u_mn  = 0x252C;
-uint32_t u_ms  = 0x2534;
-uint32_t u_vl  = 0x2502;
+static const uint32_t u_cne = 0x2510;
+static const uint32_t u_cnw = 0x250C;
+static const uint32_t u_cse = 0x2518;
+static const uint32_t u_csw = 0x2514;
+static const uint32_t u_hl  = 0x2500;
+static const uint32_t u_mn  = 0x252C;
+static const uint32_t u_ms  = 0x2534;
+static const uint32_t u_vl  = 0x2502;
 
 #endif /* CONFIG_H */

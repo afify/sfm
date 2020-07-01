@@ -17,7 +17,6 @@
 #include <pwd.h>
 #include <grp.h>
 
-#include "config.h"
 #include "termbox.h"
 #include "util.h"
 
@@ -42,6 +41,13 @@ typedef struct {
 	uint16_t dir_bg;
 	uint16_t dir_fg;
 } Pane;
+
+typedef struct {
+	char key;
+	char path[MAX_P];
+} Bookmark;
+
+#include "config.h"
 
 /* function declarations */
 static void print_tb(const char*, int, int, uint16_t, uint16_t);
@@ -198,22 +204,22 @@ static char *
 get_extentions(char *str)
 {
 	char *ext;
-	char *dot;
+	char dot;
 	size_t counter, len, i;
 
-	dot = ".";
+	dot = '.';
 	counter = 0;
 	len = strlen(str);
 
 	for (i = len-1; i > 0; i--) {
-		if (str[i] == *dot) {
+		if (str[i] == dot) {
 			break;
 		} else {
 			counter++;
 		}
 	}
 
-	ext = ecalloc(counter, sizeof(char));
+	ext = ecalloc(counter+1, sizeof(char));
 	strncpy(ext, &str[len-counter], counter);
 	return ext;
 }
@@ -242,15 +248,15 @@ static char *
 get_parent(char *dir)
 {
 	char *parent;
-	char *dot;
+	char dot;
 	size_t counter, len, i;
 
-	dot = "/";
+	dot = '/';
 	counter = 0;
 	len = strlen(dir);
 
 	for (i = len-1; i > 0; i--) {
-		if (dir[i] == *dot) {
+		if (dir[i] == dot) {
 			break;
 		} else {
 			counter++;
@@ -585,6 +591,23 @@ get_memory_usage(void)
 	return myusage.ru_maxrss;
 }
 
+static int
+findbm(char event)
+{
+	size_t i;
+
+	for (i = 0; i < LEN(bmarks); i++) {
+		if (event == bmarks[i].key) {
+			if (check_dir(bmarks[i].path) != 0) {
+				print_error("%s", strerror(errno));
+				return -1;
+			}
+			return i;
+		}
+	}
+	return -1;
+}
+
 static void
 print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width)
 {
@@ -735,24 +758,20 @@ static void
 press(struct tb_event *ev, Pane *cpane, Pane *opane)
 {
 	char *parent;
-	int isdir;
-	int ret;
+	int isdir, ret, b;
 	clear_error();
 
-	switch (ev->ch) {
-	case 'j':
+	if (ev->ch == 'j') {
 		if (cpane->hdir < cpane->dirc) {
 			cpane->hdir++;
 			(void)listdir(cpane);
 		}
-		break;
-	case 'k':
+	} else if (ev->ch == 'k') {
 		if (cpane->hdir > 1) {
 			cpane->hdir--;
 			(void)listdir(cpane);
 		}
-		break;
-	case 'h':
+	} else if (ev->ch == 'h') {
 		parent = get_parent(cpane->dirn);
 		if (check_dir(parent) < 0) { /* failed to open directory */
 			print_error("%s", strerror(errno));
@@ -764,9 +783,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			parent_row = 1;
 		}
 		free(parent);
-
-		break;
-	case 'l':
+	} else if (ev->ch == 'l') {
 		isdir = check_dir(cpane->high_dir);
 		switch (isdir) {
 		case 0:
@@ -795,21 +812,27 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			/* failed to open directory */
 			print_error("%s", strerror(errno));
 		}
-
-		break;
-	case 'g':
+	} else if (ev->ch == 'g') {
 		cpane->hdir = 1;
 		(void)listdir(cpane);
-		break;
-	case 'G':
+	} else if (ev->ch == 'G') {
 		cpane->hdir = cpane->dirc;
 		(void)listdir(cpane);
-		break;
-	case 'M':
+	} else if (ev->ch == 'M') {
 		cpane->hdir = (cpane->dirc/2);
 		(void)listdir(cpane);
-		break;
+	} else {
+		/* bookmarks */
+		b = findbm((char)ev->ch);
+		if (b < 0)
+			return;
+
+		strcpy(cpane->dirn, bmarks[b].path);
+		clear_pane(cpane->dirx);
+		cpane->hdir = 1;
+		(void)listdir(cpane);
 	}
+
 }
 
 static void
