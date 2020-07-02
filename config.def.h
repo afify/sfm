@@ -48,6 +48,8 @@ static Rule rules[] = {
 	{"gimp",        arts,      LEN(arts)      },
 };
 
+static const size_t move_ud = 10; /* ctrl U, ctrl D movement */
+
 /* unicode chars */
 static const uint32_t u_cne = 0x2510;
 static const uint32_t u_cnw = 0x250C;

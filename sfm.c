@@ -79,6 +79,7 @@ static int open_files(char*);
 static int sort_name(const void *const, const void *const);
 static void float_to_string(float, char*);
 static int get_memory_usage(void);
+static int findbm(char);
 static void print_col(Entry*, size_t, size_t, size_t, int, int);
 static int listdir(Pane*);
 static void press(struct tb_event*, Pane*, Pane*);
@@ -710,8 +711,8 @@ listdir(Pane *cpane)
 	/* scroll */
 	if (cpane->dirc > height - 1) {
 		clear_pane(cpane->dirx);
-		if (cpane->hdir >= height - 4){
-			i = (cpane->hdir - height) + 4;
+		if (cpane->hdir >= height - (height/2)){
+			i = (cpane->hdir - height) + (height/2);
 			dyn_y = i;
 		}
 	}
@@ -819,6 +820,16 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 	} else if (ev->ch == 'M') {
 		cpane->hdir = (cpane->dirc/2);
 		(void)listdir(cpane);
+	} else if (ev->key == TB_KEY_CTRL_U) {
+		if (cpane->hdir > move_ud) {
+			cpane->hdir = cpane->hdir - move_ud;
+			(void)listdir(cpane);
+		}
+	} else if (ev->key == TB_KEY_CTRL_D) {
+		if (cpane->hdir < cpane->dirc - move_ud) {
+			cpane->hdir = cpane->hdir + move_ud;
+			(void)listdir(cpane);
+		}
 	} else {
 		/* bookmarks */
 		b = findbm((char)ev->ch);
