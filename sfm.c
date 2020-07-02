@@ -23,6 +23,7 @@
 /* macros */
 #define MAX_P 4095
 #define MAX_N 255
+#define USRI 32
 
 /* typedef */
 typedef struct {
@@ -59,6 +60,7 @@ typedef struct {
 static void print_tb(const char*, int, int, uint16_t, uint16_t);
 static void printf_tb(int, int, uint16_t, uint16_t, const char*, ...);
 static void print_status(const char*, ...);
+static void print_xstatus(char, int);
 static void print_error(const char*, ...);
 static void clear(int, int, int, uint16_t);
 static void clear_status(void);
@@ -80,8 +82,8 @@ static int sort_name(const void *const, const void *const);
 static void float_to_string(float, char*);
 static int get_memory_usage(void);
 static int findbm(char);
-static void print_col(Entry*, size_t, size_t, size_t, int, int);
-static int listdir(Pane*);
+static void print_col(Entry*, size_t, size_t, size_t, int, int, char*);
+static int listdir(Pane*, char*);
 static void press(struct tb_event*, Pane*, Pane*);
 static void t_resize(Pane*, Pane*);
 static int set_panes(Pane*, Pane*, int);
@@ -129,6 +131,16 @@ print_status(const char *fmt, ...)
 	clear_status();
 	print_tb(buf, 2, height-2, TB_DEFAULT, status_b);
 
+}
+
+static void
+print_xstatus(char c, int x)
+{
+	int height;
+	uint32_t uni = 0;
+	height = tb_height();
+	(void)tb_utf8_char_to_unicode(&uni, &c);
+	tb_change_cell(x, height-2, uni,  TB_DEFAULT, status_b);
 }
 
 static void
@@ -610,8 +622,63 @@ findbm(char event)
 	return -1;
 }
 
+static int
+filter(char *out)
+{
+	int height = tb_height();
+	clear_status();
+	tb_set_cursor(1,height-2);
+	tb_present();
+	struct tb_event fev;
+	int counter = 1;
+	int empty = ' ';
+	int x = 0;
+
+	while (tb_poll_event(&fev) != 0) {
+		switch (fev.type) {
+		case TB_EVENT_KEY:
+			if (fev.key == TB_KEY_ESC) {
+				tb_set_cursor(-1, -1);
+				clear_status();
+				return -1;
+			}
+
+			if (fev.key == TB_KEY_BACKSPACE || fev.key == TB_KEY_BACKSPACE2) {
+				if (counter > 1){
+					counter--;
+					print_xstatus(empty, counter);
+					tb_set_cursor(counter,height-2);
+				}
+
+			} else if (fev.key == TB_KEY_ENTER) {
+				tb_set_cursor(-1, -1);
+				out[counter] = '\0';
+				return 0;
+
+			} else {
+				if (counter < USRI) {
+					print_xstatus(fev.ch, counter);
+					out[x] = fev.ch;
+					tb_set_cursor(counter+1,height-2);
+					counter++;
+					x++;
+				}
+			}
+
+			tb_present();
+			break;
+
+		default:
+			return -1;
+		}
+	}
+
+	return -1;
+
+}
+
 static void
-print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width)
+print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width, char *filter)
 {
 	uint16_t bg, fg;
 	char buf[MAX_P];
@@ -635,13 +702,21 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width)
 		fg = fg | TB_REVERSE | TB_BOLD;
 	}
 
+	/* highlight found filter */
+	if (filter != NULL ) {
+		if (strstr(entry->name, filter) != NULL) {
+			bg = search_b;
+			fg = search_f | TB_BOLD;
+		}
+	}
+
 	/* print each element in directory */
 	printf_tb(x, y, fg, bg, "%*.*s", ~width, width, entry->name);
 
 }
 
 static int
-listdir(Pane *cpane)
+listdir(Pane *cpane, char *filter)
 {
 	DIR *dir;
 	struct dirent *entry;
@@ -728,7 +803,7 @@ listdir(Pane *cpane)
 	/* print each entry in directory */
 	while (i < dyn_max) {
 		print_col(&list[i], cpane->hdir,
-			cpane->dirx, y, dyn_y, width);
+			cpane->dirx, y, dyn_y, width, filter);
 			i++;
 			y++;
 	}
@@ -761,17 +836,17 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 {
 	char *parent;
 	int b;
-	clear_error();
+// 	clear_error();
 
 	if (ev->ch == 'j') {
 		if (cpane->hdir < cpane->dirc) {
 			cpane->hdir++;
-			(void)listdir(cpane);
+			(void)listdir(cpane, NULL);
 		}
 	} else if (ev->ch == 'k') {
 		if (cpane->hdir > 1) {
 			cpane->hdir--;
-			(void)listdir(cpane);
+			(void)listdir(cpane, NULL);
 		}
 	} else if (ev->ch == 'h') {
 		parent = get_parent(cpane->dirn);
@@ -781,7 +856,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			strcpy(cpane->dirn, parent);
 			clear_pane(cpane->dirx);
 			cpane->hdir = parent_row;
-			(void)listdir(cpane);
+			(void)listdir(cpane, NULL);
 			parent_row = 1;
 		}
 		free(parent);
@@ -792,7 +867,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			clear_pane(cpane->dirx);
 			parent_row = cpane->hdir;
 			cpane->hdir = 1;
-			(void)listdir(cpane);
+			(void)listdir(cpane, NULL);
 			break;
 		case 1:
 			/* is not a directory open file */
@@ -813,23 +888,34 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		}
 	} else if (ev->ch == 'g') {
 		cpane->hdir = 1;
-		(void)listdir(cpane);
+		(void)listdir(cpane, NULL);
 	} else if (ev->ch == 'G') {
 		cpane->hdir = cpane->dirc;
-		(void)listdir(cpane);
+		(void)listdir(cpane, NULL);
 	} else if (ev->ch == 'M') {
 		cpane->hdir = (cpane->dirc/2);
-		(void)listdir(cpane);
+		(void)listdir(cpane, NULL);
 	} else if (ev->key == TB_KEY_CTRL_U) {
 		if (cpane->hdir > move_ud) {
 			cpane->hdir = cpane->hdir - move_ud;
-			(void)listdir(cpane);
+			(void)listdir(cpane, NULL);
 		}
 	} else if (ev->key == TB_KEY_CTRL_D) {
 		if (cpane->hdir < cpane->dirc - move_ud) {
 			cpane->hdir = cpane->hdir + move_ud;
-			(void)listdir(cpane);
+			(void)listdir(cpane, NULL);
 		}
+	} else if (ev->ch == '/') {
+		char *user_input;
+		user_input = ecalloc(USRI, sizeof(char));
+		print_error("filter");
+		if (filter(user_input) < 0) {
+			free(user_input);
+			return;
+		}
+		print_error("out -> %s", user_input);
+		listdir(cpane, user_input);
+		free(user_input);
 	} else {
 		/* bookmarks */
 		b = findbm((char)ev->ch);
@@ -839,7 +925,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		strcpy(cpane->dirn, bmarks[b].path);
 		clear_pane(cpane->dirx);
 		cpane->hdir = 1;
-		(void)listdir(cpane);
+		(void)listdir(cpane, NULL);
 	}
 
 }
@@ -850,8 +936,8 @@ t_resize(Pane *cpane, Pane *opane)
 	tb_clear();
 	draw_frame();
 	(void)set_panes(cpane, opane, 1);
-	(void)listdir(cpane);
-	(void)listdir(opane);
+	(void)listdir(cpane, NULL);
+	(void)listdir(opane, NULL);
 	tb_present();
 
 }
@@ -928,33 +1014,31 @@ draw_frame(void)
 static int
 start(void)
 {
-	int ret, mode, support_256, support_n, init_height, init_width;
+	int init_height, init_width;
 	struct tb_event ev;
 	Pane pane_r, pane_l;
 	int current_pane = 0;
 
-	ret = tb_init();
-	if (ret != 0)
-		die("tb_init() failed with error code %d\n", ret);
+	if (tb_init()!= 0)
+		die("tb_init");
 
 	init_width = tb_width();
 	init_height = tb_height();
-	mode = tb_select_input_mode(TB_INPUT_ESC);
-	support_256 = tb_select_output_mode(TB_OUTPUT_256);
 
-	if (support_256 != TB_OUTPUT_256)
-		support_n = tb_select_output_mode(TB_OUTPUT_NORMAL);
+	if (tb_select_output_mode(TB_OUTPUT_256) != TB_OUTPUT_256)
+		(void)tb_select_output_mode(TB_OUTPUT_NORMAL);
 
 	tb_clear();
 	draw_frame();
 	(void)set_panes(&pane_l, &pane_r, 0);
-	(void)listdir(&pane_r);
-	(void)listdir(&pane_l);
+	(void)listdir(&pane_r, NULL);
+	(void)listdir(&pane_l, NULL);
 	tb_present();
 
 	while (tb_poll_event(&ev) != 0) {
 		switch (ev.type) {
 		case TB_EVENT_KEY:
+
 			if (ev.ch == 'q') {
 				tb_shutdown();
 				return 0;

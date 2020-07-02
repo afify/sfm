@@ -10,8 +10,9 @@ Features
 --------
 * No dependencies, static linking of [termbox](https://github.com/nsf/termbox).
 * Fast, minimal, lightweight, c99.
-* Open files (videos, images, ...)
-* Vim keys navigation
+* Open files (videos, images, ...).
+* Bookmarks.
+* Vim keys navigation.
 * Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
 * Follows the suckless [philosophy](https://suckless.org/philosophy/) and [code style](https://suckless.org/coding_style/).
 
@@ -24,16 +25,21 @@ $ sfm [-v]
 $ man sfm
 ```
 
-| key     | description    |
-|:-------:|:---------------|
-| `q`     | quit           |
-| `h`     | back           |
-| `j`     | down           |
-| `k`     | up             |
-| `l`     | open dir|file  |
-| `g`     | top            |
-| `G`     | bottom         |
-| `space` | switch pane    |
+| key      | description    |
+|---------:|:---------------|
+| `q`      | quit           |
+| `h`      | back           |
+| `j`      | down           |
+| `k`      | up             |
+| `l`      | open           |
+| `g`      | top            |
+| `G`      | bottom         |
+| `ctrl+u` | scroll up      |
+| `ctrl+d` | scroll down    |
+| `/`      | start filter   |
+| `ENTER`  | find  filter   |
+| `ESC`    | exit  filter   |
+| `SPACE`  | switch pane    |
 
 Installation
 ------------

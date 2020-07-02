@@ -18,6 +18,8 @@ static const uint16_t pane_l_b = TB_DEFAULT;
 static const uint16_t pane_l_f = 166;
 static const uint16_t pane_r_b = TB_DEFAULT;
 static const uint16_t pane_r_f = 5;
+static const uint16_t search_b = 166;
+static const uint16_t search_f = 255;
 static const uint16_t status_b = 234;
 static const uint16_t status_f = TB_DEFAULT;
 
