@@ -75,6 +75,8 @@ static char *get_file_date(struct stat);
 static char *get_file_time(struct stat);
 static char *get_file_userowner(struct stat);
 static char *get_file_groupowner(struct stat);
+static int create_new_dir(char*, char*);
+static int create_new_file(char*, char*);
 static void get_file_perm(mode_t, char*);
 static int check_dir(char*);
 static int open_files(char*);
@@ -411,6 +413,46 @@ get_file_groupowner(struct stat status)
 	group_owner = gr->gr_name;
 
 	return group_owner;
+}
+
+static int
+create_new_dir(char *cwd, char *user_input)
+{
+	char *path;
+	path = ecalloc(strlen(cwd)+strlen(user_input)+2, sizeof(char));
+	strcpy(path, cwd);
+	strcat(path, "/");
+	strcat(path, user_input);
+
+	if(mkdir(path, new_dir_perm) < 0) {
+		free(path);
+		return -1;
+	}
+
+	free(path);
+	return 0;
+}
+
+static int
+create_new_file(char *cwd, char *user_input)
+{
+	char *path;
+	path = ecalloc(strlen(cwd)+strlen(user_input)+2, sizeof(char));
+	strcpy(path, cwd);
+	strcat(path, "/");
+	strcat(path, user_input);
+
+	FILE* file_ptr;
+	file_ptr = fopen(path, "w");
+	free(path);
+
+	if (file_ptr != NULL) {
+		(void)fclose(file_ptr);
+		return 0;
+	}
+
+	return -1;
+
 }
 
 static void
@@ -826,7 +868,7 @@ listdir(Pane *cpane, char *filter)
 	if (closedir(dir) < 0)
 		return -1;
 
-	print_error("mem (%d)", get_memory_usage());
+// 	print_error("mem (%d)", get_memory_usage());
 
 	return 0;
 }
@@ -905,6 +947,32 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			cpane->hdir = cpane->hdir + move_ud;
 			(void)listdir(cpane, NULL);
 		}
+	} else if (ev->ch == 'n') {
+		char *user_input;
+		user_input = ecalloc(USRI, sizeof(char));
+		print_error("touch");
+		if (filter(user_input) < 0) {
+			free(user_input);
+			return;
+		}
+		if (create_new_file(cpane->dirn, user_input) < 0)
+			print_error("%s", strerror(errno));
+		else
+			listdir(cpane, NULL);
+		free(user_input);
+	} else if (ev->ch == 'N') {
+		char *user_input;
+		user_input = ecalloc(USRI, sizeof(char));
+		print_error("mkdir");
+		if (filter(user_input) < 0) {
+			free(user_input);
+			return;
+		}
+		if (create_new_dir(cpane->dirn, user_input) < 0)
+			print_error("%s", strerror(errno));
+		else
+			listdir(cpane, NULL);
+		free(user_input);
 	} else if (ev->ch == '/') {
 		char *user_input;
 		user_input = ecalloc(USRI, sizeof(char));
