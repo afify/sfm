@@ -31,6 +31,9 @@ typedef struct {
 	char full[MAX_P];
 	off_t size;
 	mode_t mode;
+	time_t td;
+	uid_t user;
+	gid_t group;
 } Entry;
 
 typedef struct {
@@ -71,10 +74,9 @@ static char *get_full_path(char*, char*);
 static char *get_parent(char*);
 static char *get_file_info(Entry*);
 static char *get_file_size(off_t);
-static char *get_file_date(struct stat);
-static char *get_file_time(struct stat);
-static char *get_file_userowner(struct stat);
-static char *get_file_groupowner(struct stat);
+static char *get_file_date_time(time_t);
+static char *get_file_userowner(uid_t);
+static char *get_file_groupowner(gid_t);
 static int create_new_dir(char*, char*);
 static int create_new_file(char*, char*);
 static void get_file_perm(mode_t, char*);
@@ -82,8 +84,7 @@ static int check_dir(char*);
 static int open_files(char*);
 static int sort_name(const void *const, const void *const);
 static void float_to_string(float, char*);
-static int get_memory_usage(void);
-static int findbm(char);
+static size_t findbm(char);
 static void print_col(Entry*, size_t, size_t, size_t, int, int, char*);
 static int listdir(Pane*, char*);
 static void press(struct tb_event*, Pane*, Pane*);
@@ -121,8 +122,7 @@ printf_tb(int x, int y, uint16_t fg, uint16_t bg, const char *fmt, ...)
 static void
 print_status(const char *fmt, ...)
 {
-	int height, width;
-	width = tb_width();
+	int height;
 	height = tb_height();
 
 	char buf[256];
@@ -181,7 +181,7 @@ clear_status(void)
 	int width, height;
 	width = tb_width();
 	height = tb_height();
-	clear(1, width-30, height-2, status_b);
+	clear(1, width-20, height-2, status_b);
 }
 
 static void
@@ -296,22 +296,34 @@ get_parent(char *dir)
 static char *
 get_file_info(Entry *cursor)
 {
-	char *size;
-	char *result;
+	char *size, *result, *ur, *gr, *td;
 	char perm[11];
 	size_t size_len = (size_t)9;
 	size_t perm_len = (size_t)11;
-	size_t result_chars = size_len + perm_len;
+	size_t ur_len = (size_t)32;
+	size_t gr_len = (size_t)32;
+	size_t td_len = (size_t)14;
+	size_t result_chars = size_len + perm_len + ur_len + gr_len + td_len;
 	result = ecalloc(result_chars, sizeof(char));
 
 	size = get_file_size(cursor->size);
+	td = get_file_date_time(cursor->td);
+	ur = get_file_userowner(cursor->user);
+	gr = get_file_groupowner(cursor->group);
 	get_file_perm(cursor->mode, perm);
 
 	strncpy(result, perm, perm_len);
 	strcat(result, " ");
 	strncat(result, size, size_len);
+	strcat(result, " ");
+	strncat(result, ur, ur_len);
+	strcat(result, " ");
+	strncat(result, gr, gr_len);
+	strcat(result, " ");
+	strncat(result, td, td_len);
 
 	free(size);
+	free(td);
 
 	return result;
 }
@@ -359,57 +371,38 @@ get_file_size(off_t size)
 }
 
 static char *
-get_file_date(struct stat status)
+get_file_date_time(time_t status)
 {
-	/* need to be freed */
-	char *dat;
-	struct tm lt;
-	time_t timebuf;
-
-	dat = calloc(9, sizeof(char));
-	timebuf = status.st_ctime;
-	localtime_r(&timebuf, &lt);
-	strftime(dat, 9, "%d/%m", &lt);
-
-	return dat;
-}
-
-static char *
-get_file_time(struct stat status)
-{
-	/* need to be freed */
 	char *tim;
 	struct tm lt;
-	time_t timebuf;
 
-	tim = calloc(9, sizeof(char));
-	timebuf = status.st_ctime;
-	localtime_r(&timebuf, &lt);
+	tim = calloc(14, sizeof(char));
+	localtime_r(&status, &lt);
 
-	strftime(tim, 9, "%I:%M%p", &lt);
+	strftime(tim, 14, "%d/%m %I:%M%p", &lt);
 
 	return tim;
 }
 
 static char *
-get_file_userowner(struct stat status)
+get_file_userowner(uid_t status)
 {
 	char *user_owner;
 	struct passwd *pw;
 
-	pw = getpwuid(status.st_uid);
+	pw = getpwuid(status);
 	user_owner = pw->pw_name;
 
 	return user_owner;
 }
 
 static char *
-get_file_groupowner(struct stat status)
+get_file_groupowner(gid_t status)
 {
 	char *group_owner;
 	struct group *gr;
 
-	gr = getgrgid(status.st_gid);
+	gr = getgrgid(status);
 	group_owner = gr->gr_name;
 
 	return group_owner;
@@ -580,22 +573,22 @@ sort_name(const void *const A, const void *const B)
 static void
 float_to_string(float f, char *r)
 {
-	long long int length, length2, i, number, position, tenth; /* length is size of decimal part, length2 is size of tenth part */
+	int length, length2, i, number, position, tenth; /* length is size of decimal part, length2 is size of tenth part */
 	float number2;
 
 	f = (float)(int)(f * 10) / 10;
 
 	number2 = f;
-	number = (long long)f;
-	length2 = (long long)0;
-	tenth = (long long)1;
+	number = (int)f;
+	length2 = 0;
+	tenth = 1;
 
 	/* Calculate length2 tenth part */
 	while ((number2 - (float)number) != 0.0 && !((number2 - (float)number) < 0.0))
 	{
 		tenth *= 10.0;
 		number2 = f * (float)tenth;
-		number = (long long)number2;
+		number = (int)number2;
 
 		length2++;
 	}
@@ -606,7 +599,7 @@ float_to_string(float f, char *r)
 
 	position = length;
 	length = length + 1 + length2;
-	number = (long long)number2;
+	number = (int)number2;
 
 	if (length2 > 0)
 	{
@@ -639,15 +632,7 @@ float_to_string(float f, char *r)
 	}
 }
 
-static int
-get_memory_usage(void)
-{
-	struct rusage myusage;
-	getrusage(RUSAGE_SELF, &myusage);
-	return myusage.ru_maxrss;
-}
-
-static int
+static size_t
 findbm(char event)
 {
 	size_t i;
@@ -699,8 +684,8 @@ filter(char *out)
 
 			} else {
 				if (counter < USRI) {
-					print_xstatus(fev.ch, counter);
-					out[x] = fev.ch;
+					print_xstatus((char)fev.ch, counter);
+					out[x] = (char)fev.ch;
 					tb_set_cursor(counter+1,height-2);
 					counter++;
 					x++;
@@ -753,7 +738,7 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width, c
 	}
 
 	/* print each element in directory */
-	printf_tb(x, y, fg, bg, "%*.*s", ~width, width, entry->name);
+	printf_tb((int)x, (int)y, fg, bg, "%*.*s", ~width, width, entry->name);
 
 }
 
@@ -770,7 +755,7 @@ listdir(Pane *cpane, char *filter)
 	size_t height, dyn_max, dyn_y;
 	int width;
 
-	height = tb_height() - 2;
+	height = (size_t)tb_height() - 2;
 	width = (tb_width() / 2) - 4;
 	cpane->dirc = - 2; /* dont't count . .. */
 	i = 0;
@@ -812,6 +797,9 @@ listdir(Pane *cpane, char *filter)
 		if (lstat(fullpath, &status) == 0) {
 			list[i].size = status.st_size;
 			list[i].mode = status.st_mode;
+			list[i].group = status.st_gid;
+			list[i].user = status.st_uid;
+			list[i].td = status.st_mtime;
 		}
 
 		free(fullpath);
@@ -845,7 +833,7 @@ listdir(Pane *cpane, char *filter)
 	/* print each entry in directory */
 	while (i < dyn_max) {
 		print_col(&list[i], cpane->hdir,
-			cpane->dirx, y, dyn_y, width, filter);
+			(size_t)cpane->dirx, y, (int)dyn_y, width, filter);
 			i++;
 			y++;
 	}
@@ -897,7 +885,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		} else {
 			strcpy(cpane->dirn, parent);
 			clear_pane(cpane->dirx);
-			cpane->hdir = parent_row;
+			cpane->hdir = (size_t)parent_row;
 			(void)listdir(cpane, NULL);
 			parent_row = 1;
 		}
@@ -907,7 +895,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		case 0:
 			strcpy(cpane->dirn, cpane->high_dir);
 			clear_pane(cpane->dirx);
-			parent_row = cpane->hdir;
+			parent_row = (int)cpane->hdir;
 			cpane->hdir = 1;
 			(void)listdir(cpane, NULL);
 			break;
@@ -986,7 +974,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		free(user_input);
 	} else {
 		/* bookmarks */
-		b = findbm((char)ev->ch);
+		b = (int)findbm((char)ev->ch);
 		if (b < 0)
 			return;
 
@@ -1013,7 +1001,7 @@ t_resize(Pane *cpane, Pane *opane)
 static int
 set_panes(Pane *pane_l, Pane *pane_r, int resize)
 {
-	int height, width;
+	int width;
 	char *home;
 	char cwd[MAX_P];
 
@@ -1022,7 +1010,6 @@ set_panes(Pane *pane_l, Pane *pane_r, int resize)
 
 	home = getenv("HOME");
 	width = tb_width();
-	height = tb_height();
 
 	if (home == NULL)
 		home = "/";
