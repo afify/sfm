@@ -373,15 +373,20 @@ get_file_size(off_t size)
 static char *
 get_file_date_time(time_t status)
 {
-	char *tim;
+	char *result;
 	struct tm lt;
+	size_t result_len;
 
-	tim = calloc(14, sizeof(char));
+	result_len = (size_t)14;
+	result = ecalloc(result_len, sizeof(char));
 	localtime_r(&status, &lt);
 
-	strftime(tim, 14, "%d/%m %I:%M%p", &lt);
+	if (strftime(result, result_len, dt_fmt, &lt) != sizeof(dt_fmt)-1) {
+		free(result);
+		return NULL;
+	}
 
-	return tim;
+	return result;
 }
 
 static char *

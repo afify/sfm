@@ -52,6 +52,7 @@ static Rule rules[] = {
 
 static const size_t move_ud = 10; /* ctrl U, ctrl D movement */
 static const mode_t new_dir_perm = 0755;
+static const char dt_fmt[] = "%d/%m %I:%M%p"; /* date time format */
 
 /* unicode chars */
 static const uint32_t u_cne = 0x2510;
