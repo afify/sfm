@@ -940,15 +940,17 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		cpane->hdir = (cpane->dirc/2);
 		(void)listdir(cpane, NULL);
 	} else if (ev->key == TB_KEY_CTRL_U) {
-		if (cpane->hdir > move_ud) {
+		if (cpane->hdir > move_ud)
 			cpane->hdir = cpane->hdir - move_ud;
-			(void)listdir(cpane, NULL);
-		}
+		else
+			cpane->hdir = 1;
+		(void)listdir(cpane, NULL);
 	} else if (ev->key == TB_KEY_CTRL_D) {
-		if (cpane->hdir < cpane->dirc - move_ud) {
+		if (cpane->hdir < cpane->dirc - move_ud)
 			cpane->hdir = cpane->hdir + move_ud;
-			(void)listdir(cpane, NULL);
-		}
+		else
+			cpane->hdir = cpane->dirc;
+		(void)listdir(cpane, NULL);
 	} else if (ev->ch == 'n') {
 		char *user_input;
 		user_input = ecalloc(MAX_USRI, sizeof(char));
