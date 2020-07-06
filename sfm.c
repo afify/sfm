@@ -87,6 +87,7 @@ static void float_to_string(float, char*);
 static size_t findbm(char);
 static int get_user_input(char*, char*);
 static void print_col(Entry*, size_t, size_t, size_t, int, int, char*);
+static size_t scroll(size_t, size_t, size_t);
 static int listdir(Pane*, char*);
 static void press(struct tb_event*, Pane*, Pane*);
 static void t_resize(Pane*, Pane*);
@@ -756,18 +757,36 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width, c
 
 }
 
+static size_t
+scroll(size_t height, size_t dirc, size_t hdir)
+{
+	size_t result, limit;
+
+	result = 0;
+	limit = (height -1) / 2;
+	if (dirc > height - 1) {
+		if (hdir < limit){
+			result = 0;
+		} else if (hdir > dirc - limit) {
+			result = dirc - height + 1;
+		} else {
+			result = hdir - limit;
+		}
+	}
+	return result;
+}
+
 static int
 listdir(Pane *cpane, char *filter)
 {
 	DIR *dir;
 	struct dirent *entry;
-	Entry *list;
 	struct stat status;
-	size_t y, i;
+	Entry *list;
 	char *fullpath;
 	char *fileinfo;
-	size_t height, dyn_max, dyn_y;
 	int width;
+	size_t y, i, height, dyn_max, dyn_y, start_from;
 
 	height = (size_t)tb_height() - 2;
 	width = (tb_width() / 2) - 4;
@@ -823,20 +842,12 @@ listdir(Pane *cpane, char *filter)
 
 	qsort(list, cpane->dirc, sizeof(Entry), sort_name);
 
-	i = 0;
+	/* scroll */
 	y = 1;
 	dyn_y = 0;
-
-	/* scroll */
-	if (cpane->dirc > height - 1) {
-		clear_pane(cpane->dirx);
-		if (cpane->hdir >= height - (height/2)){
-			i = (cpane->hdir - height) + (height/2);
-			dyn_y = i;
-		}
-	}
-
-	dyn_max = MIN(cpane->dirc, height-1+i);
+	start_from = scroll(height, cpane->dirc, cpane->hdir);
+	dyn_y = start_from;
+	dyn_max = MIN(cpane->dirc, (height - 1) + start_from);
 
 	/* get full path of cursor */
 	fullpath = get_full_path(cpane->dirn,
@@ -845,10 +856,10 @@ listdir(Pane *cpane, char *filter)
 	free(fullpath);
 
 	/* print each entry in directory */
-	while (i < dyn_max) {
-		print_col(&list[i], cpane->hdir,
+	while (start_from < dyn_max) {
+		print_col(&list[start_from], cpane->hdir,
 			(size_t)cpane->dirx, y, (int)dyn_y, width, filter);
-			i++;
+			start_from++;
 			y++;
 	}
 
