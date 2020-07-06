@@ -23,7 +23,7 @@
 /* macros */
 #define MAX_P 4095
 #define MAX_N 255
-#define USRI 32
+#define MAX_USRI 32
 
 /* typedef */
 typedef struct {
@@ -85,6 +85,7 @@ static int open_files(char*);
 static int sort_name(const void *const, const void *const);
 static void float_to_string(float, char*);
 static size_t findbm(char);
+static int get_user_input(char*, char*);
 static void print_col(Entry*, size_t, size_t, size_t, int, int, char*);
 static int listdir(Pane*, char*);
 static void press(struct tb_event*, Pane*, Pane*);
@@ -655,16 +656,20 @@ findbm(char event)
 }
 
 static int
-filter(char *out)
+get_user_input(char *out, char *prompt)
 {
 	int height = tb_height();
-	clear_status();
-	tb_set_cursor(1,height-2);
-	tb_present();
+	size_t startat;
 	struct tb_event fev;
 	int counter = 1;
-	int empty = ' ';
+	char empty = ' ';
 	int x = 0;
+
+	clear_status();
+	startat = strlen(prompt) + 3;
+	print_status("%s:", prompt);
+	tb_set_cursor(startat + 1, height-2);
+	tb_present();
 
 	while (tb_poll_event(&fev) != 0) {
 		switch (fev.type) {
@@ -675,11 +680,15 @@ filter(char *out)
 				return -1;
 			}
 
-			if (fev.key == TB_KEY_BACKSPACE || fev.key == TB_KEY_BACKSPACE2) {
-				if (counter > 1){
+			if (fev.key == TB_KEY_BACKSPACE ||
+				fev.key == TB_KEY_BACKSPACE2) {
+				if (BETWEEN(counter, 2, MAX_USRI)) {
+					out[x-1] = '\0';
 					counter--;
-					print_xstatus(empty, counter);
-					tb_set_cursor(counter,height-2);
+					x--;
+					print_xstatus(empty, startat + counter);
+					tb_set_cursor(
+						startat + counter, height - 2);
 				}
 
 			} else if (fev.key == TB_KEY_ENTER) {
@@ -688,10 +697,10 @@ filter(char *out)
 				return 0;
 
 			} else {
-				if (counter < USRI) {
-					print_xstatus((char)fev.ch, counter);
+				if (counter < MAX_USRI) {
+					print_xstatus((char)fev.ch, startat+counter);
 					out[x] = (char)fev.ch;
-					tb_set_cursor(counter+1,height-2);
+					tb_set_cursor(startat + counter + 1,height-2);
 					counter++;
 					x++;
 				}
@@ -942,9 +951,8 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		}
 	} else if (ev->ch == 'n') {
 		char *user_input;
-		user_input = ecalloc(USRI, sizeof(char));
-		print_error("touch");
-		if (filter(user_input) < 0) {
+		user_input = ecalloc(MAX_USRI, sizeof(char));
+		if (get_user_input(user_input, "new file") < 0) {
 			free(user_input);
 			return;
 		}
@@ -955,9 +963,8 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		free(user_input);
 	} else if (ev->ch == 'N') {
 		char *user_input;
-		user_input = ecalloc(USRI, sizeof(char));
-		print_error("mkdir");
-		if (filter(user_input) < 0) {
+		user_input = ecalloc(MAX_USRI, sizeof(char));
+		if (get_user_input(user_input, "new directory") < 0) {
 			free(user_input);
 			return;
 		}
@@ -968,9 +975,8 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		free(user_input);
 	} else if (ev->ch == '/') {
 		char *user_input;
-		user_input = ecalloc(USRI, sizeof(char));
-		print_error("filter");
-		if (filter(user_input) < 0) {
+		user_input = ecalloc(MAX_USRI, sizeof(char));
+		if (get_user_input(user_input, "filter") < 0) {
 			free(user_input);
 			return;
 		}
