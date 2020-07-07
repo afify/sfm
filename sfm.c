@@ -25,6 +25,9 @@
 #define MAX_N 255
 #define MAX_USRI 32
 
+/* enums */
+enum { AskDel, DAskDel }; /* delete directory */
+
 /* typedef */
 typedef struct {
 	char name[MAX_N];
@@ -77,17 +80,18 @@ static char *get_file_size(off_t);
 static char *get_file_date_time(time_t);
 static char *get_file_userowner(uid_t);
 static char *get_file_groupowner(gid_t);
-static char* get_file_perm(mode_t);
+static char *get_file_perm(mode_t);
 static int create_new_dir(char*, char*);
 static int create_new_file(char*, char*);
+static int delete_ent(char *fullpath);
 static int delete_file(char*);
-static int delete_dir(DIR*, char*, char*);
+static int delete_dir(char*, int);
 static int check_dir(char*);
 static int open_files(char*);
 static int sort_name(const void *const, const void *const);
 static void float_to_string(float, char*);
 static size_t findbm(char);
-static int get_user_input(char*, char*);
+static int get_user_input(char*, size_t, char*);
 static void print_col(Entry*, size_t, size_t, size_t, int, int, char*);
 static size_t scroll(size_t, size_t, size_t);
 static int listdir(Pane*, char*);
@@ -289,7 +293,7 @@ get_parent(char *dir)
 	}
 
 	i = len - counter - 1;
-	if (i == 0 )
+	if (i == 0)
 		i = len - counter;
 	parent = ecalloc(i+1, sizeof(char));
 	strncpy(parent, dir, i);
@@ -417,6 +421,40 @@ get_file_groupowner(gid_t status)
 	return group_owner;
 }
 
+static char *
+get_file_perm(mode_t mode)
+{
+	char *buf;
+	size_t i;
+
+	const char chars[] = "rwxrwxrwx";
+	buf = ecalloc(11, sizeof(char));
+
+	if(S_ISDIR(mode))
+		buf[0] = 'd';
+	else if(S_ISREG(mode))
+		buf[0] = '-';
+	else if(S_ISLNK(mode))
+		buf[0] = 'l';
+	else if(S_ISBLK(mode))
+		buf[0] = 'b';
+	else if(S_ISCHR(mode))
+		buf[0] = 'c';
+	else if(S_ISFIFO(mode))
+		buf[0] = 'p';
+	else if(S_ISSOCK(mode))
+		buf[0] = 's';
+	else
+		buf[0] = '?';
+
+	for (i = 1; i < 10; i++) {
+		buf[i] = (mode & (1 << (9-i))) ? chars[i-1] : '-';
+	}
+	buf[10] = '\0';
+
+	return buf;
+}
+
 static int
 create_new_dir(char *cwd, char *user_input)
 {
@@ -458,84 +496,96 @@ create_new_file(char *cwd, char *user_input)
 }
 
 static int
-delete_dir(DIR *dir, char *base, char* origin)
+delete_ent(char *fullpath)
 {
-	if (dir == NULL)
+	struct stat status;
+	mode_t mode;
+
+	if (lstat(fullpath, &status) < 0)
 		return -1;
 
-	if (rmdir(origin) == 0)
-		return 0;
-
-	if (rmdir(base) == 0) {
-		delete_dir(opendir(origin), origin, origin);
+	mode = status.st_mode;
+	if(S_ISDIR(mode)) {
+		return delete_dir(fullpath, AskDel);
+	} else {
+		return delete_file(fullpath);
 	}
 
-	char path[256];
-	struct dirent *entry;
+}
 
-	while ((entry = readdir(dir)) != NULL) {
-		if ((strcmp(entry->d_name, "..") != 0 && (strcmp(entry->d_name, ".")) != 0)) {
-			switch (entry->d_type) {
-			case DT_REG:
-				strcpy(path, base);
-				strcat(path, "/");
-				strcat(path, entry->d_name);
-				unlink(path);
-				break;
-			case DT_DIR:
-				strcpy(path, base);
-				strcat(path, "/");
-				strcat(path, entry->d_name);
-				delete_dir(opendir(path), path, origin);
-				break;
+static int
+delete_dir(char *fullpath, int delchoice)
+{
+	if (delchoice == AskDel) {
+		char *confirmation;
+		confirmation = ecalloc((size_t)2, sizeof(char));
+		if ((get_user_input(
+			confirmation, 2,"delete directory (Y) ?") < 0) ||
+			(strcmp(confirmation, "Y") != 0)) {
+			free(confirmation);
+			return 1; /* canceled by user or wrong confirmation */
+		}
+		free(confirmation);
+	}
+
+	if (rmdir(fullpath) == 0)
+		return 0; /* empty directory */
+
+	DIR *dir;
+	char *ent_full;
+	mode_t mode;
+	struct dirent *entry;
+	struct stat status;
+
+	dir = opendir(fullpath);
+	if (dir == NULL) {
+		return -1;
+	}
+
+	while ((entry = readdir(dir)) != 0) {
+		if ((strcmp(entry->d_name, ".") == 0  ||
+			strcmp(entry->d_name, "..") == 0))
+			continue;
+
+		ent_full = get_full_path(fullpath, entry->d_name);
+		if (lstat(ent_full, &status) == 0) {
+			mode = status.st_mode;
+			if (S_ISDIR(mode)) {
+				if (delete_dir(ent_full, DAskDel) < 0) {
+					free(ent_full);
+					return -1;
+				}
+			} else if (S_ISREG(mode)) {
+				if (unlink(ent_full) < 0) {
+					free(ent_full);
+					return -1;
+				}
 			}
 		}
+		free(ent_full);
 	}
 
-	return 0;
+	print_status("gotit");
+	if (closedir(dir) < 0)
+		return -1;
+
+	return rmdir(fullpath); /* directory after delete all entries */
 }
 
 static int
 delete_file(char *fullpath)
 {
-	if (unlink(fullpath) < 0)
-		return -1;
+	char *confirmation;
+	confirmation = ecalloc((size_t)2, sizeof(char));
 
-	return 0;
-}
-
-static char*
-get_file_perm(mode_t mode)
-{
-	char *buf;
-	size_t i;
-
-	const char chars[] = "rwxrwxrwx";
-	buf = ecalloc(11, sizeof(char));
-
-	if(S_ISDIR(mode))
-		buf[0] = 'd';
-	else if(S_ISREG(mode))
-		buf[0] = '-';
-	else if(S_ISLNK(mode))
-		buf[0] = 'l';
-	else if(S_ISBLK(mode))
-		buf[0] = 'b';
-	else if(S_ISCHR(mode))
-		buf[0] = 'c';
-	else if(S_ISFIFO(mode))
-		buf[0] = 'p';
-	else if(S_ISSOCK(mode))
-		buf[0] = 's';
-	else
-		buf[0] = '?';
-
-	for (i = 1; i < 10; i++) {
-		buf[i] = (mode & (1 << (9-i))) ? chars[i-1] : '-';
+	if ((get_user_input(confirmation, 2, "delete file (Y) ?") < 0) ||
+		(strcmp(confirmation, "Y") != 0)) {
+		free(confirmation);
+		return 1; /* canceled by user or wrong confirmation */
 	}
-	buf[10] = '\0';
 
-	return buf;
+	free(confirmation);
+	return unlink(fullpath);
 }
 
 static int
@@ -711,12 +761,12 @@ findbm(char event)
 }
 
 static int
-get_user_input(char *out, char *prompt)
+get_user_input(char *out, size_t sout, char *prompt)
 {
 	int height = tb_height();
 	size_t startat;
 	struct tb_event fev;
-	int counter = 1;
+	size_t counter = 1;
 	char empty = ' ';
 	int x = 0;
 
@@ -737,7 +787,7 @@ get_user_input(char *out, char *prompt)
 
 			if (fev.key == TB_KEY_BACKSPACE ||
 				fev.key == TB_KEY_BACKSPACE2) {
-				if (BETWEEN(counter, 2, MAX_USRI)) {
+				if (BETWEEN(counter, 2, sout)) {
 					out[x-1] = '\0';
 					counter--;
 					x--;
@@ -748,11 +798,11 @@ get_user_input(char *out, char *prompt)
 
 			} else if (fev.key == TB_KEY_ENTER) {
 				tb_set_cursor(-1, -1);
-				out[counter] = '\0';
+				out[counter-1] = '\0';
 				return 0;
 
 			} else {
-				if (counter < MAX_USRI) {
+				if (counter < sout) {
 					print_xstatus((char)fev.ch, startat+counter);
 					out[x] = (char)fev.ch;
 					tb_set_cursor(startat + counter + 1,height-2);
@@ -799,7 +849,7 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width, c
 	}
 
 	/* highlight found filter */
-	if (filter != NULL ) {
+	if (filter != NULL) {
 		if (strstr(entry->name, filter) != NULL) {
 			bg = search_b;
 			fg = search_f | TB_BOLD;
@@ -874,7 +924,7 @@ listdir(Pane *cpane, char *filter)
 	list = ecalloc(cpane->dirc, sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
 		if ((strcmp(entry->d_name, ".") == 0  ||
-			strcmp(entry->d_name, "..") == 0 ))
+			strcmp(entry->d_name, "..") == 0))
 			continue;
 
 		strcpy(list[i].name, entry->d_name);
@@ -945,7 +995,6 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 {
 	char *parent;
 	int b;
-	struct stat status;
 // 	clear_error();
 
 	if (ev->ch == 'j') {
@@ -1020,7 +1069,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 	} else if (ev->ch == 'n') {
 		char *user_input;
 		user_input = ecalloc(MAX_USRI, sizeof(char));
-		if (get_user_input(user_input, "new file") < 0) {
+		if (get_user_input(user_input, MAX_USRI, "new file") < 0) {
 			free(user_input);
 			return;
 		}
@@ -1032,7 +1081,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 	} else if (ev->ch == 'N') {
 		char *user_input;
 		user_input = ecalloc(MAX_USRI, sizeof(char));
-		if (get_user_input(user_input, "new directory") < 0) {
+		if (get_user_input(user_input, MAX_USRI, "new directory") < 0) {
 			free(user_input);
 			return;
 		}
@@ -1041,23 +1090,23 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		else
 			listdir(cpane, NULL);
 		free(user_input);
-	} else if (ev->ch == 'd') {
-		lstat(cpane->high_dir, &status);
-		if (get_file_perm(status.st_mode)[0] == 'd') {
-			if (delete_dir(opendir(cpane->high_dir), cpane->high_dir, cpane->high_dir) < 0)
-				print_error("%s", strerror(errno));
-			else 
-				listdir(cpane, NULL);
-		} else {
-			if (delete_file(cpane->high_dir) < 0)
-				print_error("%s", errno);
-			else 
-				listdir(cpane, NULL);
+
+	} else if (ev->ch == 'D') {
+		switch (delete_ent(cpane->high_dir)) {
+		case -1:
+			print_error("%s", strerror(errno));
+			break;
+		case 0:
+			clear_pane(cpane->dirx);
+			if (cpane->hdir == cpane->dirc) /* last entry */
+				cpane->hdir--;
+			listdir(cpane, NULL);
+			break;
 		}
 	} else if (ev->ch == '/') {
 		char *user_input;
 		user_input = ecalloc(MAX_USRI, sizeof(char));
-		if (get_user_input(user_input, "filter") < 0) {
+		if (get_user_input(user_input, MAX_USRI, "filter") < 0) {
 			free(user_input);
 			return;
 		}
