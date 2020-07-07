@@ -77,9 +77,11 @@ static char *get_file_size(off_t);
 static char *get_file_date_time(time_t);
 static char *get_file_userowner(uid_t);
 static char *get_file_groupowner(gid_t);
+static char* get_file_perm(mode_t);
 static int create_new_dir(char*, char*);
 static int create_new_file(char*, char*);
-static void get_file_perm(mode_t, char*);
+static int delete_file(char*);
+static int delete_dir(DIR*, char*, char*);
 static int check_dir(char*);
 static int open_files(char*);
 static int sort_name(const void *const, const void *const);
@@ -298,8 +300,7 @@ get_parent(char *dir)
 static char *
 get_file_info(Entry *cursor)
 {
-	char *size, *result, *ur, *gr, *td;
-	char perm[11];
+	char *size, *result, *ur, *gr, *td, *perm;
 	size_t size_len = (size_t)9;
 	size_t perm_len = (size_t)11;
 	size_t ur_len = (size_t)32;
@@ -312,7 +313,7 @@ get_file_info(Entry *cursor)
 	td = get_file_date_time(cursor->td);
 	ur = get_file_userowner(cursor->user);
 	gr = get_file_groupowner(cursor->group);
-	get_file_perm(cursor->mode, perm);
+	perm = get_file_perm(cursor->mode);
 
 	strncpy(result, perm, perm_len);
 	strcat(result, " ");
@@ -326,6 +327,7 @@ get_file_info(Entry *cursor)
 
 	free(size);
 	free(td);
+	free(perm);
 
 	return result;
 }
@@ -339,7 +341,7 @@ get_file_size(off_t size)
 	int counter;
 	counter = 0;
 
-	Rsize = calloc(10, sizeof(char));
+	Rsize = ecalloc(10, sizeof(char));
 	lsize = size;
 
 	while (lsize >= 1000)
@@ -455,11 +457,61 @@ create_new_file(char *cwd, char *user_input)
 
 }
 
-static void
-get_file_perm(mode_t mode, char *buf)
+static int
+delete_dir(DIR *dir, char *base, char* origin)
 {
-	const char chars[] = "rwxrwxrwx";
+	if (dir == NULL)
+		return -1;
+
+	if (rmdir(origin) == 0)
+		return 0;
+
+	if (rmdir(base) == 0) {
+		delete_dir(opendir(origin), origin, origin);
+	}
+
+	char path[256];
+	struct dirent *entry;
+
+	while ((entry = readdir(dir)) != NULL) {
+		if ((strcmp(entry->d_name, "..") != 0 && (strcmp(entry->d_name, ".")) != 0)) {
+			switch (entry->d_type) {
+			case DT_REG:
+				strcpy(path, base);
+				strcat(path, "/");
+				strcat(path, entry->d_name);
+				unlink(path);
+				break;
+			case DT_DIR:
+				strcpy(path, base);
+				strcat(path, "/");
+				strcat(path, entry->d_name);
+				delete_dir(opendir(path), path, origin);
+				break;
+			}
+		}
+	}
+
+	return 0;
+}
+
+static int
+delete_file(char *fullpath)
+{
+	if (unlink(fullpath) < 0)
+		return -1;
+
+	return 0;
+}
+
+static char*
+get_file_perm(mode_t mode)
+{
+	char *buf;
 	size_t i;
+
+	const char chars[] = "rwxrwxrwx";
+	buf = ecalloc(11, sizeof(char));
 
 	if(S_ISDIR(mode))
 		buf[0] = 'd';
@@ -482,6 +534,8 @@ get_file_perm(mode_t mode, char *buf)
 		buf[i] = (mode & (1 << (9-i))) ? chars[i-1] : '-';
 	}
 	buf[10] = '\0';
+
+	return buf;
 }
 
 static int
@@ -891,6 +945,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 {
 	char *parent;
 	int b;
+	struct stat status;
 // 	clear_error();
 
 	if (ev->ch == 'j') {
@@ -986,6 +1041,19 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		else
 			listdir(cpane, NULL);
 		free(user_input);
+	} else if (ev->ch == 'd') {
+		lstat(cpane->high_dir, &status);
+		if (get_file_perm(status.st_mode)[0] == 'd') {
+			if (delete_dir(opendir(cpane->high_dir), cpane->high_dir, cpane->high_dir) < 0)
+				print_error("%s", strerror(errno));
+			else 
+				listdir(cpane, NULL);
+		} else {
+			if (delete_file(cpane->high_dir) < 0)
+				print_error("%s", errno);
+			else 
+				listdir(cpane, NULL);
+		}
 	} else if (ev->ch == '/') {
 		char *user_input;
 		user_input = ecalloc(MAX_USRI, sizeof(char));
