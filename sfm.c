@@ -1284,7 +1284,7 @@ int
 main(int argc, char *argv[])
 {
 #ifdef __OpenBSD__
-	if (pledge("stdio tty rpath proc exec", NULL) == -1)
+	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath", NULL) == -1)
 		die("pledge");
 #endif /* __OpenBSD__ */
 	if (argc == 1) {
