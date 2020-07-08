@@ -54,6 +54,13 @@ static const size_t move_ud = 10; /* ctrl U, ctrl D movement */
 static const mode_t new_dir_perm = 0755;
 static const char dt_fmt[] = "%d/%m %I:%M%p"; /* date time format */
 
+/* statusbar */
+static const int show_ug     = 1;
+static const int show_perm   = 1;
+static const int show_dt     = 1;
+static const int show_size   = 1;
+static const int show_count  = 1;
+
 /* unicode chars */
 static const uint32_t u_cne = 0x2510;
 static const uint32_t u_cnw = 0x250C;

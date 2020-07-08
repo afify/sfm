@@ -78,8 +78,8 @@ static char *get_parent(char*);
 static char *get_file_info(Entry*);
 static char *get_file_size(off_t);
 static char *get_file_date_time(time_t);
-static char *get_file_userowner(uid_t);
-static char *get_file_groupowner(gid_t);
+static char *get_file_userowner(uid_t, size_t);
+static char *get_file_groupowner(gid_t, size_t);
 static char *get_file_perm(mode_t);
 static int create_new_dir(char*, char*);
 static int create_new_file(char*, char*);
@@ -315,18 +315,24 @@ get_file_info(Entry *cursor)
 
 	size = get_file_size(cursor->size);
 	td = get_file_date_time(cursor->td);
-	ur = get_file_userowner(cursor->user);
-	gr = get_file_groupowner(cursor->group);
 	perm = get_file_perm(cursor->mode);
 
 	strncpy(result, perm, perm_len);
 	strcat(result, " ");
 	strncat(result, size, size_len);
 	strcat(result, " ");
-	strncat(result, ur, ur_len);
-	strcat(result, " ");
-	strncat(result, gr, gr_len);
-	strcat(result, " ");
+
+	if (show_ug == 1) {
+		ur = get_file_userowner(cursor->user, ur_len);
+		gr = get_file_groupowner(cursor->group, gr_len);
+		strncat(result, ur, ur_len);
+		strcat(result, ":");
+		strncat(result, gr, gr_len);
+		strcat(result, " ");
+		free(ur);
+		free(gr);
+	}
+
 	strncat(result, td, td_len);
 
 	free(size);
@@ -398,27 +404,35 @@ get_file_date_time(time_t status)
 }
 
 static char *
-get_file_userowner(uid_t status)
+get_file_userowner(uid_t status, size_t len)
 {
-	char *user_owner;
+	char *result;
 	struct passwd *pw;
 
+	result = ecalloc(len, sizeof(char));
 	pw = getpwuid(status);
-	user_owner = pw->pw_name;
+	if (pw == NULL)
+		(void)snprintf(result, len-1, "%d", (int)status);
+	else
+		strncpy(result, pw->pw_name, len-1);
 
-	return user_owner;
+	return result;
 }
 
 static char *
-get_file_groupowner(gid_t status)
+get_file_groupowner(gid_t status, size_t len)
 {
-	char *group_owner;
+	char *result;
 	struct group *gr;
 
+	result = ecalloc(len, sizeof(char));
 	gr = getgrgid(status);
-	group_owner = gr->gr_name;
+	if (gr == NULL)
+		(void)snprintf(result, len-1, "%d", (int)status);
+	else
+		strncpy(result, gr->gr_name, len-1);
 
-	return group_owner;
+	return result;
 }
 
 static char *
