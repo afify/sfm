@@ -482,23 +482,21 @@ create_new_dir(char *cwd, char *user_input)
 static int
 create_new_file(char *cwd, char *user_input)
 {
+	int rf;
 	char *path;
 	path = ecalloc(strlen(cwd)+strlen(user_input)+2, sizeof(char));
 	strcpy(path, cwd);
 	strcat(path, "/");
 	strcat(path, user_input);
 
-	FILE* file_ptr;
-	file_ptr = fopen(path, "w");
+	rf = open(path, O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
 	free(path);
+	if (rf < 0)
+		return -1;
 
-	if (file_ptr != NULL) {
-		(void)fclose(file_ptr);
-		return 0;
-	}
-
-	return -1;
-
+	if (close(rf) < 0)
+		return -1;
+	return 0;
 }
 
 static int
