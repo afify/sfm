@@ -65,12 +65,12 @@ typedef struct {
 /* function declarations */
 static void print_tb(const char*, int, int, uint16_t, uint16_t);
 static void printf_tb(int, int, uint16_t, uint16_t, const char*, ...);
-static void print_status(const char*, ...);
+static void print_status(uint16_t, uint16_t, const char*, ...);
 static void print_xstatus(char, int);
-static void print_error(const char*, ...);
+static void print_error(char*);
+static void print_prompt(char*);
 static void clear(int, int, int, uint16_t);
 static void clear_status(void);
-static void clear_error(void);
 static void clear_pane(int);
 static char *get_extentions(char*);
 static char *get_full_path(char*, char*);
@@ -129,7 +129,7 @@ printf_tb(int x, int y, uint16_t fg, uint16_t bg, const char *fmt, ...)
 }
 
 static void
-print_status(const char *fmt, ...)
+print_status(uint16_t fg, uint16_t bg, const char *fmt, ...)
 {
 	int height;
 	height = tb_height();
@@ -137,10 +137,10 @@ print_status(const char *fmt, ...)
 	char buf[256];
 	va_list vl;
 	va_start(vl, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, vl);
+	(void)vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
 	clear_status();
-	print_tb(buf, 2, height-2, TB_DEFAULT, status_b);
+	print_tb(buf, 2, height-2, fg, bg);
 
 }
 
@@ -155,20 +155,15 @@ print_xstatus(char c, int x)
 }
 
 static void
-print_error(const char *fmt, ...)
+print_error(char *errmsg)
 {
-	int height, width;
-	width = tb_width();
-	height = tb_height();
+	print_status(serr_f, serr_b, errmsg);
+}
 
-	char buf[256];
-	va_list vl;
-	va_start(vl, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, vl);
-	va_end(vl);
-	clear_error();
-	print_tb(buf, width-20, height-2, 124, status_b);
-
+static void
+print_prompt(char *prompt)
+{
+	print_status(sprompt_f, sprompt_b, prompt);
 }
 
 static void
@@ -190,16 +185,7 @@ clear_status(void)
 	int width, height;
 	width = tb_width();
 	height = tb_height();
-	clear(1, width-20, height-2, status_b);
-}
-
-static void
-clear_error(void)
-{
-	int width, height;
-	width = tb_width();
-	height = tb_height();
-	clear(width-30, width-1, height-2, status_b);
+	clear(1, width-1, height-2, status_b);
 }
 
 static void
@@ -314,14 +300,12 @@ get_file_info(Entry *cursor)
 	size_t result_chars = size_len + perm_len + ur_len + gr_len + td_len;
 	result = ecalloc(result_chars, sizeof(char));
 
-	size = get_file_size(cursor->size);
-	td = get_file_date_time(cursor->td);
-	perm = get_file_perm(cursor->mode);
-
-	strncpy(result, perm, perm_len);
-	strcat(result, " ");
-	strncat(result, size, size_len);
-	strcat(result, " ");
+	if (show_perm == 1) {
+		perm = get_file_perm(cursor->mode);
+		strncpy(result, perm, perm_len);
+		strcat(result, " ");
+		free(perm);
+	}
 
 	if (show_ug == 1) {
 		ur = get_file_userowner(cursor->user, ur_len);
@@ -334,11 +318,18 @@ get_file_info(Entry *cursor)
 		free(gr);
 	}
 
-	strncat(result, td, td_len);
+	if (show_dt == 1) {
+		td = get_file_date_time(cursor->td);
+		strncat(result, td, td_len);
+		strcat(result, " ");
+		free(td);
+	}
 
-	free(size);
-	free(td);
-	free(perm);
+	if (show_size == 1) {
+		size = get_file_size(cursor->size);
+		strncat(result, size, size_len);
+		free(size);
+	}
 
 	return result;
 }
@@ -580,7 +571,7 @@ delete_dir(char *fullpath, int delchoice)
 		free(ent_full);
 	}
 
-	print_status("gotit");
+	print_status(status_f, status_b, "gotit");
 	if (closedir(dir) < 0)
 		return -1;
 
@@ -774,7 +765,7 @@ findbm(char event)
 	for (i = 0; i < LEN(bmarks); i++) {
 		if (event == bmarks[i].key) {
 			if (check_dir(bmarks[i].path) != 0) {
-				print_error("%s", strerror(errno));
+				print_error(strerror(errno));
 				return -1;
 			}
 			return i;
@@ -795,7 +786,7 @@ get_user_input(char *out, size_t sout, char *prompt)
 
 	clear_status();
 	startat = strlen(prompt) + 3;
-	print_status("%s:", prompt);
+	print_prompt(prompt);
 	tb_set_cursor(startat + 1, height-2);
 	tb_present();
 
@@ -997,7 +988,7 @@ listdir(Pane *cpane, char *filter)
 	fileinfo = get_file_info(&list[cpane->hdir-1]);
 
 	/* print info in statusbar */
-	print_status("%lu/%lu %s",
+	print_status(status_f, status_b, "%lu/%lu %s",
 		cpane->hdir,
 		cpane->dirc,
 		fileinfo);
@@ -1011,8 +1002,6 @@ listdir(Pane *cpane, char *filter)
 
 	if (closedir(dir) < 0)
 		return -1;
-
-// 	print_error("mem (%d)", get_memory_usage());
 
 	return 0;
 }
@@ -1037,7 +1026,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 	} else if (ev->ch == 'h') {
 		parent = get_parent(cpane->dirn);
 		if (check_dir(parent) < 0) { /* failed to open directory */
-			print_error("%s", strerror(errno));
+			print_error(strerror(errno));
 		} else {
 			strcpy(cpane->dirn, parent);
 			clear_pane(cpane->dirx);
@@ -1070,7 +1059,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			break;
 		case -1:
 			/* failed to open directory */
-			print_error("%s", strerror(errno));
+			print_error(strerror(errno));
 		}
 	} else if (ev->ch == 'g') {
 		cpane->hdir = 1;
@@ -1101,7 +1090,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			return;
 		}
 		if (create_new_file(cpane->dirn, user_input) < 0)
-			print_error("%s", strerror(errno));
+			print_error(strerror(errno));
 		else
 			listdir(cpane, NULL);
 		free(user_input);
@@ -1113,7 +1102,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			return;
 		}
 		if (create_new_dir(cpane->dirn, user_input) < 0)
-			print_error("%s", strerror(errno));
+			print_error(strerror(errno));
 		else
 			listdir(cpane, NULL);
 		free(user_input);
@@ -1121,7 +1110,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 	} else if (ev->ch == 'D') {
 		switch (delete_ent(cpane->high_dir)) {
 		case -1:
-			print_error("%s", strerror(errno));
+			print_error(strerror(errno));
 			break;
 		case 0:
 			clear_pane(cpane->dirx);
@@ -1137,7 +1126,6 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			free(user_input);
 			return;
 		}
-		print_error("out -> %s", user_input);
 		listdir(cpane, user_input);
 		free(user_input);
 	} else {
