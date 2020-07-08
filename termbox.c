@@ -16,6 +16,8 @@
 
 #include "termbox.h"
 
+static int inputmode = TB_INPUT_ESC;
+
 /* bytebuffer.inl --------------------------------------------------------- */
 
 struct bytebuffer {
@@ -564,7 +566,7 @@ static int parse_escape_seq(struct tb_event *event, const char *buf, int len)
 	return 0;
 }
 
-static bool extract_event(struct tb_event *event, struct bytebuffer *inbuf, int inputmode)
+static bool extract_event(struct tb_event *event, struct bytebuffer *inbuf)
 {
 	const char *buf = inbuf->buf;
 	const int len = inbuf->len;
@@ -597,7 +599,7 @@ static bool extract_event(struct tb_event *event, struct bytebuffer *inbuf, int 
 				// event and redo parsing
 				event->mod = TB_MOD_ALT;
 				bytebuffer_truncate(inbuf, 1);
-				return extract_event(event, inbuf, inputmode);
+				return extract_event(event, inbuf);
 			}
 			assert(!"never got here");
 		}
@@ -655,7 +657,6 @@ static struct bytebuffer input_buffer;
 static int termw = -1;
 static int termh = -1;
 
-static int inputmode = TB_INPUT_ESC;
 static int outputmode = TB_OUTPUT_NORMAL;
 
 static int inout;
@@ -1248,7 +1249,7 @@ static int wait_fill_event(struct tb_event *event, struct timeval *timeout)
 
 	// try to extract event from input buffer, return on success
 	event->type = TB_EVENT_KEY;
-	if (extract_event(event, &input_buffer, inputmode))
+	if (extract_event(event, &input_buffer))
 		return event->type;
 
 	// it looks like input buffer is incomplete, let's try the short path,
@@ -1256,7 +1257,7 @@ static int wait_fill_event(struct tb_event *event, struct timeval *timeout)
 	int n = read_up_to(ENOUGH_DATA_FOR_PARSING);
 	if (n < 0)
 		return -1;
-	if (n > 0 && extract_event(event, &input_buffer, inputmode))
+	if (n > 0 && extract_event(event, &input_buffer))
 		return event->type;
 
 	// n == 0, or not enough data, let's go to select
@@ -1278,7 +1279,7 @@ static int wait_fill_event(struct tb_event *event, struct timeval *timeout)
 			if (n == 0)
 				continue;
 
-			if (extract_event(event, &input_buffer, inputmode))
+			if (extract_event(event, &input_buffer))
 				return event->type;
 		}
 		if (FD_ISSET(winch_fds[0], &events)) {
