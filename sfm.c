@@ -87,6 +87,7 @@ static int delete_ent(char *fullpath);
 static int delete_file(char*);
 static int delete_dir(char*, int);
 static int check_dir(char*);
+static int chech_execf(mode_t mode);
 static int open_files(char*);
 static int sort_name(const void *const, const void *const);
 static void float_to_string(float, char*);
@@ -623,6 +624,14 @@ check_dir(char *path)
 }
 
 static int
+chech_execf(mode_t mode)
+{
+	if (S_ISREG(mode))
+		return ((S_IXUSR | S_IXGRP | S_IXOTH) & mode);
+	return 0;
+}
+
+static int
 open_files(char *filename)
 {
 	// TODO
@@ -855,6 +864,10 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width, c
 		bg = other_b;
 		fg = other_f;
 	}
+
+	/* highlight executable files */
+	if (chech_execf(entry->mode))
+		fg = exec_f;
 
 	/* highlighted (cursor) */
 	if (y + dyn_y == hdir) {
