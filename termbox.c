@@ -77,7 +77,7 @@ static void bytebuffer_resize(struct bytebuffer *b, int len) {
 }
 
 static void bytebuffer_flush(struct bytebuffer *b, int fd) {
-	write(fd, b->buf, b->len);
+	(void)write(fd, b->buf, b->len);
 	bytebuffer_clear(b);
 }
 
@@ -1195,7 +1195,7 @@ static void sigwinch_handler(int xxx)
 {
 	(void) xxx;
 	const int zzz = 1;
-	write(winch_fds[1], &zzz, sizeof(int));
+	(void)write(winch_fds[1], &zzz, sizeof(int));
 }
 
 static void update_size(void)
@@ -1285,7 +1285,7 @@ static int wait_fill_event(struct tb_event *event, struct timeval *timeout)
 		if (FD_ISSET(winch_fds[0], &events)) {
 			event->type = TB_EVENT_RESIZE;
 			int zzz = 0;
-			read(winch_fds[0], &zzz, sizeof(int));
+			(void)read(winch_fds[0], &zzz, sizeof(int));
 			buffer_size_change_request = 1;
 			get_term_size(&event->w, &event->h);
 			return TB_EVENT_RESIZE;

@@ -337,16 +337,17 @@ get_file_info(Entry *cursor)
 static char *
 get_file_size(off_t size)
 {
+
 	/* need to be freed */
 	char *Rsize;
-	double lsize;
+	float lsize;
 	int counter;
 	counter = 0;
 
-	Rsize = ecalloc(10, sizeof(char));
-	lsize = size;
+	Rsize = ecalloc((size_t)10, sizeof(char));
+	lsize = (float)size;
 
-	while (lsize >= 1000)
+	while (lsize >= 1000.0)
 	{
 		lsize /= 1024.0;
 		++counter;
@@ -434,7 +435,7 @@ get_file_perm(mode_t mode)
 	size_t i;
 
 	const char chars[] = "rwxrwxrwx";
-	buf = ecalloc(11, sizeof(char));
+	buf = ecalloc((size_t)11, sizeof(char));
 
 	if(S_ISDIR(mode))
 		buf[0] = 'd';
@@ -510,7 +511,7 @@ delete_ent(char *fullpath)
 
 	mode = status.st_mode;
 	if(S_ISDIR(mode)) {
-		return delete_dir(fullpath, AskDel);
+		return delete_dir(fullpath, (int)AskDel);
 	} else {
 		return delete_file(fullpath);
 	}
@@ -520,11 +521,11 @@ delete_ent(char *fullpath)
 static int
 delete_dir(char *fullpath, int delchoice)
 {
-	if (delchoice == AskDel) {
+	if (delchoice == (int)AskDel) {
 		char *confirmation;
 		confirmation = ecalloc((size_t)2, sizeof(char));
 		if ((get_user_input(
-			confirmation, 2,"delete directory (Y) ?") < 0) ||
+			confirmation, (size_t)2,"delete directory (Y) ?") < 0) ||
 			(strcmp(confirmation, "Y") != 0)) {
 			free(confirmation);
 			return 1; /* canceled by user or wrong confirmation */
@@ -555,7 +556,7 @@ delete_dir(char *fullpath, int delchoice)
 		if (lstat(ent_full, &status) == 0) {
 			mode = status.st_mode;
 			if (S_ISDIR(mode)) {
-				if (delete_dir(ent_full, DAskDel) < 0) {
+				if (delete_dir(ent_full, (int)DAskDel) < 0) {
 					free(ent_full);
 					return -1;
 				}
@@ -582,7 +583,7 @@ delete_file(char *fullpath)
 	char *confirmation;
 	confirmation = ecalloc((size_t)2, sizeof(char));
 
-	if ((get_user_input(confirmation, 2, "delete file (Y) ?") < 0) ||
+	if ((get_user_input(confirmation, (size_t)2, "delete file (Y) ?") < 0) ||
 		(strcmp(confirmation, "Y") != 0)) {
 		free(confirmation);
 		return 1; /* canceled by user or wrong confirmation */
@@ -616,7 +617,7 @@ static int
 chech_execf(mode_t mode)
 {
 	if (S_ISREG(mode))
-		return ((S_IXUSR | S_IXGRP | S_IXOTH) & mode);
+		return ((int)((S_IXUSR | S_IXGRP | S_IXOTH) & mode));
 	return 0;
 }
 
@@ -665,9 +666,9 @@ open_files(char *filename)
 		(void)execvp(filex[0], filex);
 		exit(EXIT_SUCCESS);
 	default:
-		while ((r = waitpid(pid, &status, 0)) == -1 && errno == EINTR)
+		while ((r = waitpid(pid, &status, 0)) == (pid_t)-1 && errno == EINTR)
 			continue;
-		if (r == -1)
+		if (r == (pid_t)-1)
 			return -1;
 		if ((WIFEXITED(status) != 0) && (WEXITSTATUS(status) != 0))
 			return -1;
@@ -764,12 +765,12 @@ findbm(char event)
 		if (event == bmarks[i].key) {
 			if (check_dir(bmarks[i].path) != 0) {
 				print_error(strerror(errno));
-				return -1;
+				return (size_t)-1;
 			}
 			return i;
 		}
 	}
-	return -1;
+	return (size_t)-1;
 }
 
 static int
@@ -778,46 +779,46 @@ get_user_input(char *out, size_t sout, char *prompt)
 	int height = tb_height();
 	size_t startat;
 	struct tb_event fev;
-	size_t counter = 1;
+	size_t counter = (size_t)1;
 	char empty = ' ';
 	int x = 0;
 
 	clear_status();
 	startat = strlen(prompt) + 3;
 	print_prompt(prompt);
-	tb_set_cursor(startat + 1, height-2);
+	tb_set_cursor((int)(startat + 1), height-2);
 	tb_present();
 
 	while (tb_poll_event(&fev) != 0) {
 		switch (fev.type) {
 		case TB_EVENT_KEY:
-			if (fev.key == TB_KEY_ESC) {
+			if (fev.key == (uint16_t)TB_KEY_ESC) {
 				tb_set_cursor(-1, -1);
 				clear_status();
 				return -1;
 			}
 
-			if (fev.key == TB_KEY_BACKSPACE ||
-				fev.key == TB_KEY_BACKSPACE2) {
-				if (BETWEEN(counter, 2, sout)) {
+			if (fev.key == (uint16_t)TB_KEY_BACKSPACE ||
+				fev.key == (uint16_t)TB_KEY_BACKSPACE2) {
+				if (BETWEEN(counter, (size_t)2, sout)) {
 					out[x-1] = '\0';
 					counter--;
 					x--;
 					print_xstatus(empty, startat + counter);
 					tb_set_cursor(
-						startat + counter, height - 2);
+						(int)startat + counter, height - 2);
 				}
 
-			} else if (fev.key == TB_KEY_ENTER) {
+			} else if (fev.key == (uint16_t)TB_KEY_ENTER) {
 				tb_set_cursor(-1, -1);
 				out[counter-1] = '\0';
 				return 0;
 
 			} else {
 				if (counter < sout) {
-					print_xstatus((char)fev.ch, startat+counter);
+					print_xstatus((char)fev.ch, (int)(startat+counter));
 					out[x] = (char)fev.ch;
-					tb_set_cursor(startat + counter + 1,height-2);
+					tb_set_cursor((int)(startat + counter + 1),height-2);
 					counter++;
 					x++;
 				}
@@ -847,7 +848,7 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width, c
 		bg = dir_b;
 		fg = dir_f;
 	} else if (S_ISLNK(entry->mode)) {
-		realpath(entry->full, buf);
+		(void)realpath(entry->full, buf);
 		strcat(entry->name, " -> ");
 		strncat(entry->name, buf, MAX_N - strlen(entry->name)-1);
 		bg = other_b;
@@ -1223,16 +1224,12 @@ draw_frame(void)
 static int
 start(void)
 {
-	int init_height, init_width;
 	struct tb_event ev;
 	Pane pane_r, pane_l;
 	int current_pane = 0;
 
 	if (tb_init()!= 0)
 		die("tb_init");
-
-	init_width = tb_width();
-	init_height = tb_height();
 
 	if (tb_select_output_mode(TB_OUTPUT_256) != TB_OUTPUT_256)
 		(void)tb_select_output_mode(TB_OUTPUT_NORMAL);
