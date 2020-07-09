@@ -1,4 +1,4 @@
-# sfm
+# sfm - simple file manager
 # See LICENSE file for copyright and license details.
 
 include config.mk
@@ -30,7 +30,7 @@ clean:
 dist: clean
 	mkdir -p sfm-${VERSION}
 	cp -R LICENSE Makefile README.md config.def.h config.mk\
-		sfm.1 util.h ${SRC} sfm-${VERSION}
+		sfm.1 sfm.png termbox.h util.h ${SRC} sfm-${VERSION}
 	tar -cf sfm-${VERSION}.tar sfm-${VERSION}
 	gzip sfm-${VERSION}.tar
 	rm -rf sfm-${VERSION}
