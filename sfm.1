@@ -1,11 +1,12 @@
 .TH sfm 1 sfm\-VERSION
 .SH NAME
-sfm \- a simple file manager for unix-like systems
+sfm \- simple file manager
 .SH SYNOPSIS
 .B sfm
 .RB [ \-v ]
 .SH DESCRIPTION
-sfm is a simple file manager based on termbox.
+sfm is a simple file manager for unix-like systems based on termbox.
+dual panes, bottom statusbar, bookmarks, open files by extention, vim-like key bindings as default configuration. current directory is left pane default directory.
 .P
 .SH OPTIONS
 .TP
@@ -26,7 +27,7 @@ down
 up
 .TP
 .B l
-open dir|file
+open dir | file
 .TP
 .B g
 top
@@ -40,6 +41,15 @@ scroll up
 .B ctrl+d
 scroll down
 .TP
+.B n
+create new file if not exists (perm = 600)
+.TP
+.B N
+create new directory if not exists
+.TP
+.B D
+delete file | directory recursively
+.TP
 .B /
 start filter
 .TP
@@ -52,7 +62,16 @@ exit filter
 .B SPACE
 switch pane
 .SH CUSTOMIZATION
-sfm is customized by creating a custom config.h and (re)compiling the source
+sfm is customized by creating a custom
+.IR config.h
+and (re)compiling the source
 code. This keeps it fast, secure and simple.
+.SH ENVIRONMENT
+.TP
+.B EDITOR
+used to open any file with unconfigured extention. use vi(1) if not set.
+.TP
+.B HOME
+right pane default directory, go to / if not set.
 .SH AUTHORS
 Hassan Afify <hassan at afify dot dev>
