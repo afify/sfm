@@ -77,6 +77,7 @@ static char *get_full_path(char*, char*);
 static char *get_parent(char*);
 static char *get_file_info(Entry*);
 static char *get_file_size(off_t);
+static void get_dir_size(char*, size_t*);
 static char *get_file_date_time(time_t);
 static char *get_file_userowner(uid_t, size_t);
 static char *get_file_groupowner(gid_t, size_t);
@@ -292,6 +293,7 @@ static char *
 get_file_info(Entry *cursor)
 {
 	char *size, *result, *ur, *gr, *td, *perm;
+	size_t *lsize;
 	size_t size_len = (size_t)9;
 	size_t perm_len = (size_t)11;
 	size_t ur_len = (size_t)32;
@@ -299,8 +301,10 @@ get_file_info(Entry *cursor)
 	size_t td_len = (size_t)14;
 	size_t result_chars = size_len + perm_len + ur_len + gr_len + td_len;
 	result = ecalloc(result_chars, sizeof(char));
+	lsize = ecalloc(40, sizeof(size_t));
 
-	if (show_perm == 1) {
+	if (show_perm == 1)
+	{
 		perm = get_file_perm(cursor->mode);
 		strncpy(result, perm, perm_len);
 		strcat(result, " ");
@@ -318,20 +322,68 @@ get_file_info(Entry *cursor)
 		free(gr);
 	}
 
-	if (show_dt == 1) {
+	if (show_dt == 1)
+	{
 		td = get_file_date_time(cursor->td);
 		strncat(result, td, td_len);
 		strcat(result, " ");
 		free(td);
 	}
 
-	if (show_size == 1) {
-		size = get_file_size(cursor->size);
+	if (show_size == 1)
+	{
+		if (S_ISDIR(cursor->mode)) {
+			get_dir_size(cursor->full, lsize);
+			size = get_file_size(*lsize);
+		} else {
+			size = get_file_size(cursor->size);
+		}
+
 		strncat(result, size, size_len);
 		free(size);
 	}
 
+	free(lsize);
+	
 	return result;
+}
+
+static void
+get_dir_size(char *fullpath, size_t *fullsize)
+{
+	DIR *dir;
+	char *ent_full;
+	mode_t mode;
+	struct dirent *entry;
+	struct stat status;
+
+	dir = opendir(fullpath);
+	if (dir == NULL)
+	{
+		return;
+	}
+
+	while ((entry = readdir(dir)) != 0)
+	{
+		if ((strcmp(entry->d_name, ".") == 0 ||
+		     strcmp(entry->d_name, "..") == 0))
+			continue;
+
+		ent_full = get_full_path(fullpath, entry->d_name);
+		if (lstat(ent_full, &status) == 0) {
+			mode = status.st_mode;
+			if (S_ISDIR(mode)) {
+				get_dir_size(ent_full, fullsize);
+				free(ent_full);
+			} else {
+
+				*fullsize += status.st_size;
+				free(ent_full);
+			}
+		}
+	}
+
+	closedir(dir);
 }
 
 static char *
@@ -361,16 +413,16 @@ get_file_size(off_t size)
 		strcat(Rsize, "B");
 		break;
 	case 1:
-		strcat(Rsize, "KB");
+		strcat(Rsize, "K");
 		break;
 	case 2:
-		strcat(Rsize, "MB");
+		strcat(Rsize, "M");
 		break;
 	case 3:
-		strcat(Rsize, "GB");
+		strcat(Rsize, "G");
 		break;
 	case 4:
-		strcat(Rsize, "TB");
+		strcat(Rsize, "T");
 		break;
 	}
 
