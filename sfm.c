@@ -2,28 +2,40 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <time.h>
-#include <pwd.h>
-#include <grp.h>
+#include <unistd.h>
+
+#ifdef __linux__
+#include <sys/inotify.h>
+#define INOTIFY
+#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \
+defined(__APPLE__)
+#define KQUEUE
+#include <sys/event.h>
+#endif /* filesystem events */
 
 #include "termbox.h"
 #include "util.h"
 
 /* macros */
-#define MAX_P 4095
-#define MAX_N 255
-#define MAX_USRI 32
+#define MAX_P       4095
+#define MAX_N       255
+#define MAX_USRI    32
+#define EVENTS      32
+#define EV_BUF_LEN  (EVENTS * (sizeof(struct inotify_event) + MAX_N + 1))
 
 /* enums */
 enum { AskDel, DAskDel }; /* delete directory */
@@ -43,6 +55,7 @@ typedef struct {
 	char dirn[MAX_P];     // directory name
 	char high_dir[MAX_P]; // highlighted_dir fullpath
 	int dirx;             // position of title
+	Entry *direntr;
 	size_t hdir;          // highlighted_dir
 	size_t dirc;          // total files in dir
 	uint16_t dir_bg;
@@ -88,16 +101,20 @@ static int delete_ent(char *fullpath);
 static int delete_file(char*);
 static int delete_dir(char*, int);
 static int check_dir(char*);
-static int chech_execf(mode_t mode);
+static mode_t chech_execf(mode_t mode);
 static int open_files(char*);
 static int sort_name(const void *const, const void *const);
 static void float_to_string(float, char*);
 static size_t findbm(char);
 static int get_user_input(char*, size_t, char*);
-static void print_col(Entry*, size_t, size_t, size_t, int, int, char*);
+static void print_col(Entry*, size_t, size_t, size_t, int, int);
 static size_t scroll(size_t, size_t, size_t);
+static void start_ev(Pane*, Pane*);
+static void handel_press(struct tb_event*, Pane*);
+static void outdir_press(struct tb_event*, Pane*);
+static void indir_press(struct tb_event*, Pane*);
+static void refresh_pane(Pane*);
 static int listdir(Pane*, char*);
-static void press(struct tb_event*, Pane*, Pane*);
 static void t_resize(Pane*, Pane*);
 static int set_panes(Pane*, Pane*, int);
 static void draw_frame(void);
@@ -105,6 +122,9 @@ static int start(void);
 
 /* global variables */
 static int parent_row = 1; // FIX
+static int current_pane = 0;
+static const uint32_t INOTIFY_MASK = IN_CREATE | IN_DELETE | IN_DELETE_SELF \
+	| IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO;
 
 /* function implementations */
 static void
@@ -330,21 +350,13 @@ get_file_info(Entry *cursor)
 		free(td);
 	}
 
-	if (show_size == 1)
-	{
-		if (S_ISDIR(cursor->mode)) {
-			get_dir_size(cursor->full, lsize);
-			size = get_file_size(*lsize);
-		} else {
-			size = get_file_size(cursor->size);
-		}
-
+	if (show_size == 1 && S_ISREG(cursor->mode)) {
+		size = get_file_size(cursor->size);
 		strncat(result, size, size_len);
 		free(size);
 	}
 
 	free(lsize);
-	
 	return result;
 }
 
@@ -665,11 +677,11 @@ check_dir(char *path)
 	return 0;
 }
 
-static int
+static mode_t
 chech_execf(mode_t mode)
 {
 	if (S_ISREG(mode))
-		return ((int)((S_IXUSR | S_IXGRP | S_IXOTH) & mode));
+		return (((S_IXUSR | S_IXGRP | S_IXOTH) & mode));
 	return 0;
 }
 
@@ -889,26 +901,31 @@ get_user_input(char *out, size_t sout, char *prompt)
 }
 
 static void
-print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width, char *filter)
+print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width)
 {
 	uint16_t bg, fg;
 	char buf[MAX_P];
+	char lnk_full[MAX_P];
+	char *result;
+
 	bg = file_b;
 	fg = file_f;
 
+	result = entry->name;
 	if (S_ISDIR(entry->mode)) {
 		bg = dir_b;
 		fg = dir_f;
-	} else if (S_ISLNK(entry->mode)) {
-		(void)realpath(entry->full, buf);
-		strcat(entry->name, " -> ");
-		strncat(entry->name, buf, MAX_N - strlen(entry->name)-1);
+	} else if (S_ISLNK(entry->mode) && realpath(entry->full, buf) != NULL) {
+		strncpy(lnk_full, entry->name, MAX_N);
+		strcat(lnk_full, " -> ");
+		strncat(lnk_full, buf, MAX_N);
 		bg = other_b;
 		fg = other_f;
+		result = lnk_full;
 	}
 
 	/* highlight executable files */
-	if (chech_execf(entry->mode))
+	if (chech_execf(entry->mode) > 0)
 		fg = exec_f;
 
 	/* highlighted (cursor) */
@@ -917,16 +934,8 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width, c
 		fg = fg | TB_REVERSE | TB_BOLD;
 	}
 
-	/* highlight found filter */
-	if (filter != NULL) {
-		if (strstr(entry->name, filter) != NULL) {
-			bg = search_b;
-			fg = search_f | TB_BOLD;
-		}
-	}
-
 	/* print each element in directory */
-	printf_tb((int)x, (int)y, fg, bg, "%*.*s", ~width, width, entry->name);
+	printf_tb((int)x, (int)y, fg, bg, "%*.*s", ~width, width, result);
 
 }
 
@@ -949,136 +958,75 @@ scroll(size_t height, size_t dirc, size_t hdir)
 	return result;
 }
 
-static int
-listdir(Pane *cpane, char *filter)
+static void
+start_ev(Pane *cpane, Pane *opane)
 {
-	DIR *dir;
-	struct dirent *entry;
-	struct stat status;
-	Entry *list;
-	char *fullpath;
-	char *fileinfo;
-	int width;
-	size_t y, i, height, dyn_max, dyn_y, start_from;
+	struct tb_event ev;
 
-	height = (size_t)tb_height() - 2;
-	width = (tb_width() / 2) - 4;
-	cpane->dirc = - 2; /* dont't count . .. */
-	i = 0;
+	while (tb_poll_event(&ev) != 0) {
+		switch (ev.type) {
+		case TB_EVENT_KEY:
+			if (ev.ch == 'q') {
+				free(cpane->direntr);
+				free(opane->direntr);
+				tb_shutdown();
+				exit(EXIT_SUCCESS);
+			}
 
-	dir = opendir(cpane->dirn);
-	if (dir == NULL)
-		return -1;
+// 			if (ev.key == TB_KEY_SPACE) {
+// 				current_pane = !current_pane;
+// 			}
 
-	/* get content sum */
-	while ((entry = readdir(dir)) != 0) {
-		cpane->dirc++;
-	}
+// 			if (current_pane == 0) {
+// 				cpane = cpane;
+// 				press(&ev, &pane_l, &pane_r);
 
-	/* empty directory */
-	if (cpane->dirc == 0) {
-		if (closedir(dir) < 0)
-			return -1;
+// 			} else if (current_pane == 1) {
+// 				cpane = opane;
+// 				press(&ev, &pane_r, &pane_l);
+// 			}
 
-		/* print current directory title */
-		printf_tb(cpane->dirx, 0, cpane->dir_fg | TB_BOLD,
-			cpane->dir_bg, " %.*s ", width, cpane->dirn);
-		return 0;
-	}
+			handel_press(&ev, cpane);
+			tb_present();
+			break;
 
-	rewinddir(dir); /* reset position */
+		case TB_EVENT_RESIZE:
+			t_resize(cpane, opane);
+			break;
 
-	/* create array of entries */
-	i = 0;
-	list = ecalloc(cpane->dirc, sizeof(Entry));
-	while ((entry = readdir(dir)) != 0) {
-		if ((strcmp(entry->d_name, ".") == 0  ||
-			strcmp(entry->d_name, "..") == 0))
-			continue;
-
-		strcpy(list[i].name, entry->d_name);
-		fullpath = get_full_path(cpane->dirn, entry->d_name);
-		strcpy(list[i].full, fullpath);
-
-		if (lstat(fullpath, &status) == 0) {
-			list[i].size = status.st_size;
-			list[i].mode = status.st_mode;
-			list[i].group = status.st_gid;
-			list[i].user = status.st_uid;
-			list[i].td = status.st_mtime;
+		default:
+			break;
 		}
-
-		free(fullpath);
-
-		i++;
 	}
 
-	qsort(list, cpane->dirc, sizeof(Entry), sort_name);
+	tb_shutdown();
 
-	/* scroll */
-	y = 1;
-	dyn_y = 0;
-	start_from = scroll(height, cpane->dirc, cpane->hdir);
-	dyn_y = start_from;
-	dyn_max = MIN(cpane->dirc, (height - 1) + start_from);
-
-	/* get full path of cursor */
-	fullpath = get_full_path(cpane->dirn,
-			list[cpane->hdir-1].name);
-	strncpy(cpane->high_dir, fullpath, (size_t)MAX_P);
-	free(fullpath);
-
-	/* print each entry in directory */
-	while (start_from < dyn_max) {
-		print_col(&list[start_from], cpane->hdir,
-			(size_t)cpane->dirx, y, (int)dyn_y, width, filter);
-			start_from++;
-			y++;
-	}
-
-	fileinfo = get_file_info(&list[cpane->hdir-1]);
-
-	/* print info in statusbar */
-	print_status(status_f, status_b, "%lu/%lu %s",
-		cpane->hdir,
-		cpane->dirc,
-		fileinfo);
-
-	/* print current directory title */
-	printf_tb(cpane->dirx, 0, cpane->dir_fg | TB_BOLD, cpane->dir_bg,
-		" %.*s ", width, cpane->dirn);
-
-	free(fileinfo);
-	free(list);
-
-	if (closedir(dir) < 0)
-		return -1;
-
-	return 0;
 }
 
 static void
-press(struct tb_event *ev, Pane *cpane, Pane *opane)
+handel_press(struct tb_event *ev, Pane *cpane)
+{
+	/* key require change directory */
+	if (ev->ch == 'h' || ev->ch == 'l' || ev->ch == '/' ) { // TODO bookmarks
+		outdir_press(ev, cpane);
+
+	} else { /* stay in same directory */
+		indir_press(ev, cpane);
+	}
+}
+
+static void
+outdir_press(struct tb_event *ev, Pane *cpane)
 {
 	char *parent;
 	int b;
-// 	clear_error();
 
-	if (ev->ch == 'j') {
-		if (cpane->hdir < cpane->dirc) {
-			cpane->hdir++;
-			(void)listdir(cpane, NULL);
-		}
-	} else if (ev->ch == 'k') {
-		if (cpane->hdir > 1) {
-			cpane->hdir--;
-			(void)listdir(cpane, NULL);
-		}
-	} else if (ev->ch == 'h') {
+	if (ev->ch == 'h') {
 		parent = get_parent(cpane->dirn);
 		if (check_dir(parent) < 0) { /* failed to open directory */
 			print_error(strerror(errno));
 		} else {
+			free(cpane->direntr);
 			strcpy(cpane->dirn, parent);
 			clear_pane(cpane->dirx);
 			cpane->hdir = (size_t)parent_row;
@@ -1089,6 +1037,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 	} else if (ev->ch == 'l') {
 		switch (check_dir(cpane->high_dir)) {
 		case 0:
+			free(cpane->direntr);
 			strcpy(cpane->dirn, cpane->high_dir);
 			clear_pane(cpane->dirx);
 			parent_row = (int)cpane->hdir;
@@ -1103,36 +1052,73 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			}
 			if (tb_init() != 0)
 				die("tb_init");
-			if (cpane->dirx == 2) /* if current left pane */
-				t_resize(cpane, opane);
-			else
-				t_resize(opane, cpane);
+// 			if (cpane->dirx == 2) /* if current left pane */
+// 				t_resize(cpane, opane);
+// 			else
+// 				t_resize(opane, cpane);
 			break;
 		case -1:
 			/* failed to open directory */
 			print_error(strerror(errno));
 		}
+	} else if (ev->ch == '/') {
+		char *user_input;
+		user_input = ecalloc(MAX_USRI, sizeof(char));
+		if (get_user_input(user_input, MAX_USRI, "filter") < 0) {
+			free(user_input);
+			return;
+		}
+		if (listdir(cpane, user_input) < 0) {
+			indir_press(ev, cpane);
+			print_error("no match");
+		}
+		free(user_input);
+	} else {
+		/* bookmarks */
+		b = (int)findbm((char)ev->ch);
+		if (b < 0)
+			return;
+		strcpy(cpane->dirn, bmarks[b].path);
+		clear_pane(cpane->dirx);
+		cpane->hdir = 1;
+		listdir(cpane, NULL);
+	}
+}
+
+static void
+indir_press(struct tb_event *ev, Pane *cpane)
+{
+	if (ev->ch == 'j') {
+		if (cpane->hdir < cpane->dirc) {
+			cpane->hdir++;
+			refresh_pane(cpane);
+		}
+	} else if (ev->ch == 'k') {
+		if (cpane->hdir > 1) {
+			cpane->hdir--;
+			refresh_pane(cpane);
+		}
 	} else if (ev->ch == 'g') {
 		cpane->hdir = 1;
-		(void)listdir(cpane, NULL);
+		refresh_pane(cpane);
 	} else if (ev->ch == 'G') {
 		cpane->hdir = cpane->dirc;
-		(void)listdir(cpane, NULL);
+		refresh_pane(cpane);
 	} else if (ev->ch == 'M') {
 		cpane->hdir = (cpane->dirc/2);
-		(void)listdir(cpane, NULL);
+		refresh_pane(cpane);
 	} else if (ev->key == TB_KEY_CTRL_U) {
 		if (cpane->hdir > move_ud)
 			cpane->hdir = cpane->hdir - move_ud;
 		else
 			cpane->hdir = 1;
-		(void)listdir(cpane, NULL);
+		refresh_pane(cpane);
 	} else if (ev->key == TB_KEY_CTRL_D) {
 		if (cpane->hdir < cpane->dirc - move_ud)
 			cpane->hdir = cpane->hdir + move_ud;
 		else
 			cpane->hdir = cpane->dirc;
-		(void)listdir(cpane, NULL);
+		refresh_pane(cpane);
 	} else if (ev->ch == 'n') {
 		char *user_input;
 		user_input = ecalloc(MAX_USRI, sizeof(char));
@@ -1143,7 +1129,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		if (create_new_file(cpane->dirn, user_input) < 0)
 			print_error(strerror(errno));
 		else
-			listdir(cpane, NULL);
+			refresh_pane(cpane);
 		free(user_input);
 	} else if (ev->ch == 'N') {
 		char *user_input;
@@ -1155,7 +1141,7 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 		if (create_new_dir(cpane->dirn, user_input) < 0)
 			print_error(strerror(errno));
 		else
-			listdir(cpane, NULL);
+			refresh_pane(cpane);
 		free(user_input);
 
 	} else if (ev->ch == 'D') {
@@ -1167,30 +1153,168 @@ press(struct tb_event *ev, Pane *cpane, Pane *opane)
 			clear_pane(cpane->dirx);
 			if (cpane->hdir == cpane->dirc) /* last entry */
 				cpane->hdir--;
-			listdir(cpane, NULL);
+			refresh_pane(cpane);
 			break;
 		}
-	} else if (ev->ch == '/') {
-		char *user_input;
-		user_input = ecalloc(MAX_USRI, sizeof(char));
-		if (get_user_input(user_input, MAX_USRI, "filter") < 0) {
-			free(user_input);
-			return;
-		}
-		listdir(cpane, user_input);
-		free(user_input);
-	} else {
-		/* bookmarks */
-		b = (int)findbm((char)ev->ch);
-		if (b < 0)
-			return;
-
-		strcpy(cpane->dirn, bmarks[b].path);
-		clear_pane(cpane->dirx);
-		cpane->hdir = 1;
-		(void)listdir(cpane, NULL);
 	}
 
+}
+
+static void
+refresh_pane(Pane *cpane)
+{
+
+	char *fileinfo;
+	char *fullpath;
+	size_t y, dyn_y, dyn_max, start_from;
+	int width;
+	width = (tb_width() / 2) - 4;
+	size_t height = (size_t)tb_height() - 2;
+
+	/* scroll */
+	y = 1;
+	dyn_y = 0;
+	start_from = scroll(height, cpane->dirc, cpane->hdir);
+	dyn_y = start_from;
+	dyn_max = MIN(cpane->dirc, (height - 1) + start_from);
+
+	/* get full path of cursor */
+	fullpath = get_full_path(cpane->dirn,
+			cpane->direntr[cpane->hdir-1].name);
+	strncpy(cpane->high_dir, fullpath, (size_t)MAX_P);
+	free(fullpath);
+
+	/* print each entry in directory */
+	while (start_from < dyn_max) {
+		print_col(&cpane->direntr[start_from], cpane->hdir,
+			(size_t)cpane->dirx, y, (int)dyn_y, width);
+			start_from++;
+			y++;
+	}
+
+	fileinfo = get_file_info(&cpane->direntr[cpane->hdir-1]);
+
+	/* print info in statusbar */
+	print_status(status_f, status_b, "%lu/%lu %s",
+		cpane->hdir,
+		cpane->dirc,
+		fileinfo);
+
+	free(fileinfo);
+}
+
+static int
+listdir(Pane *cpane, char *filter)
+{
+	DIR *dir;
+	struct dirent *entry;
+	struct stat status;
+	char *fullpath;
+	int width;
+	size_t i, height;
+	int filtercount = 0;
+	int oldc = cpane->dirc;
+
+	height = (size_t)tb_height() - 2;
+	width = (tb_width() / 2) - 4;
+	cpane->dirc = 0;
+	i = 0;
+
+	dir = opendir(cpane->dirn);
+	if (dir == NULL)
+		return -1;
+
+	/* get content and filter sum */
+	while ((entry = readdir(dir)) != 0) {
+		if (filter != NULL) {
+			if (strstr(entry->d_name, filter) != NULL)
+				filtercount++;
+		} else { /* no filter */
+			cpane->dirc++;
+		}
+	}
+
+	if (filter == NULL)
+		cpane->dirc -=2;
+
+	if (filter != NULL) {
+		if (filtercount > 0) {
+			cpane->dirc = filtercount;
+			free(cpane->direntr);
+			clear_pane(cpane->dirx);
+			cpane->hdir = 1;
+		} else if (filtercount == 0) {
+			if (closedir(dir) < 0)
+				return -1;
+			cpane->dirc = oldc;
+			return -1;
+		}
+	}
+
+	/* print current directory title */
+	printf_tb(cpane->dirx, 0, cpane->dir_fg | TB_BOLD, cpane->dir_bg,
+		" %.*s ", width, cpane->dirn);
+
+	/* empty directory */
+	if (cpane->dirc == 0) {
+		if (closedir(dir) < 0)
+			return -1;
+		return 0;
+	}
+
+	rewinddir(dir); /* reset position */
+
+	/* create array of entries */
+	i = 0;
+	cpane->direntr = ecalloc(cpane->dirc, sizeof(Entry));
+	while ((entry = readdir(dir)) != 0) {
+		if ((strcmp(entry->d_name, ".") == 0  ||
+			strcmp(entry->d_name, "..") == 0))
+			continue;
+
+		/* list found filter */
+		if (filter != NULL) {
+			if (strstr(entry->d_name, filter) != NULL) {
+				strcpy(cpane->direntr[i].name, entry->d_name);
+				fullpath = get_full_path(cpane->dirn, entry->d_name);
+				strcpy(cpane->direntr[i].full, fullpath);
+
+				if (lstat(fullpath, &status) == 0) {
+					cpane->direntr[i].size = status.st_size;
+					cpane->direntr[i].mode = status.st_mode;
+					cpane->direntr[i].group = status.st_gid;
+					cpane->direntr[i].user = status.st_uid;
+					cpane->direntr[i].td = status.st_mtime;
+				}
+				free(fullpath);
+				i++;
+			}
+
+		} else {
+
+		strcpy(cpane->direntr[i].name, entry->d_name);
+		fullpath = get_full_path(cpane->dirn, entry->d_name);
+		strcpy(cpane->direntr[i].full, fullpath);
+
+		if (lstat(fullpath, &status) == 0) {
+			cpane->direntr[i].size = status.st_size;
+			cpane->direntr[i].mode = status.st_mode;
+			cpane->direntr[i].group = status.st_gid;
+			cpane->direntr[i].user = status.st_uid;
+			cpane->direntr[i].td = status.st_mtime;
+		}
+		free(fullpath);
+		i++;
+		}
+	}
+
+	cpane->dirc = i;
+	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
+	refresh_pane(cpane);
+
+	if (closedir(dir) < 0)
+		return -1;
+	return 0;
 }
 
 static void
@@ -1276,54 +1400,21 @@ draw_frame(void)
 static int
 start(void)
 {
-	struct tb_event ev;
 	Pane pane_r, pane_l;
-	int current_pane = 0;
 
 	if (tb_init()!= 0)
 		die("tb_init");
-
 	if (tb_select_output_mode(TB_OUTPUT_256) != TB_OUTPUT_256)
-		(void)tb_select_output_mode(TB_OUTPUT_NORMAL);
+		if(tb_select_output_mode(TB_OUTPUT_NORMAL) != TB_OUTPUT_NORMAL)
+			die("output error");
 
 	tb_clear();
 	draw_frame();
-	(void)set_panes(&pane_l, &pane_r, 0);
-	(void)listdir(&pane_r, NULL);
-	(void)listdir(&pane_l, NULL);
+	set_panes(&pane_l, &pane_r, 0);
+	listdir(&pane_r, NULL);
+	listdir(&pane_l, NULL);
 	tb_present();
-
-	while (tb_poll_event(&ev) != 0) {
-		switch (ev.type) {
-		case TB_EVENT_KEY:
-
-			if (ev.ch == 'q') {
-				tb_shutdown();
-				return 0;
-			} else if (ev.key == TB_KEY_SPACE) {
-				current_pane = !current_pane;
-			}
-
-			if (current_pane == 0) {
-				press(&ev, &pane_l, &pane_r);
-
-			} else if (current_pane == 1) {
-				press(&ev, &pane_r, &pane_l);
-			}
-
-			tb_present();
-			break;
-
-		case TB_EVENT_RESIZE:
-			t_resize(&pane_l, &pane_r);
-			break;
-
-		default:
-			break;
-		}
-	}
-
-	tb_shutdown();
+	start_ev(&pane_l, &pane_r);
 	return 0;
 }
 
