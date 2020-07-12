@@ -105,7 +105,7 @@ static mode_t chech_execf(mode_t mode);
 static int open_files(char*);
 static int sort_name(const void *const, const void *const);
 static void float_to_string(float, char*);
-static size_t findbm(char);
+static ssize_t findbm(char);
 static int get_user_input(char*, size_t, char*);
 static void print_col(Entry*, size_t, size_t, size_t, int, int);
 static size_t scroll(size_t, size_t, size_t);
@@ -122,7 +122,6 @@ static int start(void);
 
 /* global variables */
 static int parent_row = 1; // FIX
-static int current_pane = 0;
 static const uint32_t INOTIFY_MASK = IN_CREATE | IN_DELETE | IN_DELETE_SELF \
 	| IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO;
 
@@ -378,7 +377,7 @@ get_dir_size(char *fullpath, size_t *fullsize)
 	while ((entry = readdir(dir)) != 0)
 	{
 		if ((strcmp(entry->d_name, ".") == 0 ||
-		     strcmp(entry->d_name, "..") == 0))
+		strcmp(entry->d_name, "..") == 0))
 			continue;
 
 		ent_full = get_full_path(fullpath, entry->d_name);
@@ -820,21 +819,21 @@ float_to_string(float f, char *r)
 	}
 }
 
-static size_t
+static ssize_t
 findbm(char event)
 {
-	size_t i;
+	ssize_t i;
 
-	for (i = 0; i < LEN(bmarks); i++) {
+	for (i = 0; i < (ssize_t)LEN(bmarks); i++) {
 		if (event == bmarks[i].key) {
 			if (check_dir(bmarks[i].path) != 0) {
 				print_error(strerror(errno));
-				return (size_t)-1;
+				return -1;
 			}
 			return i;
 		}
 	}
-	return (size_t)-1;
+	return -1;
 }
 
 static int
@@ -959,60 +958,52 @@ scroll(size_t height, size_t dirc, size_t hdir)
 }
 
 static void
-start_ev(Pane *cpane, Pane *opane)
+start_ev(Pane *pane_l, Pane *pane_r)
 {
 	struct tb_event ev;
+	int current_pane = 0;
 
 	while (tb_poll_event(&ev) != 0) {
 		switch (ev.type) {
 		case TB_EVENT_KEY:
 			if (ev.ch == 'q') {
-				free(cpane->direntr);
-				free(opane->direntr);
+				free(pane_l->direntr);
+				free(pane_r->direntr);
 				tb_shutdown();
 				exit(EXIT_SUCCESS);
 			}
 
-// 			if (ev.key == TB_KEY_SPACE) {
-// 				current_pane = !current_pane;
-// 			}
+			if (ev.key == TB_KEY_SPACE)
+				current_pane = !current_pane;
 
-// 			if (current_pane == 0) {
-// 				cpane = cpane;
-// 				press(&ev, &pane_l, &pane_r);
+			if (current_pane == 0)
+				handel_press(&ev, pane_l);
+			else if (current_pane == 1)
+				handel_press(&ev, pane_r);
 
-// 			} else if (current_pane == 1) {
-// 				cpane = opane;
-// 				press(&ev, &pane_r, &pane_l);
-// 			}
-
-			handel_press(&ev, cpane);
 			tb_present();
 			break;
 
 		case TB_EVENT_RESIZE:
-			t_resize(cpane, opane);
+			t_resize(pane_l, pane_r);
 			break;
-
 		default:
 			break;
 		}
 	}
-
 	tb_shutdown();
-
 }
 
 static void
 handel_press(struct tb_event *ev, Pane *cpane)
 {
-	/* key require change directory */
-	if (ev->ch == 'h' || ev->ch == 'l' || ev->ch == '/' ) { // TODO bookmarks
-		outdir_press(ev, cpane);
+	/* key require change directory or relist*/
+	char listkeys[] = "hlnND/";
 
-	} else { /* stay in same directory */
+	if (strchr(listkeys, ev->ch) != NULL || !(findbm(ev->ch) < 0))
+		outdir_press(ev, cpane);
+	else /* stay in same directory */
 		indir_press(ev, cpane);
-	}
 }
 
 static void
@@ -1026,10 +1017,10 @@ outdir_press(struct tb_event *ev, Pane *cpane)
 		if (check_dir(parent) < 0) { /* failed to open directory */
 			print_error(strerror(errno));
 		} else {
-			free(cpane->direntr);
 			strcpy(cpane->dirn, parent);
 			clear_pane(cpane->dirx);
 			cpane->hdir = (size_t)parent_row;
+			free(cpane->direntr);
 			(void)listdir(cpane, NULL);
 			parent_row = 1;
 		}
@@ -1037,11 +1028,11 @@ outdir_press(struct tb_event *ev, Pane *cpane)
 	} else if (ev->ch == 'l') {
 		switch (check_dir(cpane->high_dir)) {
 		case 0:
-			free(cpane->direntr);
 			strcpy(cpane->dirn, cpane->high_dir);
 			clear_pane(cpane->dirx);
 			parent_row = (int)cpane->hdir;
 			cpane->hdir = 1;
+			free(cpane->direntr);
 			(void)listdir(cpane, NULL);
 			break;
 		case 1:
@@ -1073,6 +1064,48 @@ outdir_press(struct tb_event *ev, Pane *cpane)
 			print_error("no match");
 		}
 		free(user_input);
+	} else if (ev->ch == 'n') {
+		char *user_input;
+		user_input = ecalloc(MAX_USRI, sizeof(char));
+		if (get_user_input(user_input, MAX_USRI, "new file") < 0) {
+			free(user_input);
+			return;
+		}
+		if (create_new_file(cpane->dirn, user_input) < 0) {
+			print_error(strerror(errno));
+		} else {
+			free(cpane->direntr);
+			listdir(cpane, NULL);
+		}
+		free(user_input);
+	} else if (ev->ch == 'N') {
+		char *user_input;
+		user_input = ecalloc(MAX_USRI, sizeof(char));
+		if (get_user_input(user_input, MAX_USRI, "new directory") < 0) {
+			free(user_input);
+			return;
+		}
+		if (create_new_dir(cpane->dirn, user_input) < 0) {
+			print_error(strerror(errno));
+		} else {
+			free(cpane->direntr);
+			listdir(cpane, NULL);
+		}
+		free(user_input);
+
+	} else if (ev->ch == 'D') {
+		switch (delete_ent(cpane->high_dir)) {
+		case -1:
+			print_error(strerror(errno));
+			break;
+		case 0:
+			clear_pane(cpane->dirx);
+			if (cpane->hdir == cpane->dirc) /* last entry */
+				cpane->hdir--;
+			free(cpane->direntr);
+			listdir(cpane, NULL);
+			break;
+		}
 	} else {
 		/* bookmarks */
 		b = (int)findbm((char)ev->ch);
@@ -1081,6 +1114,7 @@ outdir_press(struct tb_event *ev, Pane *cpane)
 		strcpy(cpane->dirn, bmarks[b].path);
 		clear_pane(cpane->dirx);
 		cpane->hdir = 1;
+		free(cpane->direntr);
 		listdir(cpane, NULL);
 	}
 }
@@ -1119,43 +1153,6 @@ indir_press(struct tb_event *ev, Pane *cpane)
 		else
 			cpane->hdir = cpane->dirc;
 		refresh_pane(cpane);
-	} else if (ev->ch == 'n') {
-		char *user_input;
-		user_input = ecalloc(MAX_USRI, sizeof(char));
-		if (get_user_input(user_input, MAX_USRI, "new file") < 0) {
-			free(user_input);
-			return;
-		}
-		if (create_new_file(cpane->dirn, user_input) < 0)
-			print_error(strerror(errno));
-		else
-			refresh_pane(cpane);
-		free(user_input);
-	} else if (ev->ch == 'N') {
-		char *user_input;
-		user_input = ecalloc(MAX_USRI, sizeof(char));
-		if (get_user_input(user_input, MAX_USRI, "new directory") < 0) {
-			free(user_input);
-			return;
-		}
-		if (create_new_dir(cpane->dirn, user_input) < 0)
-			print_error(strerror(errno));
-		else
-			refresh_pane(cpane);
-		free(user_input);
-
-	} else if (ev->ch == 'D') {
-		switch (delete_ent(cpane->high_dir)) {
-		case -1:
-			print_error(strerror(errno));
-			break;
-		case 0:
-			clear_pane(cpane->dirx);
-			if (cpane->hdir == cpane->dirc) /* last entry */
-				cpane->hdir--;
-			refresh_pane(cpane);
-			break;
-		}
 	}
 
 }
