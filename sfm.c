@@ -90,7 +90,7 @@ static char *get_full_path(char*, char*);
 static char *get_parent(char*);
 static char *get_file_info(Entry*);
 static char *get_file_size(off_t);
-static void get_dir_size(char*, size_t*);
+static void get_dir_size(char*, off_t*);
 static char *get_file_date_time(time_t);
 static char *get_file_userowner(uid_t, size_t);
 static char *get_file_groupowner(gid_t, size_t);
@@ -320,7 +320,6 @@ get_file_info(Entry *cursor)
 	size_t td_len = (size_t)14;
 	size_t result_chars = size_len + perm_len + ur_len + gr_len + td_len;
 	result = ecalloc(result_chars, sizeof(char));
-	lsize = ecalloc(40, sizeof(size_t));
 
 	if (show_perm == 1)
 	{
@@ -355,12 +354,11 @@ get_file_info(Entry *cursor)
 		free(size);
 	}
 
-	free(lsize);
 	return result;
 }
 
 static void
-get_dir_size(char *fullpath, size_t *fullsize)
+get_dir_size(char *fullpath, off_t *fullsize)
 {
 	DIR *dir;
 	char *ent_full;
@@ -395,6 +393,7 @@ get_dir_size(char *fullpath, size_t *fullsize)
 	}
 
 	closedir(dir);
+	clear_status();
 }
 
 static char *
@@ -1141,6 +1140,13 @@ indir_press(struct tb_event *ev, Pane *cpane)
 	} else if (ev->ch == 'M') {
 		cpane->hdir = (cpane->dirc/2);
 		refresh_pane(cpane);
+	} else if (ev->ch == 'x') {
+		off_t *fullsize = ecalloc(50, sizeof(off_t));
+		get_dir_size(cpane->high_dir, fullsize);
+		char *csize = get_file_size(*fullsize);
+		print_status(status_f, status_b, "%s", csize);
+		free(fullsize);
+		free(csize);
 	} else if (ev->key == TB_KEY_CTRL_U) {
 		if (cpane->hdir > move_ud)
 			cpane->hdir = cpane->hdir - move_ud;
