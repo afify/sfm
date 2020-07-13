@@ -1,4 +1,5 @@
 /* See LICENSE file for copyright and license details. */
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,14 @@ ecalloc(size_t nmemb, size_t size)
 	void *p;
 	p = calloc(nmemb, size);
 	FAIL_IF(p == NULL, "calloc");
+	return p;
+}
+
+void *
+erealloc(void *p, size_t len)
+{
+	if ((p = realloc(p, len)) == NULL)
+		die("realloc: %s\n", strerror(errno));
 	return p;
 }
 

@@ -10,6 +10,7 @@
 #define FAIL_IF(EXP, MSG)       {if(EXP){fprintf(stderr, "[\033[31mFAILED %d\033[0m] %s\n", __LINE__, MSG);exit(EXIT_FAILURE);}}
 
 void *ecalloc(size_t, size_t);
+void *erealloc(void*, size_t);
 void die(const char *fmt, ...);
 
 #endif /* UTIL_H */
