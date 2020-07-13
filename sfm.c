@@ -43,21 +43,19 @@ enum { AskDel, DAskDel }; /* delete directory */
 /* typedef */
 typedef struct {
 	char name[MAX_N];
-	char full[MAX_P];
-	off_t size;
+	gid_t group;
 	mode_t mode;
+	off_t size;
 	time_t td;
 	uid_t user;
-	gid_t group;
 } Entry;
 
 typedef struct {
-	char dirn[MAX_P];     // directory name
-	char high_dir[MAX_P]; // highlighted_dir fullpath
-	int dirx;             // position of title
-	Entry *direntr;
-	size_t hdir;          // highlighted_dir
-	size_t dirc;          // total files in dir
+	char dirn[MAX_P];     // dir name cwd
+	Entry *direntr;       // dir entries
+	int dirx;             // pane cwd x pos
+	size_t dirc;          // dir entries sum
+	size_t hdir;          // highlighted dir
 	uint16_t dir_bg;
 	uint16_t dir_fg;
 } Pane;
@@ -87,7 +85,6 @@ static void clear_status(void);
 static void clear_pane(int);
 static char *get_extentions(char*);
 static char *get_full_path(char*, char*);
-static char *get_parent(char*);
 static char *get_file_info(Entry*);
 static char *get_file_size(off_t);
 static void get_dir_size(char*, off_t*);
@@ -281,38 +278,9 @@ get_full_path(char *first, char *second)
 }
 
 static char *
-get_parent(char *dir)
-{
-	char *parent;
-	char dot;
-	size_t counter, len, i;
-
-	dot = '/';
-	counter = 0;
-	len = strlen(dir);
-
-	for (i = len-1; i > 0; i--) {
-		if (dir[i] == dot) {
-			break;
-		} else {
-			counter++;
-		}
-	}
-
-	i = len - counter - 1;
-	if (i == 0)
-		i = len - counter;
-	parent = ecalloc(i+1, sizeof(char));
-	strncpy(parent, dir, i);
-
-	return parent;
-}
-
-static char *
 get_file_info(Entry *cursor)
 {
 	char *size, *result, *ur, *gr, *td, *perm;
-	size_t *lsize;
 	size_t size_len = (size_t)9;
 	size_t perm_len = (size_t)11;
 	size_t ur_len = (size_t)32;
@@ -913,7 +881,7 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width)
 	if (S_ISDIR(entry->mode)) {
 		bg = dir_b;
 		fg = dir_f;
-	} else if (S_ISLNK(entry->mode) && realpath(entry->full, buf) != NULL) {
+	} else if (S_ISLNK(entry->mode) && realpath(entry->name, buf) != NULL) {
 		strncpy(lnk_full, entry->name, MAX_N);
 		strcat(lnk_full, " -> ");
 		strncat(lnk_full, buf, MAX_N);
@@ -934,7 +902,6 @@ print_col(Entry *entry, size_t hdir, size_t x, size_t y, int dyn_y, int width)
 
 	/* print each element in directory */
 	printf_tb((int)x, (int)y, fg, bg, "%*.*s", ~width, width, result);
-
 }
 
 static size_t
@@ -1008,35 +975,28 @@ handel_press(struct tb_event *ev, Pane *cpane)
 static void
 outdir_press(struct tb_event *ev, Pane *cpane)
 {
-	char *parent;
 	int b;
 
 	if (ev->ch == 'h') {
-		parent = get_parent(cpane->dirn);
-		if (check_dir(parent) < 0) { /* failed to open directory */
-			print_error(strerror(errno));
-		} else {
-			strcpy(cpane->dirn, parent);
-			clear_pane(cpane->dirx);
-			cpane->hdir = (size_t)parent_row;
-			free(cpane->direntr);
-			(void)listdir(cpane, NULL);
-			parent_row = 1;
-		}
-		free(parent);
+		chdir("..");
+		getcwd(cpane->dirn, MAX_P);
+		cpane->hdir = (size_t)parent_row;
+		(void)listdir(cpane, NULL);
+		parent_row = 1;
 	} else if (ev->ch == 'l') {
-		switch (check_dir(cpane->high_dir)) {
+// 		cpane->direntr[cpane->hdir-1].name
+		switch (check_dir(cpane->direntr[cpane->hdir-1].name)) {
 		case 0:
-			strcpy(cpane->dirn, cpane->high_dir);
-			clear_pane(cpane->dirx);
+			chdir(cpane->direntr[cpane->hdir-1].name);
+			getcwd(cpane->dirn, MAX_P);
+// 			strcpy(cpane->dirn, cpane->direntr[cpane->hdir-1].name);
 			parent_row = (int)cpane->hdir;
 			cpane->hdir = 1;
-			free(cpane->direntr);
 			(void)listdir(cpane, NULL);
 			break;
 		case 1:
 			/* is not a directory open file */
-			if (open_files(cpane->high_dir) < 0) {
+			if (open_files(cpane->direntr[cpane->hdir-1].name) < 0) {
 				print_error("procces failed");
 				return;
 			}
@@ -1073,7 +1033,6 @@ outdir_press(struct tb_event *ev, Pane *cpane)
 		if (create_new_file(cpane->dirn, user_input) < 0) {
 			print_error(strerror(errno));
 		} else {
-			free(cpane->direntr);
 			listdir(cpane, NULL);
 		}
 		free(user_input);
@@ -1087,21 +1046,18 @@ outdir_press(struct tb_event *ev, Pane *cpane)
 		if (create_new_dir(cpane->dirn, user_input) < 0) {
 			print_error(strerror(errno));
 		} else {
-			free(cpane->direntr);
 			listdir(cpane, NULL);
 		}
 		free(user_input);
 
 	} else if (ev->ch == 'D') {
-		switch (delete_ent(cpane->high_dir)) {
+		switch (delete_ent(cpane->direntr[cpane->hdir-1].name)) {
 		case -1:
 			print_error(strerror(errno));
 			break;
 		case 0:
-			clear_pane(cpane->dirx);
 			if (cpane->hdir == cpane->dirc) /* last entry */
 				cpane->hdir--;
-			free(cpane->direntr);
 			listdir(cpane, NULL);
 			break;
 		}
@@ -1111,9 +1067,7 @@ outdir_press(struct tb_event *ev, Pane *cpane)
 		if (b < 0)
 			return;
 		strcpy(cpane->dirn, bmarks[b].path);
-		clear_pane(cpane->dirx);
 		cpane->hdir = 1;
-		free(cpane->direntr);
 		listdir(cpane, NULL);
 	}
 }
@@ -1142,7 +1096,7 @@ indir_press(struct tb_event *ev, Pane *cpane)
 		refresh_pane(cpane);
 	} else if (ev->ch == 'x') {
 		off_t *fullsize = ecalloc(50, sizeof(off_t));
-		get_dir_size(cpane->high_dir, fullsize);
+		get_dir_size(cpane->direntr[cpane->hdir-1].name, fullsize);
 		char *csize = get_file_size(*fullsize);
 		print_status(status_f, status_b, "%s", csize);
 		free(fullsize);
@@ -1166,9 +1120,7 @@ indir_press(struct tb_event *ev, Pane *cpane)
 static void
 refresh_pane(Pane *cpane)
 {
-
 	char *fileinfo;
-	char *fullpath;
 	size_t y, dyn_y, dyn_max, start_from;
 	int width;
 	width = (tb_width() / 2) - 4;
@@ -1180,12 +1132,6 @@ refresh_pane(Pane *cpane)
 	start_from = scroll(height, cpane->dirc, cpane->hdir);
 	dyn_y = start_from;
 	dyn_max = MIN(cpane->dirc, (height - 1) + start_from);
-
-	/* get full path of cursor */
-	fullpath = get_full_path(cpane->dirn,
-			cpane->direntr[cpane->hdir-1].name);
-	strncpy(cpane->high_dir, fullpath, (size_t)MAX_P);
-	free(fullpath);
 
 	/* print each entry in directory */
 	while (start_from < dyn_max) {
@@ -1212,16 +1158,19 @@ listdir(Pane *cpane, char *filter)
 	DIR *dir;
 	struct dirent *entry;
 	struct stat status;
-	char *fullpath;
 	int width;
 	size_t i, height;
 	int filtercount = 0;
-	int oldc = cpane->dirc;
+	size_t oldc = cpane->dirc;
 
 	height = (size_t)tb_height() - 2;
 	width = (tb_width() / 2) - 4;
 	cpane->dirc = 0;
 	i = 0;
+
+	clear_pane(cpane->dirx);
+	if (chdir(cpane->dirn) < 0)
+		return -1;
 
 	dir = opendir(cpane->dirn);
 	if (dir == NULL)
@@ -1260,6 +1209,7 @@ listdir(Pane *cpane, char *filter)
 
 	/* empty directory */
 	if (cpane->dirc == 0) {
+		clear_status();
 		if (closedir(dir) < 0)
 			return -1;
 		return 0;
@@ -1269,7 +1219,7 @@ listdir(Pane *cpane, char *filter)
 
 	/* create array of entries */
 	i = 0;
-	cpane->direntr = ecalloc(cpane->dirc, sizeof(Entry));
+	cpane->direntr = erealloc(cpane->direntr, cpane->dirc * sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
 		if ((strcmp(entry->d_name, ".") == 0  ||
 			strcmp(entry->d_name, "..") == 0))
@@ -1279,34 +1229,25 @@ listdir(Pane *cpane, char *filter)
 		if (filter != NULL) {
 			if (strstr(entry->d_name, filter) != NULL) {
 				strcpy(cpane->direntr[i].name, entry->d_name);
-				fullpath = get_full_path(cpane->dirn, entry->d_name);
-				strcpy(cpane->direntr[i].full, fullpath);
-
-				if (lstat(fullpath, &status) == 0) {
+				if (lstat(entry->d_name, &status) == 0) {
 					cpane->direntr[i].size = status.st_size;
 					cpane->direntr[i].mode = status.st_mode;
 					cpane->direntr[i].group = status.st_gid;
 					cpane->direntr[i].user = status.st_uid;
 					cpane->direntr[i].td = status.st_mtime;
 				}
-				free(fullpath);
 				i++;
 			}
 
 		} else {
-
 		strcpy(cpane->direntr[i].name, entry->d_name);
-		fullpath = get_full_path(cpane->dirn, entry->d_name);
-		strcpy(cpane->direntr[i].full, fullpath);
-
-		if (lstat(fullpath, &status) == 0) {
+		if (lstat(entry->d_name, &status) == 0) {
 			cpane->direntr[i].size = status.st_size;
 			cpane->direntr[i].mode = status.st_mode;
 			cpane->direntr[i].group = status.st_gid;
 			cpane->direntr[i].user = status.st_uid;
 			cpane->direntr[i].td = status.st_mtime;
 		}
-		free(fullpath);
 		i++;
 		}
 	}
@@ -1351,6 +1292,7 @@ set_panes(Pane *pane_l, Pane *pane_r, int resize)
 	pane_l->dirx = 2;
 	pane_l->dir_fg = pane_l_f;
 	pane_l->dir_bg = pane_l_b;
+	pane_l->direntr = ecalloc(0, sizeof(Entry));
 	if (resize == 0) {
 		strcpy(pane_l->dirn, cwd);
 		pane_l->hdir = 1;
@@ -1359,7 +1301,7 @@ set_panes(Pane *pane_l, Pane *pane_r, int resize)
 	pane_r->dirx = (width / 2) + 2;
 	pane_r->dir_fg = pane_r_f;
 	pane_r->dir_bg = pane_r_b;
-
+	pane_r->direntr = ecalloc(0, sizeof(Entry));
 	if (resize == 0) {
 		strcpy(pane_r->dirn, home);
 		pane_r->hdir = 1;
