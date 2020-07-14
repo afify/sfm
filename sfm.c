@@ -83,6 +83,9 @@ static void print_prompt(char*);
 static void clear(int, int, int, uint16_t);
 static void clear_status(void);
 static void clear_pane(int);
+static void print_row(Pane*, int, int16_t, int16_t);
+static void add_hi(Pane*, size_t);
+static void rm_hi(Pane*, size_t);
 static char *get_extentions(char*);
 static char *get_full_path(char*, char*);
 static char *get_file_info(Entry*);
@@ -232,6 +235,34 @@ clear_pane(int pane)
 		tb_change_cell(y, 0, u_hl, frame_f, frame_b);
 	}
 
+}
+
+static void
+print_row(Pane *pane, int entpos, int16_t fg, int16_t bg)
+{
+	int x, y;
+	char *result;
+	int width;
+
+	width = (tb_width() / 2) - 4;
+	result = pane->direntr[entpos-1].name;
+	x = pane->dirx;
+	y = entpos;
+
+	printf_tb(x, y, fg, bg, "%*.*s", ~width, width, result);
+}
+
+static void
+add_hi(Pane *pane, size_t entpos)
+{
+	print_row(pane, entpos,
+		TB_DEFAULT|TB_REVERSE|TB_BOLD, TB_DEFAULT|TB_REVERSE);
+}
+
+static void
+rm_hi(Pane *pane, size_t entpos)
+{
+	print_row(pane, entpos, TB_DEFAULT, TB_DEFAULT);
 }
 
 static char *
@@ -941,9 +972,13 @@ start_ev(void)
 
 			if (ev.key == TB_KEY_SPACE) {
 				if (cpane == &pane_l) {
+					rm_hi(&pane_l, pane_l.hdir);
+					add_hi(&pane_r, pane_r.hdir);
 					chdir(pane_r.dirn);
 					cpane = &pane_r;
 				}else if (cpane == &pane_r) {
+					rm_hi(&pane_r, pane_r.hdir);
+					add_hi(&pane_l, pane_l.hdir);
 					chdir(pane_l.dirn);
 					cpane = &pane_l;
 				}
@@ -1380,6 +1415,7 @@ start(void)
 	listdir(NULL);
 	cpane = &pane_l;
 	listdir(NULL);
+	rm_hi(&pane_r, pane_r.hdir);
 	tb_present();
 	start_ev();
 	return 0;
