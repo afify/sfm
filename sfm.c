@@ -963,6 +963,8 @@ start_ev(Pane *pane_l, Pane *pane_r)
 static void
 handel_press(struct tb_event *ev, Pane *cpane)
 {
+	chdir(cpane->dirn); /* TODO used to show symlink realpath */
+
 	/* key require change directory or relist*/
 	char listkeys[] = "hlnND/";
 
@@ -984,12 +986,10 @@ outdir_press(struct tb_event *ev, Pane *cpane)
 		(void)listdir(cpane, NULL);
 		parent_row = 1;
 	} else if (ev->ch == 'l') {
-// 		cpane->direntr[cpane->hdir-1].name
 		switch (check_dir(cpane->direntr[cpane->hdir-1].name)) {
 		case 0:
 			chdir(cpane->direntr[cpane->hdir-1].name);
 			getcwd(cpane->dirn, MAX_P);
-// 			strcpy(cpane->dirn, cpane->direntr[cpane->hdir-1].name);
 			parent_row = (int)cpane->hdir;
 			cpane->hdir = 1;
 			(void)listdir(cpane, NULL);
