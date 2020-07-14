@@ -1095,12 +1095,20 @@ indir_press(struct tb_event *ev, Pane *cpane)
 		cpane->hdir = (cpane->dirc/2);
 		refresh_pane(cpane);
 	} else if (ev->ch == 'x') {
-		off_t *fullsize = ecalloc(50, sizeof(off_t));
-		get_dir_size(cpane->direntr[cpane->hdir-1].name, fullsize);
-		char *csize = get_file_size(*fullsize);
-		print_status(status_f, status_b, "%s", csize);
-		free(fullsize);
-		free(csize);
+		if (S_ISDIR(cpane->direntr[cpane->hdir-1].mode)) {
+			off_t *fullsize = ecalloc(50, sizeof(off_t));
+			get_dir_size(cpane->direntr[cpane->hdir-1].name, fullsize);
+			char *csize = get_file_size(*fullsize);
+			char *result = get_file_info(&cpane->direntr[cpane->hdir-1]);
+			clear_status();
+			print_status(status_f, status_b, "%lu/%lu %s%s",
+			cpane->hdir,
+			cpane->dirc,
+			result, csize);
+			free(csize);
+			free(fullsize);
+			free(result);
+		}
 	} else if (ev->key == TB_KEY_CTRL_U) {
 		if (cpane->hdir > move_ud)
 			cpane->hdir = cpane->hdir - move_ud;
