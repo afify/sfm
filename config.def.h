@@ -18,14 +18,14 @@ static const uint16_t pane_l_b  = TB_DEFAULT;
 static const uint16_t pane_l_f  = 166;
 static const uint16_t pane_r_b  = TB_DEFAULT;
 static const uint16_t pane_r_f  = 5;
-static const uint16_t search_b  = 166;
+static const uint16_t search_b  = TB_DEFAULT;
 static const uint16_t search_f  = 255;
-static const uint16_t status_b  = 234;
+static const uint16_t status_b  = TB_DEFAULT;
 static const uint16_t status_f  = TB_DEFAULT;
 static const uint16_t sprompt_f = 33;
-static const uint16_t sprompt_b = 234;
+static const uint16_t sprompt_b = TB_DEFAULT;
 static const uint16_t serr_f    = 124;
-static const uint16_t serr_b    = 234;
+static const uint16_t serr_b    = TB_DEFAULT;
 static const uint16_t exec_f    = 2;
 
 /* bookmarks */

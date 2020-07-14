@@ -158,7 +158,7 @@ print_status(uint16_t fg, uint16_t bg, const char *fmt, ...)
 	(void)vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
 	clear_status();
-	print_tb(buf, 2, height-2, fg, bg);
+	print_tb(buf, 1, height-1, fg, bg);
 
 }
 
@@ -203,7 +203,7 @@ clear_status(void)
 	int width, height;
 	width = tb_width();
 	height = tb_height();
-	clear(1, width-1, height-2, status_b);
+	clear(1, width-1, height-1, status_b);
 }
 
 static void
@@ -1150,10 +1150,10 @@ refresh_pane(void)
 	fileinfo = get_file_info(&cpane->direntr[cpane->hdir-1]);
 
 	/* print info in statusbar */
-// 	print_status(status_f, status_b, "%lu/%lu %s",
-// 		cpane->hdir,
-// 		cpane->dirc,
-// 		fileinfo);
+	print_status(status_f, status_b, "%lu/%lu %s",
+		cpane->hdir,
+		cpane->dirc,
+		fileinfo);
 
 	/* print current directory title */
 	printf_tb(cpane->dirx, 0, cpane->dir_fg | TB_BOLD, cpane->dir_bg,
@@ -1275,7 +1275,6 @@ static void
 t_resize(void)
 {
 	/* TODO need refactoring */
-	int width = tb_width();
 	tb_clear();
 	draw_frame();
 	(void)set_panes(1);
@@ -1344,25 +1343,25 @@ draw_frame(void)
 	/* 2 horizontal lines */
 	for (i = 1; i < width-1 ; ++i) {
 		tb_change_cell(i, 0,        u_hl, frame_f, frame_b);
-		tb_change_cell(i, height-1, u_hl, frame_f, frame_b);
+		tb_change_cell(i, height-2, u_hl, frame_f, frame_b);
 	}
 
 	/* 3 vertical lines */
 	for (i = 1; i < height-1 ; ++i) {
-		tb_change_cell(0,           i, u_vl, frame_f, frame_b);
+		tb_change_cell(0,           i,   u_vl, frame_f, frame_b);
 		tb_change_cell((width-1)/2, i-1, u_vl, frame_f, frame_b);
-		tb_change_cell(width-1,     i, u_vl, frame_f, frame_b);
+		tb_change_cell(width-1,     i,   u_vl, frame_f, frame_b);
 	}
 
 	/* 4 corners */
 	tb_change_cell(0,       0,        u_cnw, frame_f, frame_b);
 	tb_change_cell(width-1, 0,        u_cne, frame_f, frame_b);
-	tb_change_cell(0,       height-1, u_csw, frame_f, frame_b);
-	tb_change_cell(width-1, height-1, u_cse, frame_f, frame_b);
+	tb_change_cell(0,       height-2, u_csw, frame_f, frame_b);
+	tb_change_cell(width-1, height-2, u_cse, frame_f, frame_b);
 
 	/* 2 middel top and bottom */
 	tb_change_cell((width-1)/2, 0,        u_mn, frame_f, frame_b);
-
+	tb_change_cell((width-1)/2, height-2, u_ms, frame_f, frame_b);
 }
 
 static int
