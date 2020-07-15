@@ -197,7 +197,7 @@ print_xstatus(char c, int x)
 	uint32_t uni = 0;
 	height = tb_height();
 	(void)tb_utf8_char_to_unicode(&uni, &c);
-	tb_change_cell(x, height-2, uni,  TB_DEFAULT, status_b);
+	tb_change_cell(x, height-1, uni,  TB_DEFAULT, status_b);
 }
 
 static void
@@ -737,7 +737,6 @@ filter(void)
 		return;
 	}
 	if (listdir(user_input) < 0) {
-// 		indir_press(ev);
 		print_error("no match");
 	}
 	free(user_input);
@@ -1092,7 +1091,7 @@ get_user_input(char *out, size_t sout, char *prompt)
 	clear_status();
 	startat = strlen(prompt) + 3;
 	print_prompt(prompt);
-	tb_set_cursor((int)(startat + 1), height-2);
+	tb_set_cursor((int)(startat + 1), height-1);
 	tb_present();
 
 	while (tb_poll_event(&fev) != 0) {
@@ -1112,7 +1111,7 @@ get_user_input(char *out, size_t sout, char *prompt)
 					x--;
 					print_xstatus(empty, startat + counter);
 					tb_set_cursor(
-						(int)startat + counter, height - 2);
+						(int)startat + counter, height - 1);
 				}
 
 			} else if (fev.key == (uint16_t)TB_KEY_ENTER) {
@@ -1124,7 +1123,7 @@ get_user_input(char *out, size_t sout, char *prompt)
 				if (counter < sout) {
 					print_xstatus((char)fev.ch, (int)(startat+counter));
 					out[x] = (char)fev.ch;
-					tb_set_cursor((int)(startat + counter + 1),height-2);
+					tb_set_cursor((int)(startat + counter + 1),height-1);
 					counter++;
 					x++;
 				}
@@ -1275,7 +1274,6 @@ listdir(char *filter)
 	cpane->dirc = 0;
 	i = 0;
 
-	clear_pane(cpane->dirx);
 	if (chdir(cpane->dirn) < 0)
 		return -1;
 
@@ -1293,13 +1291,15 @@ listdir(char *filter)
 		}
 	}
 
-	if (filter == NULL)
+	if (filter == NULL) {
+		clear_pane(cpane->dirx);
 		cpane->dirc -=2;
+	}
 
 	if (filter != NULL) {
 		if (filtercount > 0) {
+			cpane->dirc -=2;
 			cpane->dirc = filtercount;
-			free(cpane->direntr);
 			clear_pane(cpane->dirx);
 			cpane->hdir = 1;
 		} else if (filtercount == 0) {
