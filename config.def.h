@@ -39,12 +39,11 @@ static Bookmark bmarks[] = {
 static const char *images[] = { "bmp", "jpg", "jpeg", "png", "gif", "xpm" };
 static const char *web[] = { "htm", "html" };
 static const char *pdf[] = { "epub", "pdf" };
-static const char *videos[] = { "avi", "flv",
-	"m2v", "m4a", "m4v", "mkv", "mov", "mp3", "mp4", "mpeg", "mpg",
-	"wav", "webm", "wma", "wmv" };
+static const char *arts[] = { "xcf" };
+static const char *videos[] = { "avi", "flv", "wav", "webm", "wma", "wmv",
+	"m2v", "m4a", "m4v", "mkv", "mov", "mp3", "mp4", "mpeg", "mpg" };
 static const char *documents[] = { "odt", "doc", "docx", "xls", "xlsx", "odp",
 	"ods", "pptx", "odg" };
-static const char *arts[] = { "xcf" };
 
 static Rule rules[] = {
 	{"mpv",         videos,    LEN(videos)    },
@@ -56,33 +55,37 @@ static Rule rules[] = {
 };
 
 static Key keys[] = {
-	{ {.ch = 'j'},               move_down },
-	{ {.ch = 'k'},               move_up },
-	{ {.ch = 'l'},               move_for },
-	{ {.ch = 'h'},               move_back },
-	{ {.ch = 'g'},               move_top },
-	{ {.ch = 'G'},               move_bottom },
-	{ {.ch = 'M'},               move_mid },
-	{ {.key = TB_KEY_CTRL_U},    scroll_up},
-	{ {.key = TB_KEY_CTRL_D},    scroll_down},
-	{ {.ch = 'n'},               create_nf },
-	{ {.ch = 'N'},               create_nd },
-	{ {.ch = 'D'},               delete_fd },
-	{ {.ch = 'x'},               calc_dir },
-	{ {.ch = '/'},               filter},
-	{ {.ch = 'q'},               quit},
-	{ {.key = TB_KEY_SPACE},     switch_pane},
+	{ {.ch = 'j'},               mvdwn },
+	{ {.ch = 'k'},               mvup },
+	{ {.ch = 'l'},               mvfor },
+	{ {.ch = 'h'},               mvbk },
+	{ {.ch = 'g'},               mvtop },
+	{ {.ch = 'G'},               mvbtm },
+	{ {.ch = 'M'},               mvmid },
+	{ {.key = TB_KEY_CTRL_U},    scrup },
+	{ {.key = TB_KEY_CTRL_D},    scrdwn },
+	{ {.ch = 'n'},               crnf },
+	{ {.ch = 'N'},               crnd },
+	{ {.ch = 'D'},               delfd },
+	{ {.ch = 'x'},               calcdir },
+	{ {.ch = '/'},               filter },
+	{ {.ch = 'q'},               quit },
+	{ {.key = TB_KEY_SPACE},     switch_pane },
 };
 
-static const size_t move_ud = 10; /* ctrl U, ctrl D movement */
 static const mode_t new_dir_perm = 0755;
 
+/* scroll */
+static const size_t scrmv = 10; /* ctrl+u, ctrl+d movement */
+static const size_t scrsp = 3;  /* space before scroll */
+
 /* statusbar */
-static const int show_ug     = 1;
-static const int show_perm   = 1;
-static const int show_dt     = 1;
-static const int show_size   = 1;
-static const char dt_fmt[] = "%d/%m %I:%M%p"; /* date time format */
+static const int show_ug   = 1;
+static const int show_perm = 1;
+static const int show_dt   = 1;
+static const int show_size = 1;
+static const char dtfmt[] = "%d/%m %I:%M%p"; /* date time format */
+// static const char dtfmt[] = "%F %R"; /* date time format */
 
 /* unicode chars */
 static const uint32_t u_cne = 0x2510;
