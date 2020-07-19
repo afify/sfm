@@ -5,28 +5,18 @@
 
 #include "termbox.h"
 
-/* colors */
-static const uint16_t dir_b     = TB_DEFAULT;
-static const uint16_t dir_f     = 33;
-static const uint16_t file_b    = TB_DEFAULT;
-static const uint16_t file_f    = TB_DEFAULT;
-static const uint16_t frame_b   = TB_DEFAULT;
-static const uint16_t frame_f   = TB_DEFAULT;
-static const uint16_t other_b   = TB_DEFAULT;
-static const uint16_t other_f   = 3;
-static const uint16_t pane_l_b  = TB_DEFAULT;
-static const uint16_t pane_l_f  = 166;
-static const uint16_t pane_r_b  = TB_DEFAULT;
-static const uint16_t pane_r_f  = 5;
-static const uint16_t search_b  = TB_DEFAULT;
-static const uint16_t search_f  = 255;
-static const uint16_t status_b  = TB_DEFAULT;
-static const uint16_t status_f  = TB_DEFAULT;
-static const uint16_t sprompt_f = 33;
-static const uint16_t sprompt_b = TB_DEFAULT;
-static const uint16_t serr_f    = 124;
-static const uint16_t serr_b    = TB_DEFAULT;
-static const uint16_t exec_f    = 2;
+/* colors                     fg,          bg */
+static const Cpair cdir    = { 33,         TB_DEFAULT };
+static const Cpair cerr    = { 124,        TB_DEFAULT };
+static const Cpair cexec   = { 2,          TB_DEFAULT };
+static const Cpair cfile   = { TB_DEFAULT, TB_DEFAULT };
+static const Cpair cframe  = { TB_DEFAULT, TB_DEFAULT };
+static const Cpair cother  = { 3,          TB_DEFAULT };
+static const Cpair cpanell = { 166,        TB_DEFAULT };
+static const Cpair cpanelr = { 5,          TB_DEFAULT };
+static const Cpair cprompt = { 33,         TB_DEFAULT };
+static const Cpair csearch = { 255,        TB_DEFAULT };
+static const Cpair cstatus = { TB_DEFAULT, TB_DEFAULT };
 
 /* bookmarks */
 static Bookmark bmarks[] = {

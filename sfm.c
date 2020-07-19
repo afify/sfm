@@ -51,14 +51,18 @@ typedef struct {
 } Entry;
 
 typedef struct {
+	uint16_t fg;
+	uint16_t bg;
+} Cpair;
+
+typedef struct {
 	char dirn[MAX_P];     // dir name cwd
 	Entry *direntr;       // dir entries
 	int dirx;             // pane cwd x pos
 	size_t dirc;          // dir entries sum
 	size_t hdir;          // highlighted dir
 	size_t firstrow;
-	uint16_t dir_bg;
-	uint16_t dir_fg;
+	Cpair dircol;
 } Pane;
 
 typedef struct {
@@ -84,13 +88,13 @@ typedef struct {
 
 /* function declarations */
 static void print_tb(const char*, int, int, uint16_t, uint16_t);
-static void printf_tb(int, int, uint16_t, uint16_t, const char*, ...);
-static void print_status(uint16_t, uint16_t, const char*, ...);
+static void printf_tb(int, int, Cpair, const char*, ...);
+static void print_status(Cpair, const char*, ...);
 static void print_xstatus(char, int);
 static void print_error(char*);
 static void print_prompt(char*);
 static void print_info(void);
-static void print_row(Pane*, size_t, uint16_t, uint16_t);
+static void print_row(Pane*, size_t, Cpair);
 static void clear(int, int, int, uint16_t);
 static void clear_status(void);
 static void clear_pane(int);
@@ -109,7 +113,7 @@ static char *get_fsize(off_t);
 static char *get_fullpath(char*, char*);
 static char *get_fusr(uid_t, size_t);
 static void get_dirsize(char*, off_t*);
-static void get_hicol(uint16_t*, uint16_t*, mode_t);
+static void get_hicol(Cpair*, mode_t);
 static int deldir(char*, int);
 static int delent(char *);
 static int delf(char*);
@@ -169,18 +173,18 @@ print_tb(const char *str, int x, int y, uint16_t fg, uint16_t bg)
 }
 
 static void
-printf_tb(int x, int y, uint16_t fg, uint16_t bg, const char *fmt, ...)
+printf_tb(int x, int y, Cpair col, const char *fmt, ...)
 {
 	char buf[4096];
 	va_list vl;
 	va_start(vl, fmt);
 	(void)vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
-	print_tb(buf, x, y, fg, bg);
+	print_tb(buf, x, y, col.fg, col.bg);
 }
 
 static void
-print_status(uint16_t fg, uint16_t bg, const char *fmt, ...)
+print_status(Cpair col, const char *fmt, ...)
 {
 	int height;
 	height = tb_height();
@@ -191,7 +195,7 @@ print_status(uint16_t fg, uint16_t bg, const char *fmt, ...)
 	(void)vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
 	clear_status();
-	print_tb(buf, 1, height-1, fg, bg);
+	print_tb(buf, 1, height-1, col.fg, col.bg);
 
 }
 
@@ -202,19 +206,19 @@ print_xstatus(char c, int x)
 	uint32_t uni = 0;
 	height = tb_height();
 	(void)tb_utf8_char_to_unicode(&uni, &c);
-	tb_change_cell(x, height-1, uni,  TB_DEFAULT, status_b);
+	tb_change_cell(x, height-1, uni,  cstatus.fg , cstatus.bg);
 }
 
 static void
 print_error(char *errmsg)
 {
-	print_status(serr_f, serr_b, errmsg);
+	print_status(cerr, errmsg);
 }
 
 static void
 print_prompt(char *prompt)
 {
-	print_status(sprompt_f, sprompt_b, prompt);
+	print_status(cprompt, prompt);
 }
 
 static void
@@ -222,13 +226,13 @@ print_info(void)
 {
 	char *fileinfo;
 	fileinfo = get_finfo(&cpane->direntr[cpane->hdir-1]);
-	print_status(status_f, status_b, "%lu/%lu %s",
+	print_status(cstatus, "%lu/%lu %s",
 		cpane->hdir, cpane->dirc, fileinfo);
 	free(fileinfo);
 }
 
 static void
-print_row(Pane *pane, size_t entpos, uint16_t fg, uint16_t bg)
+print_row(Pane *pane, size_t entpos, Cpair col)
 {
 	int x, y;
 	char *result;
@@ -249,7 +253,7 @@ print_row(Pane *pane, size_t entpos, uint16_t fg, uint16_t bg)
 		result = lnk_full;
 	}
 
-	printf_tb(x, y, fg, bg, "%*.*s", ~width, width, result);
+	printf_tb(x, y, col, "%*.*s", ~width, width, result);
 }
 
 static void
@@ -271,7 +275,7 @@ clear_status(void)
 	int width, height;
 	width = tb_width();
 	height = tb_height();
-	clear(1, width-1, height-1, status_b);
+	clear(1, width-1, height-1, cstatus.bg);
 }
 
 static void
@@ -297,7 +301,7 @@ clear_pane(int pane)
 	}
 	/* draw top line */
 	for (y = x; y < ex ; ++y) {
-		tb_change_cell(y, 0, u_hl, frame_f, frame_b);
+		tb_change_cell(y, 0, u_hl, cframe.fg, cframe.bg);
 	}
 
 }
@@ -305,17 +309,19 @@ clear_pane(int pane)
 static void
 add_hi(Pane *pane, size_t entpos)
 {
-	uint16_t fg, bg;
-	get_hicol(&fg, &bg, pane->direntr[entpos].mode);
-	print_row(pane, entpos, fg|TB_REVERSE|TB_BOLD, bg|TB_REVERSE);
+	Cpair col;
+	get_hicol(&col, pane->direntr[entpos].mode);
+	col.fg |= TB_REVERSE|TB_BOLD;
+	col.bg |= TB_REVERSE;
+	print_row(pane, entpos, col);
 }
 
 static void
 rm_hi(Pane *pane, size_t entpos)
 {
-	uint16_t fg, bg;
-	get_hicol(&fg, &bg, pane->direntr[entpos].mode);
-	print_row(pane, entpos, fg, bg);
+	Cpair col;
+	get_hicol(&col, pane->direntr[entpos].mode);
+	print_row(pane, entpos, col);
 }
 
 static void
@@ -674,20 +680,15 @@ get_dirsize(char *fullpath, off_t *fullsize)
 }
 
 static void
-get_hicol(uint16_t *fg, uint16_t *bg, mode_t mode)
+get_hicol(Cpair *col, mode_t mode)
 {
-	*bg = file_b;
-	*fg = file_f;
-
-	if (S_ISDIR(mode)) {
-		*bg = dir_b;
-		*fg = dir_f;
-	} else if (S_ISLNK(mode)) {
-		*bg = other_b;
-		*fg = other_f;
-	} else if (chech_execf(mode) > 0) {
-		*fg = exec_f;
-	}
+	*col = cfile;
+	if (S_ISDIR(mode))
+		*col = cdir;
+	else if (S_ISLNK(mode))
+		*col = cother;
+	else if (chech_execf(mode) > 0)
+		*col = cexec;
 }
 
 static int
@@ -742,7 +743,7 @@ deldir(char *fullpath, int delchoice)
 		free(ent_full);
 	}
 
-	print_status(status_f, status_b, "gotit");
+	print_status(cstatus, "gotit");
 	if (closedir(dir) < 0)
 		return -1;
 
@@ -797,7 +798,7 @@ calcdir(void)
 		result = get_finfo(&cpane->direntr[cpane->hdir-1]);
 
 		clear_status();
-		print_status(status_f, status_b, "%lu/%lu %s%s",
+		print_status(cstatus, "%lu/%lu %s%s",
 			cpane->hdir, cpane->dirc, result, csize);
 		free(csize);
 		free(fullsize);
@@ -1348,7 +1349,7 @@ refresh_pane(void)
 	size_t y, dyn_max, start_from;
 	int width;
 	width = (tb_width() / 2) - 4;
-	uint16_t fg, bg;
+	Cpair col;
 
 	y = 1;
 	start_from = cpane->firstrow;
@@ -1356,8 +1357,8 @@ refresh_pane(void)
 
 	/* print each entry in directory */
 	while (start_from < dyn_max) {
-		get_hicol(&fg, &bg, cpane->direntr[start_from].mode);
-		print_row(cpane, start_from, fg ,bg);
+		get_hicol(&col, cpane->direntr[start_from].mode);
+		print_row(cpane, start_from, col);
 		start_from++;
 		y++;
 	}
@@ -1365,8 +1366,8 @@ refresh_pane(void)
 	print_info();
 
 	/* print current directory title */
-	printf_tb(cpane->dirx, 0, cpane->dir_fg | TB_BOLD, cpane->dir_bg,
-		" %.*s ", width, cpane->dirn);
+	cpane->dircol.fg |= TB_BOLD;
+	printf_tb(cpane->dirx, 0, cpane->dircol," %.*s ", width, cpane->dirn);
 }
 
 static int
@@ -1421,8 +1422,8 @@ listdir(char *filter)
 	}
 
 	/* print current directory title */
-	printf_tb(cpane->dirx, 0, cpane->dir_fg | TB_BOLD, cpane->dir_bg,
-		" %.*s ", width, cpane->dirn);
+	cpane->dircol.fg |= TB_BOLD;
+	printf_tb(cpane->dirx, 0, cpane->dircol," %.*s ", width, cpane->dirn);
 
 	/* empty directory */
 	if (cpane->dirc == 0) {
@@ -1523,8 +1524,7 @@ set_panes(int resize)
 		home = "/";
 
 	pane_l.dirx = 2;
-	pane_l.dir_fg = pane_l_f;
-	pane_l.dir_bg = pane_l_b;
+	pane_l.dircol = cpanell;
 	pane_l.firstrow = 0;
 	if (resize == 0) {
 		pane_l.direntr = ecalloc(0, sizeof(Entry));
@@ -1533,8 +1533,7 @@ set_panes(int resize)
 	}
 
 	pane_r.dirx = (width / 2) + 2;
-	pane_r.dir_fg = pane_r_f;
-	pane_r.dir_bg = pane_r_b;
+	pane_r.dircol = cpanelr;
 	pane_r.firstrow = 0;
 	if (resize == 0) {
 		pane_r.direntr = ecalloc(0, sizeof(Entry));
@@ -1554,26 +1553,26 @@ draw_frame(void)
 
 	/* 2 horizontal lines */
 	for (i = 1; i < width-1 ; ++i) {
-		tb_change_cell(i, 0,        u_hl, frame_f, frame_b);
-		tb_change_cell(i, height-2, u_hl, frame_f, frame_b);
+		tb_change_cell(i, 0,        u_hl, cframe.fg, cframe.bg);
+		tb_change_cell(i, height-2, u_hl, cframe.fg, cframe.bg);
 	}
 
 	/* 3 vertical lines */
 	for (i = 1; i < height-1 ; ++i) {
-		tb_change_cell(0,           i,   u_vl, frame_f, frame_b);
-		tb_change_cell((width-1)/2, i-1, u_vl, frame_f, frame_b);
-		tb_change_cell(width-1,     i,   u_vl, frame_f, frame_b);
+		tb_change_cell(0,           i,   u_vl, cframe.fg, cframe.bg);
+		tb_change_cell((width-1)/2, i-1, u_vl, cframe.fg, cframe.bg);
+		tb_change_cell(width-1,     i,   u_vl, cframe.fg, cframe.bg);
 	}
 
 	/* 4 corners */
-	tb_change_cell(0,       0,        u_cnw, frame_f, frame_b);
-	tb_change_cell(width-1, 0,        u_cne, frame_f, frame_b);
-	tb_change_cell(0,       height-2, u_csw, frame_f, frame_b);
-	tb_change_cell(width-1, height-2, u_cse, frame_f, frame_b);
+	tb_change_cell(0,       0,        u_cnw, cframe.fg, cframe.bg);
+	tb_change_cell(width-1, 0,        u_cne, cframe.fg, cframe.bg);
+	tb_change_cell(0,       height-2, u_csw, cframe.fg, cframe.bg);
+	tb_change_cell(width-1, height-2, u_cse, cframe.fg, cframe.bg);
 
 	/* 2 middel top and bottom */
-	tb_change_cell((width-1)/2, 0,        u_mn, frame_f, frame_b);
-	tb_change_cell((width-1)/2, height-2, u_ms, frame_f, frame_b);
+	tb_change_cell((width-1)/2, 0,        u_mn, cframe.fg, cframe.bg);
+	tb_change_cell((width-1)/2, height-2, u_ms, cframe.fg, cframe.bg);
 }
 
 static int
