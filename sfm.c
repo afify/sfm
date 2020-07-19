@@ -1493,6 +1493,7 @@ t_resize(void)
 		chdir(pane_l.dirn);
 		cpane = &pane_l;
 		refresh_pane();
+		add_hi(&pane_l, pane_l.hdir-1);
 	} else if (cpane == &pane_r) {
 		chdir(pane_l.dirn);
 		cpane = &pane_l;
@@ -1500,6 +1501,7 @@ t_resize(void)
 		chdir(pane_r.dirn);
 		cpane = &pane_r;
 		refresh_pane();
+		add_hi(&pane_r, pane_r.hdir-1);
 	}
 
 	tb_present();
