@@ -101,7 +101,7 @@ static int check_dir(char*);
 static mode_t chech_execf(mode_t);
 static int sort_name(const void *const, const void *const);
 static char *get_ext(char*);
-static char *get_fdt(time_t);
+static int get_fdt(char*, size_t, time_t);
 static char *get_fgrp(gid_t, size_t);
 static char *get_finfo(Entry*);
 static char *get_fperm(mode_t);
@@ -449,23 +449,12 @@ get_ext(char *str)
 	return ext;
 }
 
-static char *
-get_fdt(time_t status)
+static int
+get_fdt(char *result, size_t reslen, time_t status)
 {
-	char *result;
 	struct tm lt;
-	size_t result_len;
-
-	result_len = (size_t)14;
-	result = ecalloc(result_len, sizeof(char));
 	localtime_r(&status, &lt);
-
-	if (strftime(result, result_len, dtfmt, &lt) != sizeof(dtfmt)-1) {
-		free(result);
-		return NULL;
-	}
-
-	return result;
+	return strftime(result, reslen, dtfmt, &lt);
 }
 
 static char *
@@ -492,8 +481,8 @@ get_finfo(Entry *cursor)
 	size_t perm_len = (size_t)11;
 	size_t ur_len = (size_t)32;
 	size_t gr_len = (size_t)32;
-	size_t td_len = (size_t)14;
-	size_t result_chars = size_len + perm_len + ur_len + gr_len + td_len;
+	size_t tdlen = 32;
+	size_t result_chars = size_len + perm_len + ur_len + gr_len + tdlen;
 	result = ecalloc(result_chars, sizeof(char));
 
 	if (show_perm == 1)
@@ -515,11 +504,12 @@ get_finfo(Entry *cursor)
 		free(gr);
 	}
 
-	if (show_dt == 1)
-	{
-		td = get_fdt(cursor->td);
-		strncat(result, td, td_len);
-		strcat(result, " ");
+	if (show_dt == 1) {
+		td = ecalloc(tdlen, sizeof(char));
+		if (get_fdt(td, tdlen, cursor->td) > 0) {
+			strncat(result, td, tdlen);
+			strcat(result, " ");
+		}
 		free(td);
 	}
 
@@ -1373,7 +1363,7 @@ refresh_pane(void)
 		y++;
 	}
 
-// 	print_info();
+	print_info();
 
 	/* print current directory title */
 	printf_tb(cpane->dirx, 0, cpane->dir_fg | TB_BOLD, cpane->dir_bg,

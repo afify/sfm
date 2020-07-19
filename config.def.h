@@ -84,8 +84,7 @@ static const int show_ug   = 1;
 static const int show_perm = 1;
 static const int show_dt   = 1;
 static const int show_size = 1;
-static const char dtfmt[] = "%d/%m %I:%M%p"; /* date time format */
-// static const char dtfmt[] = "%F %R"; /* date time format */
+static const char dtfmt[] = "%F %R"; /* date time format */
 
 /* unicode chars */
 static const uint32_t u_cne = 0x2510;
