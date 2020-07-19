@@ -66,7 +66,7 @@ typedef struct {
 } Pane;
 
 typedef struct {
-	char key;
+	uint32_t ch;
 	char path[MAX_P];
 } Bookmark;
 
@@ -136,7 +136,7 @@ static void scrup(void);
 static void scrups(void);
 static int get_usrinput(char*, size_t, char*);
 static int open_files(char*);
-static ssize_t findbm(char);
+static ssize_t findbm(uint32_t);
 static void filter(void);
 static void switch_pane(void);
 static void quit(void);
@@ -1245,12 +1245,12 @@ open_files(char *filename)
 }
 
 static ssize_t
-findbm(char event)
+findbm(uint32_t event)
 {
 	ssize_t i;
 
 	for (i = 0; i < (ssize_t)LEN(bmarks); i++) {
-		if (event == bmarks[i].key) {
+		if (event == bmarks[i].ch) {
 			if (check_dir(bmarks[i].path) != 0) {
 				print_error(strerror(errno));
 				return -1;
@@ -1306,6 +1306,7 @@ static void
 grabkeys(struct tb_event *event)
 {
 	size_t i;
+	ssize_t b;
 
 	for (i = 0; i < LEN(keys); i++) {
 		if (event->ch != 0) {
@@ -1320,6 +1321,16 @@ grabkeys(struct tb_event *event)
 			}
 		}
 	}
+
+	/* bookmarks */
+	b = findbm(event->ch);
+	if (b < 0)
+		return;
+	strcpy(cpane->dirn, bmarks[b].path);
+	cpane->firstrow = 0;
+	cpane->hdir = 1;
+	listdir(NULL);
+	add_hi(cpane, cpane->hdir-1);
 }
 
 static void

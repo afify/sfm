@@ -21,8 +21,6 @@ static const Cpair cstatus = { TB_DEFAULT, TB_DEFAULT };
 /* bookmarks */
 static Bookmark bmarks[] = {
 	{'\\', "/root"},
-	{'e', "/etc"},
-	{'u', "/usr/local/bin"},
 };
 
 /* openwith */
