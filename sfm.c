@@ -476,30 +476,29 @@ get_fgrp(gid_t status, size_t len)
 static char *
 get_finfo(Entry *cursor)
 {
-	char *size, *result, *ur, *gr, *td, *perm;
-	size_t size_len = (size_t)9;
-	size_t perm_len = (size_t)11;
-	size_t ur_len = (size_t)32;
-	size_t gr_len = (size_t)32;
-	size_t tdlen = 32;
-	size_t result_chars = size_len + perm_len + ur_len + gr_len + tdlen;
-	result = ecalloc(result_chars, sizeof(char));
+	char *sz, *rst, *ur, *gr, *td, *prm;
+	size_t szlen, prmlen, urlen, grlen, tdlen, rstlen;
 
-	if (show_perm == 1)
-	{
-		perm = get_fperm(cursor->mode);
-		strncpy(result, perm, perm_len);
-		strcat(result, " ");
-		free(perm);
+	szlen = 9;
+	prmlen = 11;
+	urlen = grlen = tdlen = 32;
+	rstlen = szlen + prmlen + urlen + grlen + tdlen;
+	rst = ecalloc(rstlen, sizeof(char));
+
+	if (show_perm == 1) {
+		prm = get_fperm(cursor->mode);
+		strncpy(rst, prm, prmlen);
+		strcat(rst, " ");
+		free(prm);
 	}
 
 	if (show_ug == 1) {
-		ur = get_fusr(cursor->user, ur_len);
-		gr = get_fgrp(cursor->group, gr_len);
-		strncat(result, ur, ur_len);
-		strcat(result, ":");
-		strncat(result, gr, gr_len);
-		strcat(result, " ");
+		ur = get_fusr(cursor->user, urlen);
+		gr = get_fgrp(cursor->group, grlen);
+		strncat(rst, ur, urlen);
+		strcat(rst, ":");
+		strncat(rst, gr, grlen);
+		strcat(rst, " ");
 		free(ur);
 		free(gr);
 	}
@@ -507,19 +506,19 @@ get_finfo(Entry *cursor)
 	if (show_dt == 1) {
 		td = ecalloc(tdlen, sizeof(char));
 		if (get_fdt(td, tdlen, cursor->td) > 0) {
-			strncat(result, td, tdlen);
-			strcat(result, " ");
+			strncat(rst, td, tdlen);
+			strcat(rst, " ");
 		}
 		free(td);
 	}
 
 	if (show_size == 1 && S_ISREG(cursor->mode)) {
-		size = get_fsize(cursor->size);
-		strncat(result, size, size_len);
-		free(size);
+		sz = get_fsize(cursor->size);
+		strncat(rst, sz, szlen);
+		free(sz);
 	}
 
-	return result;
+	return rst;
 }
 
 static char *
