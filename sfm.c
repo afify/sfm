@@ -135,7 +135,9 @@ static void scrdwns(void);
 static void scrup(void);
 static void scrups(void);
 static int get_usrinput(char*, size_t, char*);
-static int open_files(char*);
+static char *frules(char *);
+static char *getsw(char*);
+static int opnf(char*);
 static ssize_t findbm(uint32_t);
 static void filter(void);
 static void switch_pane(void);
@@ -153,6 +155,7 @@ static int start(void);
 static Pane pane_r, pane_l, *cpane;
 static int parent_row = 1; // FIX
 static size_t scrheight;
+static char fed[] = "vi";
 
 static const uint32_t INOTIFY_MASK = IN_CREATE | IN_DELETE | IN_DELETE_SELF \
 	| IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO;
@@ -826,7 +829,7 @@ crnd(void)
 		return;
 	}
 
-	if (mkdir(path, new_dir_perm) < 0)
+	if (mkdir(path, ndir_perm) < 0)
 		print_error(strerror(errno));
 	else
 		listdir(NULL);
@@ -952,6 +955,8 @@ mvdwns(void)
 static void
 mvfor(void)
 {
+	int s;
+
 	switch (check_dir(cpane->direntr[cpane->hdir-1].name)) {
 	case 0:
 		chdir(cpane->direntr[cpane->hdir-1].name);
@@ -962,18 +967,16 @@ mvfor(void)
 		(void)listdir(NULL);
 		add_hi(cpane, cpane->hdir-1);
 		break;
-	case 1:
-		/* is not a directory open file */
-		if (open_files(cpane->direntr[cpane->hdir-1].name) < 0) {
-			print_error("procces failed");
-			return;
-		}
+	case 1: /* not a directory open file */
+		tb_shutdown();
+		s = opnf(cpane->direntr[cpane->hdir-1].name);
 		if (tb_init() != 0)
 			die("tb_init");
 		t_resize();
+		if (s < 0)
+			print_error("process failed non-zero exit");
 		break;
-	case -1:
-		/* failed to open directory */
+	case -1: /* failed to open directory */
 		print_error(strerror(errno));
 	}
 }
@@ -1188,59 +1191,59 @@ get_usrinput(char *out, size_t sout, char *prompt)
 
 }
 
-static int
-open_files(char *filename)
+static char *
+frules(char *ex)
 {
-	// TODO
-	/* open editor in other window */
-	/* wait option */
-	char *editor, *file_ex, *software, *term;
-	int status;
-	size_t d, c;
+	size_t c, d;
+
+	for (c = 0; c < LEN(rules); c++)
+		for (d = 0; d < rules[c].len; d++)
+			if (strcmp(rules[c].ext[d], ex) == 0)
+				return rules[c].soft;
+	return NULL;
+}
+
+static char *
+getsw(char *fn)
+{
+	char *ed, *ex, *sw;
+
+	ed = getenv("EDITOR");
+	if (ed == NULL)
+		ed = fed;
+	ex = get_ext(fn);
+	sw = frules(ex);
+	if (sw == NULL)
+		sw = ed;
+	free(ex);
+	return sw;
+}
+
+static int
+opnf(char *fn)
+{
+	char *sw;
+	int ws;
 	pid_t pid, r;
 
-	editor = getenv("EDITOR");
-	term = getenv("TERM");
-	file_ex = get_ext(filename);
-	software = NULL;
-
-	/* find software in rules */
-	for (c = 0; c < LEN(rules); c++) {
-		for (d = 0; d < rules[c].len; d++) {
-			if (strcmp(rules[c].ext[d], file_ex) == 0) {
-				software = rules[c].soft;
-			}
-		}
-	}
-
-	/* default softwares */
-	if (term == NULL)
-		term = "xterm-256color";
-	if (editor == NULL)
-		editor = "vi";
-	if (software == NULL)
-		software = editor;
-
-	free(file_ex);
-	char *filex[] = {software, filename, NULL};
-	tb_shutdown();
+	sw = getsw(fn);
+	char *filex[] = {sw, fn, NULL};
 	pid = fork();
 
 	switch (pid) {
 	case -1:
 		return -1;
 	case 0:
-		(void)execvp(filex[0], filex);
+		execvp(filex[0], filex);
 		exit(EXIT_SUCCESS);
 	default:
-		while ((r = waitpid(pid, &status, 0)) == (pid_t)-1 && errno == EINTR)
+		while ((r = waitpid(pid, &ws, 0)) == -1 && errno == EINTR)
 			continue;
-		if (r == (pid_t)-1)
+		if (r == -1)
 			return -1;
-		if ((WIFEXITED(status) != 0) && (WEXITSTATUS(status) != 0))
+		if ((WIFEXITED(ws) != 0) && (WEXITSTATUS(ws) != 0))
 			return -1;
 	}
-
 	return 0;
 }
 
