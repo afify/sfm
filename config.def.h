@@ -61,7 +61,8 @@ static Key keys[] = {
 	{ {.key = TB_KEY_SPACE},     switch_pane },
 };
 
-static const mode_t ndir_perm = 0755;
+static const mode_t ndir_perm = S_IRWXU | S_IRWXG |S_IROTH | S_IXOTH;
+static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
 
 /* scroll */
 static const size_t scrmv = 10; /* ctrl+u, ctrl+d movement */

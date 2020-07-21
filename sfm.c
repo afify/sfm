@@ -39,6 +39,8 @@ defined(__APPLE__)
 
 /* enums */
 enum { AskDel, DAskDel }; /* delete directory */
+enum { AddHi, NoHi }; /* add highlight in listdir */
+enum { AllP, PtP }; /* set pane items */
 
 /* typedef */
 typedef struct {
@@ -145,11 +147,11 @@ static void quit(void);
 static void grabkeys(struct tb_event*);
 static void start_ev(void);
 static void refresh_pane(void);
-static int listdir(char*);
+static int listdir(int, char*);
 static void t_resize(void);
-static int set_panes(int);
+static void set_panes(int);
 static void draw_frame(void);
-static int start(void);
+static void start(void);
 
 /* global variables */
 static Pane pane_r, pane_l, *cpane;
@@ -816,7 +818,7 @@ crnd(void)
 	size_t pathlen;
 
 	user_input = ecalloc(MAX_USRI, sizeof(char));
-	if (get_usrinput(user_input, MAX_USRI, "new file") < 0) {
+	if (get_usrinput(user_input, MAX_USRI, "new dir") < 0) {
 		free(user_input);
 		return;
 	}
@@ -832,7 +834,8 @@ crnd(void)
 	if (mkdir(path, ndir_perm) < 0)
 		print_error(strerror(errno));
 	else
-		listdir(NULL);
+		if (listdir(AddHi, NULL) < 0)
+			print_error(strerror(errno));
 
 	free(user_input);
 	free(path);
@@ -859,7 +862,7 @@ crnf(void)
 		return;
 	}
 
-	rf = open(path, O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
+	rf = open(path, O_CREAT|O_EXCL, nf_perm);
 
 	if (rf < 0) {
 		print_error(strerror(errno));
@@ -867,7 +870,8 @@ crnf(void)
 		if (close(rf) < 0)
 			print_error(strerror(errno));
 		else
-			listdir(NULL);
+			if (listdir(AddHi, NULL) < 0)
+				print_error(strerror(errno));
 	}
 
 	free(user_input);
@@ -882,9 +886,10 @@ delfd(void)
 		print_error(strerror(errno));
 		break;
 	case 0:
-		if (cpane->hdir == cpane->dirc) /* last entry */
+		if (BETWEEN(cpane->hdir-1, 1, cpane->dirc)) /* last entry */
 			cpane->hdir--;
-		listdir(NULL);
+		if (listdir(AddHi, NULL) < 0)
+			print_error(strerror(errno));
 		break;
 	}
 }
@@ -896,14 +901,16 @@ mvbk(void)
 	getcwd(cpane->dirn, MAX_P);
 	cpane->firstrow = 0;
 	cpane->hdir = parent_row;
-	listdir(NULL);
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
 	parent_row = 1;
-	add_hi(cpane, cpane->hdir-1);
 }
 
 static void
 mvbtm(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	if (cpane->dirc > scrheight) {
 		clear_pane(cpane->dirx);
 		rm_hi(cpane, cpane->hdir-1);
@@ -922,6 +929,8 @@ mvbtm(void)
 static void
 mvdwn(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	if (cpane->dirc < scrheight && cpane->hdir < cpane->dirc) {
 		rm_hi(cpane, cpane->hdir-1);
 		cpane->hdir++;
@@ -955,6 +964,8 @@ mvdwns(void)
 static void
 mvfor(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	int s;
 
 	switch (check_dir(cpane->direntr[cpane->hdir-1].name)) {
@@ -964,8 +975,8 @@ mvfor(void)
 		parent_row = (int)cpane->hdir;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
-		(void)listdir(NULL);
-		add_hi(cpane, cpane->hdir-1);
+		if (listdir(AddHi, NULL) < 0)
+			print_error(strerror(errno));
 		break;
 	case 1: /* not a directory open file */
 		tb_shutdown();
@@ -984,6 +995,8 @@ mvfor(void)
 static void
 mvmid(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	rm_hi(cpane, cpane->hdir - 1);
 	cpane->hdir = (scrheight / 2) + cpane->firstrow;
 	add_hi(cpane, cpane->hdir - 1);
@@ -993,6 +1006,8 @@ mvmid(void)
 static void
 mvtop(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	if (cpane->dirc > scrheight) {
 		clear_pane(cpane->dirx);
 		rm_hi(cpane, cpane->hdir-1);
@@ -1011,6 +1026,8 @@ mvtop(void)
 static void
 mvup(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	if (cpane->dirc < scrheight && cpane->hdir > 1) {
 		rm_hi(cpane, cpane->hdir-1);
 		cpane->hdir--;
@@ -1044,6 +1061,8 @@ mvups(void)
 static void
 scrdwn(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	if (cpane->dirc < scrheight && cpane->hdir < cpane->dirc) {
 		if (cpane->hdir < cpane->dirc - scrmv) {
 			rm_hi(cpane, cpane->hdir-1);
@@ -1088,6 +1107,8 @@ scrdwns(void)
 static void
 scrup(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	if (cpane->dirc < scrheight && cpane->hdir > 1) {
 		if (cpane->hdir > scrmv) {
 			rm_hi(cpane, cpane->hdir-1);
@@ -1139,7 +1160,7 @@ get_usrinput(char *out, size_t sout, char *prompt)
 	int x = 0;
 
 	clear_status();
-	startat = strlen(prompt) + 3;
+	startat = strlen(prompt) + 1;
 	print_prompt(prompt);
 	tb_set_cursor((int)(startat + 1), height-1);
 	tb_present();
@@ -1267,33 +1288,35 @@ findbm(uint32_t event)
 static void
 filter(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	char *user_input;
 	user_input = ecalloc(MAX_USRI, sizeof(char));
 	if (get_usrinput(user_input, MAX_USRI, "filter") < 0) {
 		free(user_input);
 		return;
 	}
-	if (listdir(user_input) < 0) {
+	if (listdir(AddHi, user_input) < 0)
 		print_error("no match");
-	}
 	free(user_input);
 }
 
 static void
 switch_pane(void)
 {
-	if (cpane == &pane_l) {
-		rm_hi(&pane_l, pane_l.hdir-1);
-		add_hi(&pane_r, pane_r.hdir-1);
-		chdir(pane_r.dirn);
+	if (cpane->dirc > 0)
+		rm_hi(cpane, cpane->hdir-1);
+	if (cpane == &pane_l)
 		cpane = &pane_r;
-	} else if (cpane == &pane_r) {
-		rm_hi(&pane_r, pane_r.hdir-1);
-		add_hi(&pane_l, pane_l.hdir-1);
-		chdir(pane_l.dirn);
+	else if (cpane == &pane_r)
 		cpane = &pane_l;
+	chdir(cpane->dirn);
+	if (cpane->dirc > 0) {
+		add_hi(cpane, cpane->hdir-1);
+		print_info();
+	} else {
+		clear_status();
 	}
-	print_info();
 }
 
 static void
@@ -1332,8 +1355,8 @@ grabkeys(struct tb_event *event)
 	strcpy(cpane->dirn, bmarks[b].path);
 	cpane->firstrow = 0;
 	cpane->hdir = 1;
-	listdir(NULL);
-	add_hi(cpane, cpane->hdir-1);
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
 }
 
 static void
@@ -1385,7 +1408,7 @@ refresh_pane(void)
 }
 
 static int
-listdir(char *filter)
+listdir(int hi, char *filter)
 {
 	DIR *dir;
 	struct dirent *entry;
@@ -1488,6 +1511,9 @@ listdir(char *filter)
 	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
 	refresh_pane();
 
+	if (hi == AddHi)
+		add_hi(cpane, cpane->hdir-1);
+
 	if (closedir(dir) < 0)
 		return -1;
 	return 0;
@@ -1499,7 +1525,7 @@ t_resize(void)
 	/* TODO need refactoring */
 	tb_clear();
 	draw_frame();
-	(void)set_panes(1);
+	set_panes(PtP);
 
 	if (cpane == &pane_l) {
 		chdir(pane_r.dirn);
@@ -1522,8 +1548,8 @@ t_resize(void)
 	tb_present();
 }
 
-static int
-set_panes(int resize)
+static void
+set_panes(int paneitem)
 {
 	int width;
 	char *home;
@@ -1533,14 +1559,14 @@ set_panes(int resize)
 	home = getenv("HOME");
 	width = tb_width();
 	if ((getcwd(cwd, sizeof(cwd)) == NULL))
-		return -1;
+		return;
 	if (home == NULL)
 		home = "/";
 
 	pane_l.dirx = 2;
 	pane_l.dircol = cpanell;
 	pane_l.firstrow = 0;
-	if (resize == 0) {
+	if (paneitem == AllP) {
 		pane_l.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_l.dirn, cwd);
 		pane_l.hdir = 1;
@@ -1549,12 +1575,11 @@ set_panes(int resize)
 	pane_r.dirx = (width / 2) + 2;
 	pane_r.dircol = cpanelr;
 	pane_r.firstrow = 0;
-	if (resize == 0) {
+	if (paneitem == AllP) {
 		pane_r.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_r.dirn, home);
 		pane_r.hdir = 1;
 	}
-	return 0;
 }
 
 static void
@@ -1589,7 +1614,7 @@ draw_frame(void)
 	tb_change_cell((width-1)/2, height-2, u_ms, cframe.fg, cframe.bg);
 }
 
-static int
+static void
 start(void)
 {
 	if (tb_init()!= 0)
@@ -1599,15 +1624,15 @@ start(void)
 			die("output error");
 
 	draw_frame();
-	set_panes(0);
+	set_panes(AllP);
 	cpane = &pane_r;
-	listdir(NULL);
+	if (listdir(NoHi, NULL) < 0)
+		print_error(strerror(errno));
 	cpane = &pane_l;
-	listdir(NULL);
-	add_hi(&pane_l, pane_l.hdir-1);
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
 	tb_present();
 	start_ev();
-	return 0;
 }
 
 int
@@ -1618,8 +1643,7 @@ main(int argc, char *argv[])
 		die("pledge");
 #endif /* __OpenBSD__ */
 	if (argc == 1) {
-		if (start() != 0)
-			die("start failed");
+		start();
 	} else if (
 		argc == 2 && strlen(argv[1]) == (size_t)2 &&
 		strcmp("-v", argv[1]) == 0) {
