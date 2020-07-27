@@ -42,7 +42,7 @@ static Rule rules[] = {
 	{"gimp",        arts,      LEN(arts)      },
 };
 
-static Key keys[] = {
+static Key nkeys[] = {
 	{ {.ch = 'j'},               mvdwn },
 	{ {.ch = 'k'},               mvup },
 	{ {.ch = 'l'},               mvfor },
@@ -58,7 +58,19 @@ static Key keys[] = {
 	{ {.ch = 'x'},               calcdir },
 	{ {.ch = '/'},               filter },
 	{ {.ch = 'q'},               quit },
+	{ {.ch = 'v'},               selection },
+	{ {.ch = 'p'},               selpst },
+	{ {.ch = 'P'},               selmv },
 	{ {.key = TB_KEY_SPACE},     switch_pane },
+};
+
+static Key skeys[] = {
+	{ {.ch = 'j'},               seldwn },
+	{ {.ch = 'k'},               selup },
+	{ {.ch = 'a'},               selall },
+	{ {.ch = 'y'},               selynk },
+	{ {.ch = 'D'},               seldel },
+	{ {.key = TB_KEY_ESC},       selcan },
 };
 
 static const mode_t ndir_perm = S_IRWXU | S_IRWXG |S_IROTH | S_IXOTH;

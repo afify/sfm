@@ -17,6 +17,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <libgen.h>
 
 #ifdef __linux__
 #include <sys/inotify.h>
@@ -35,6 +36,7 @@ defined(__APPLE__)
 #define MAX_N       255
 #define MAX_USRI    32
 #define EVENTS      32
+#define STRING_ARRAY_SIZE 8
 #define EV_BUF_LEN  (EVENTS * (sizeof(struct inotify_event) + MAX_N + 1))
 
 /* enums */
@@ -64,6 +66,7 @@ typedef struct {
 	size_t dirc;          // dir entries sum
 	size_t hdir;          // highlighted dir
 	size_t firstrow;
+	size_t *selection;
 	Cpair dircol;
 } Pane;
 
@@ -142,9 +145,25 @@ static char *getsw(char*);
 static int opnf(char*);
 static ssize_t findbm(uint32_t);
 static void filter(void);
+static void selection(void);
+static void selup(void);
+static void seldwn(void);
+static void selynk(void);
+static void selcan(void);
+static void selall(void);
+static void selref(void);
+static void selcalc(void);
+static void selpst(void);
+static void seldel(void);
+static void selmv(void);
+static int pstf(char *, char *);
+static int pstd(char *, char *);
+static char *get_path_hdir(int);
+static void init_files(void);
+static void free_files(void);
 static void switch_pane(void);
 static void quit(void);
-static void grabkeys(struct tb_event*);
+static void grabkeys(struct tb_event*, Key*, size_t);
 static void start_ev(void);
 static void refresh_pane(void);
 static int listdir(int, char*);
@@ -153,17 +172,21 @@ static void set_panes(int);
 static void draw_frame(void);
 static void start(void);
 
+/* configuration, allows nested code to access above variables */
+#include "config.h"
+
 /* global variables */
 static Pane pane_r, pane_l, *cpane;
 static int parent_row = 1; // FIX
 static size_t scrheight;
+static const size_t nkeyslen = LEN(nkeys);
+static const size_t skeyslen = LEN(skeys);
+static size_t selection_size = 0;
+static int sl = 0;
+static char **files;
 static char fed[] = "vi";
-
 static const uint32_t INOTIFY_MASK = IN_CREATE | IN_DELETE | IN_DELETE_SELF \
 	| IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO;
-
-/* configuration, allows nested code to access above variables */
-#include "config.h"
 
 /* function implementations */
 static void
@@ -770,7 +793,6 @@ delent(char *fullpath)
 	} else {
 		return delf(fullpath);
 	}
-
 }
 
 static int
@@ -1302,6 +1324,340 @@ filter(void)
 }
 
 static void
+selection(void)
+{
+	struct tb_event fev;
+	
+	if (cpane->selection != NULL) {
+		free(cpane->selection);
+		cpane->selection = NULL;
+	}
+
+	cpane->selection = ecalloc(cpane->dirc, sizeof(size_t));
+	cpane->selection[0] = cpane->hdir;
+	add_hi(cpane, cpane->selection[0] - 1);
+
+	sl = 0;
+
+	while (tb_poll_event(&fev) != 0) {
+		switch (fev.type) {
+		case TB_EVENT_KEY:
+			grabkeys(&fev, skeys, skeyslen);
+			if(sl == -1)
+				return;
+			tb_present();
+			break;
+		}
+		
+	}
+}
+
+static void
+seldwn(void)
+{
+	mvdwn();
+	print_prompt("VISUAL");
+	size_t index = abs(cpane->hdir - cpane->selection[0]);
+
+	if (cpane->hdir > cpane->selection[0]) {
+		cpane->selection[index] = cpane->hdir;
+		add_hi(cpane, cpane->selection[index] - 2);
+	} else if (index >= 0) {
+		cpane->selection[index + 1] = 0;
+	}
+	if (cpane->dirc >= scrheight || cpane->hdir >= cpane->dirc) { /* rehighlight all if scrolling */
+		selref();
+	}
+}
+
+static void
+selup(void)
+{
+	mvup();
+	print_prompt("VISUAL");
+	size_t index = abs(cpane->hdir - cpane->selection[0]);
+
+	if (cpane->hdir < cpane->selection[0]) {
+		cpane->selection[index] = cpane->hdir;
+		add_hi(cpane, cpane->selection[index]);
+	} else if (index < cpane->dirc) {
+		cpane->selection[index + 1] = 0;
+	}
+	if (cpane->dirc >= scrheight || cpane->hdir <= 1) { /* rehighlight all if scrolling */
+		selref();
+	}
+}
+
+static void
+selref(void)
+{
+	for (int i = 0; i < cpane->dirc; i++) {
+		if (cpane->selection[i] < (scrheight + cpane->firstrow) && cpane->selection[i] > cpane->firstrow) { /* checks if in the frame of the directories */
+			add_hi(cpane, cpane->selection[i] - 1);
+		}
+	}
+}
+
+static void
+selcan(void)
+{
+	refresh_pane();
+	add_hi(cpane, cpane->hdir - 1);
+	print_prompt("Cancel");
+	sl = -1;
+}
+
+static void
+selall(void)
+{
+	for (int i = 0; i < cpane->dirc; i++) {
+		cpane->selection[i] = i + 1;
+	}
+	selref();
+}
+
+static void
+selcalc(void)
+{
+	selection_size = 0;
+	for (int j = 0; j < cpane->dirc; j++) { /* calculate used selection size */
+		if (cpane->selection[j] != 0)
+			selection_size++;
+		else 
+			break;
+	}
+}
+
+static void
+free_files(void)
+{
+	for (int i = 0; i < selection_size; i++) {
+		free(files[i]);
+		files[i] = NULL;
+	}
+	free(files);
+	files = NULL;
+}
+
+static void
+init_files(void)
+{
+	if (files != NULL)
+		free_files();
+
+	selcalc();
+	files = ecalloc(selection_size * STRING_ARRAY_SIZE, sizeof(char));
+
+	for (int i = 0; i < selection_size; i++) {
+		files[i] = ecalloc(MAX_P, sizeof(char));
+		char *tmp = get_path_hdir(cpane->selection[i]);
+		strcpy(files[i], tmp);
+		free(tmp);
+	}
+}
+
+static void
+selynk(void)
+{
+	init_files();
+	refresh_pane();
+	add_hi(cpane, cpane->hdir - 1);
+	print_status(cprompt, "%d files are yanked", selection_size);
+	sl = -1;
+}
+
+static int
+pstf(char *source_path, char* target_path)
+{
+	FILE *target, *source;
+	char ch;
+	char filename[MAX_N], dirpath[MAX_P];
+
+	strcpy(filename, basename(source_path));
+	strcpy(dirpath, target_path);
+	strcat(dirpath, "/");
+	strcat(dirpath, filename);
+	target = fopen(dirpath, "w");
+	source = fopen(source_path, "r");
+
+	if (source == NULL) {
+		fclose(target);
+		return -1;
+	}
+	if (target == NULL) {
+		fclose(source);
+		return -1;
+	}
+
+	while ((ch = fgetc(source)) != EOF) {
+		fputc(ch, target);
+	}
+
+	fclose(target);
+	fclose(source);
+
+	return 0;
+}
+
+static int
+pstd(char *source_path, char *target_path)
+{
+	DIR *dir;
+	char *source_full, *target_full, *dir_name, *base;
+	char temp[MAX_P];
+	mode_t mode;
+	struct dirent *entry;
+	struct stat status;
+
+	dir = opendir(source_path);
+	if (dir == NULL) {
+		closedir(dir);
+		return -1;
+	}
+
+	dir_name = basename(source_path);
+	base = get_fullpath(target_path, dir_name);
+	mkdir(base, S_IRWXU);
+	free(base);
+
+	while ((entry = readdir(dir)) != 0) {
+		if ((strcmp(entry->d_name, ".") == 0 ||
+			strcmp(entry->d_name, "..") == 0))
+			continue;
+
+		source_full = get_fullpath(source_path, entry->d_name);
+		
+		if (lstat(source_full, &status) == 0) {
+			mode = status.st_mode;
+			if (S_ISDIR(mode)) {
+				strcpy(temp, target_path);
+				strcat(temp, "/");
+				strcat(temp, dir_name);
+				target_full = get_fullpath(temp, entry->d_name);
+				DIR *tmpdir = opendir(target_full);
+
+				if (tmpdir == NULL) {
+					if (errno == ENOENT) {  /* checks if the dir doesn't exist */
+						if (mkdir(target_full, S_IRWXU) < 0) {
+							free(source_full);
+							free(target_full);
+							return -1;
+					} } else {
+						free(source_full);
+						free(target_full);
+						return -1;
+					}
+				} else {
+					closedir(tmpdir);
+				}
+				if (pstd(source_full, target_full) < 0) {
+					free(source_full);
+					free(target_full);
+					closedir(dir);
+					return -1;
+				}
+
+			} else if (S_ISREG(mode)) {
+				target_full = get_fullpath(target_path, dir_name);
+				if (pstf(source_full, target_full) < 0) {
+					free(source_full);
+					free(target_full);
+					closedir(dir);
+					return -1;
+				}
+			}
+		}
+		free(source_full);
+		free(target_full);
+	}
+
+	if (closedir(dir) < 0)
+		return -1;
+
+	return 0;
+}
+
+static void
+selpst(void)
+{
+	struct stat status;
+	for (int i = 0; i < selection_size; i++) {
+		if (lstat(files[i], &status) == 0) {
+			if (S_ISDIR(status.st_mode)) {
+				pstd(files[i], cpane->dirn);
+			} else if (S_ISREG(status.st_mode)) {
+				pstf(files[i], cpane->dirn);
+			}
+		}
+	}
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
+}
+
+static void
+seldel(void)
+{
+	char *confirmation;
+	confirmation = ecalloc((size_t)2, sizeof(char));
+	if ((get_usrinput(
+		confirmation, (size_t)2,"delete directory (Y) ?") < 0) ||
+		(strcmp(confirmation, "Y") != 0)) {
+		free(confirmation);
+		sl = -1;
+		return; /* canceled by user or wrong confirmation */
+	}
+	free(confirmation);
+
+	init_files();
+	struct stat status;
+	for (int i = 0; i < selection_size; i++) {
+		if (lstat(files[i], &status) == 0) {
+			if (S_ISDIR(status.st_mode)) {
+				deldir(files[i], DAskDel);
+			} else {
+				unlink(files[i]);
+			}
+		}
+	}
+	cpane->hdir = 1;
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
+	print_status(cprompt, "%d files are deleted", selection_size);
+	sl = -1;
+}
+
+static void
+selmv(void)
+{
+	struct stat status;
+	for (int i = 0; i < selection_size; i++) {
+		if (lstat(files[i], &status) == 0) {
+			if (S_ISDIR(status.st_mode)) {
+				pstd(files[i], cpane->dirn);
+				deldir(files[i], DAskDel);
+			} else {
+				pstf(files[i], cpane->dirn);
+				unlink(files[i]);
+			}
+		}
+	}
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
+	print_status(cprompt, "%d files are moved", selection_size);
+	sl = -1;
+}
+
+static char*
+get_path_hdir(int Ndir)
+{	
+	char *path = ecalloc(MAX_P, sizeof(char));
+	strcpy(path, cpane->dirn);
+	strcat(path, "/");
+	strcat(path, cpane->direntr[Ndir-1].name);
+	return path;
+}
+
+static void
 switch_pane(void)
 {
 	if (cpane->dirc > 0)
@@ -1322,6 +1678,10 @@ switch_pane(void)
 static void
 quit(void)
 {
+	if (sl == -1) { /* check if selection was allocated */
+		free(cpane->selection);
+		free_files();
+	}
 	free(pane_l.direntr);
 	free(pane_r.direntr);
 	tb_shutdown();
@@ -1329,20 +1689,20 @@ quit(void)
 }
 
 static void
-grabkeys(struct tb_event *event)
+grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 {
 	size_t i;
 	ssize_t b;
 
-	for (i = 0; i < LEN(keys); i++) {
+	for (i = 0; i < max_keys; i++) {
 		if (event->ch != 0) {
-			if (event->ch == keys[i].evkey.ch) {
-				keys[i].func();
+			if (event->ch == key[i].evkey.ch) {
+				key[i].func();
 				return;
 			}
 		} else if (event->key != 0) {
-			if (event->key == keys[i].evkey.key) {
-				keys[i].func();
+			if (event->key == key[i].evkey.key) {
+				key[i].func();
 				return;
 			}
 		}
@@ -1367,7 +1727,7 @@ start_ev(void)
 	while (tb_poll_event(&ev) != 0) {
 		switch (ev.type) {
 		case TB_EVENT_KEY:
-			grabkeys(&ev);
+			grabkeys(&ev, nkeys, nkeyslen);
 			tb_present();
 			break;
 		case TB_EVENT_RESIZE:
