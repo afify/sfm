@@ -1470,7 +1470,9 @@ static int
 pstf(char *source_path, char* target_path)
 {
 	FILE *target, *source;
-	char ch;
+	size_t ch;
+	int buf_size = 4096;
+	size_t buf[buf_size];
 	char filename[MAX_N], dirpath[MAX_P];
 
 	strcpy(filename, basename(source_path));
@@ -1489,9 +1491,8 @@ pstf(char *source_path, char* target_path)
 		return -1;
 	}
 
-	while ((ch = fgetc(source)) != EOF) {
-		fputc(ch, target);
-	}
+	while ((ch = fread(&buf, 1, buf_size, source)))
+		fwrite(&buf, 1, ch, target);
 
 	fclose(target);
 	fclose(source);
