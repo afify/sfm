@@ -36,7 +36,6 @@ defined(__APPLE__)
 #define MAX_N       255
 #define MAX_USRI    32
 #define EVENTS      32
-#define STRING_ARRAY_SIZE 8
 #define EV_BUF_LEN  (EVENTS * (sizeof(struct inotify_event) + MAX_N + 1))
 
 /* enums */
@@ -139,7 +138,7 @@ static void scrdwn(void);
 static void scrdwns(void);
 static void scrup(void);
 static void scrups(void);
-static int get_usrinput(char*, size_t, char*);
+static int get_usrinput(char*, size_t, const char*, ...);
 static char *frules(char *);
 static char *getsw(char*);
 static int opnf(char*);
@@ -156,11 +155,13 @@ static void selcalc(void);
 static void selpst(void);
 static void seldel(void);
 static void selmv(void);
-static int pstf(char *, char *);
-static int pstd(char *, char *);
+static int pstf(char*, char*, char*);
+static int pstd(char*, char*, char*);
+static int check_if_file_exist(char*);
 static char *get_path_hdir(int);
 static void init_files(void);
 static void free_files(void);
+static void yank(void);
 static void switch_pane(void);
 static void quit(void);
 static void grabkeys(struct tb_event*, Key*, size_t);
@@ -1172,7 +1173,7 @@ scrups(void)
 }
 
 static int
-get_usrinput(char *out, size_t sout, char *prompt)
+get_usrinput(char *out, size_t sout, const char *fmt, ...)
 {
 	int height = tb_height();
 	size_t startat;
@@ -1180,10 +1181,18 @@ get_usrinput(char *out, size_t sout, char *prompt)
 	size_t counter = (size_t)1;
 	char empty = ' ';
 	int x = 0;
+	int name_size = 0;
+	char buf[256];
 
 	clear_status();
-	startat = strlen(prompt) + 1;
-	print_prompt(prompt);
+
+	va_list vl;
+	Cpair col;
+	va_start(vl, fmt);
+	name_size = vsnprintf(buf, sizeof(buf), fmt, vl);
+	va_end(vl);
+	print_tb(buf, 1, height-1, col.fg, col.bg);
+	startat = name_size + 1;
 	tb_set_cursor((int)(startat + 1), height-1);
 	tb_present();
 
@@ -1327,18 +1336,14 @@ static void
 selection(void)
 {
 	struct tb_event fev;
-	
 	if (cpane->selection != NULL) {
 		free(cpane->selection);
 		cpane->selection = NULL;
 	}
-
 	cpane->selection = ecalloc(cpane->dirc, sizeof(size_t));
 	cpane->selection[0] = cpane->hdir;
 	add_hi(cpane, cpane->selection[0] - 1);
-
 	sl = 0;
-
 	while (tb_poll_event(&fev) != 0) {
 		switch (fev.type) {
 		case TB_EVENT_KEY:
@@ -1348,7 +1353,6 @@ selection(void)
 			tb_present();
 			break;
 		}
-		
 	}
 }
 
@@ -1446,7 +1450,7 @@ init_files(void)
 		free_files();
 
 	selcalc();
-	files = ecalloc(selection_size * STRING_ARRAY_SIZE, sizeof(char));
+	files = ecalloc(selection_size, sizeof(char*));
 
 	for (int i = 0; i < selection_size; i++) {
 		files[i] = ecalloc(MAX_P, sizeof(char));
@@ -1467,19 +1471,37 @@ selynk(void)
 }
 
 static int
-pstf(char *source_path, char* target_path)
+pstf(char *source_path, char* target_path, char *flag)
 {
 	FILE *target, *source;
 	size_t ch;
 	int buf_size = 4096;
 	size_t buf[buf_size];
-	char filename[MAX_N], dirpath[MAX_P];
+	char filename[MAX_N], dirpath[MAX_P], temp[MAX_P];
 
 	strcpy(filename, basename(source_path));
 	strcpy(dirpath, target_path);
 	strcat(dirpath, "/");
+	strcpy(temp, dirpath);
 	strcat(dirpath, filename);
-	target = fopen(dirpath, "w");
+	target = fopen(dirpath, "r");
+
+	if (target == NULL) {
+		target = fopen(dirpath, "w");
+	} else if (target != NULL && ((strcmp(flag, "o") == 0) || (strcmp(flag, "O") == 0))) {
+		target = freopen(dirpath, "w", target);
+	} else if (target != NULL && ((strcmp(flag, "a") == 0) || (strcmp(flag, "A") == 0))) {
+		target = freopen(dirpath, "a", target);
+	} else if (target != NULL && ((strcmp(flag, "s") == 0) || (strcmp(flag, "S") == 0))) {
+		fclose(target);
+		return 0;
+	} else if (target != NULL && (strcmp(flag, "r") == 0) || (strcmp(flag, "R") == 0)) {
+		char new_name[MAX_N];
+		get_usrinput(new_name, MAX_USRI, "rename %s", filename);
+		strcat(temp, new_name);
+		target = freopen(temp, "w", target);
+	}
+	
 	source = fopen(source_path, "r");
 
 	if (source == NULL) {
@@ -1501,27 +1523,47 @@ pstf(char *source_path, char* target_path)
 }
 
 static int
-pstd(char *source_path, char *target_path)
+pstd(char *source_path, char *target_path, char *flag)
 {
-	DIR *dir;
+	DIR *sdir, *tdir;
 	char *source_full, *target_full, *dir_name, *base;
 	char temp[MAX_P];
 	mode_t mode;
 	struct dirent *entry;
 	struct stat status;
 
-	dir = opendir(source_path);
-	if (dir == NULL) {
-		closedir(dir);
+	sdir = opendir(source_path);
+	dir_name = calloc(MAX_N, sizeof(char));
+	strcpy(dir_name, basename(source_path));
+	base = get_fullpath(target_path, dir_name);
+	tdir = opendir(base);
+
+	if (sdir == NULL) {
+		closedir(sdir);
 		return -1;
 	}
 
-	dir_name = basename(source_path);
-	base = get_fullpath(target_path, dir_name);
-	mkdir(base, S_IRWXU);
+	if (tdir == NULL) {
+		mkdir(base, S_IRWXU);
+	} else if (tdir != NULL && (strcmp(flag, "r") == 0) || (strcmp(flag, "R") == 0)) {
+		char new_name[MAX_N];
+		get_usrinput(new_name, MAX_USRI, "rename %s", dir_name);
+		free(base);
+		base = get_fullpath(target_path, new_name);
+		strcpy(dir_name, new_name);
+		mkdir(base, S_IRWXU);
+	} else if (tdir != NULL && (strcmp(flag, "o") == 0) || (strcmp(flag, "O") == 0)) {
+		deldir(base, DAskDel);
+		mkdir(base, S_IRWXU);
+	} else if (tdir != NULL && (strcmp(flag, "s") == 0) || (strcmp(flag, "S") == 0)) {
+		closedir(tdir);
+		closedir(sdir);
+		return 0;
+	}
+	closedir(tdir);
 	free(base);
-
-	while ((entry = readdir(dir)) != 0) {
+		
+	while ((entry = readdir(sdir)) != 0) {
 		if ((strcmp(entry->d_name, ".") == 0 ||
 			strcmp(entry->d_name, "..") == 0))
 			continue;
@@ -1551,19 +1593,19 @@ pstd(char *source_path, char *target_path)
 				} else {
 					closedir(tmpdir);
 				}
-				if (pstd(source_full, target_full) < 0) {
+				if (pstd(source_full, target_full, flag) < 0) {
 					free(source_full);
 					free(target_full);
-					closedir(dir);
+					closedir(sdir);
 					return -1;
 				}
 
 			} else if (S_ISREG(mode)) {
 				target_full = get_fullpath(target_path, dir_name);
-				if (pstf(source_full, target_full) < 0) {
+				if (pstf(source_full, target_full, "O") < 0) {
 					free(source_full);
 					free(target_full);
-					closedir(dir);
+					closedir(sdir);
 					return -1;
 				}
 			}
@@ -1572,22 +1614,66 @@ pstd(char *source_path, char *target_path)
 		free(target_full);
 	}
 
-	if (closedir(dir) < 0)
+	if (closedir(sdir) < 0)
 		return -1;
 
+	return 0;
+}
+
+static int
+check_if_file_exist(char *filepath)
+{
+	FILE *file = fopen(filepath, "r");
+	if (file == NULL) {
+		return -1;
+	}
+	fclose(file);
 	return 0;
 }
 
 static void
 selpst(void)
 {
+	int flag_size, exist, all;
+	flag_size = 2;
+	char flag[flag_size];
+	char filepath[MAX_P];
+	all = 0; /* option to modify (file or allfiles) */
 	struct stat status;
 	for (int i = 0; i < selection_size; i++) {
 		if (lstat(files[i], &status) == 0) {
+			strcpy(filepath, cpane->dirn);
+			strcat(filepath, "/");
+			strcat(filepath, basename(files[i]));
+			exist = check_if_file_exist(filepath);
 			if (S_ISDIR(status.st_mode)) {
-				pstd(files[i], cpane->dirn);
-			} else if (S_ISREG(status.st_mode)) {
-				pstf(files[i], cpane->dirn);
+				if (exist == 0) {
+					if (all == 0) {
+						get_usrinput(flag, flag_size, "Conflict on directory %s: (o)verright/(O)verright_all (s)kip/(S)kip_all (m)erge/(M)erge_all (r)ename/(R)ename_all", basename(files[i]));
+					}
+					if ((strcmp(flag, "O") == 0) || (strcmp(flag, "S") == 0) || (strcmp(flag, "M") == 0) || (strcmp(flag, "R") == 0)) {
+						all = 1;
+					}
+					if ((strcmp(flag, "o") != 0) && (strcmp(flag, "s") != 0) && (strcmp(flag, "m") != 0) && (strcmp(flag, "r") != 0) &&
+						(strcmp(flag, "O") != 0) && (strcmp(flag, "S") != 0) && (strcmp(flag, "M") != 0) && (strcmp(flag, "R") != 0)) {
+						return;
+					}
+				}
+				pstd(files[i], cpane->dirn, flag); 
+			} else {
+				if (exist == 0) {
+					if (all == 0) {
+						get_usrinput(flag, flag_size, "Conflict on file %s: (o)verright/(O)verright_all (s)kip/(S)kip_all (a)ppend/(A)ppend_all (r)ename/(R)ename_all", basename(files[i]));
+					}
+					if ((strcmp(flag, "O") == 0) || (strcmp(flag, "S") == 0) || (strcmp(flag, "A") == 0) || (strcmp(flag, "R") == 0)) {
+						all = 1;
+					}
+					if ((strcmp(flag, "o") != 0) && (strcmp(flag, "s") != 0) && (strcmp(flag, "a") != 0) && (strcmp(flag, "r") != 0) &&
+						(strcmp(flag, "O") != 0) && (strcmp(flag, "S") != 0) && (strcmp(flag, "A") != 0) && (strcmp(flag, "R") != 0)) {
+							return;
+					}
+				}
+				pstf(files[i], cpane->dirn, flag); 
 			}
 		}
 	}
@@ -1630,14 +1716,47 @@ seldel(void)
 static void
 selmv(void)
 {
+	int flag_size, exist, all;
+	flag_size = 2;
+	char flag[flag_size];
+	char filepath[MAX_P];
+	all = 0; /* option to modify (file or allfiles) */
 	struct stat status;
 	for (int i = 0; i < selection_size; i++) {
 		if (lstat(files[i], &status) == 0) {
+			strcpy(filepath, cpane->dirn);
+			strcat(filepath, "/");
+			strcat(filepath, basename(files[i]));
+			exist = check_if_file_exist(filepath);
 			if (S_ISDIR(status.st_mode)) {
-				pstd(files[i], cpane->dirn);
+				if (exist == 0) {
+					if (all == 0) {
+						get_usrinput(flag, flag_size, "Conflict on directory %s: (o)verright/(O)verright_all (s)kip/(S)kip_all (m)erge/(M)erge_all (r)ename/(R)ename_all", basename(files[i]));
+					}
+					if ((strcmp(flag, "O") == 0) || (strcmp(flag, "S") == 0) || (strcmp(flag, "M") == 0) || (strcmp(flag, "R") == 0)) {
+						all = 1;
+					}
+					if ((strcmp(flag, "o") != 0) && (strcmp(flag, "s") != 0) && (strcmp(flag, "m") != 0) && (strcmp(flag, "r") != 0) &&
+						(strcmp(flag, "O") != 0) && (strcmp(flag, "S") != 0) && (strcmp(flag, "M") != 0) && (strcmp(flag, "R") != 0)) {
+						return;
+					}
+				}
+				pstd(files[i], cpane->dirn, flag);
 				deldir(files[i], DAskDel);
 			} else {
-				pstf(files[i], cpane->dirn);
+				if (exist == 0) {
+					if (all == 0) {
+						get_usrinput(flag, flag_size, "Conflict on file %s: (o)verright/(O)verright_all (s)kip/(S)kip_all (a)ppend/(A)ppend_all (r)ename/(R)ename_all", basename(files[i]));
+					}
+					if ((strcmp(flag, "O") == 0) || (strcmp(flag, "S") == 0) || (strcmp(flag, "A") == 0) || (strcmp(flag, "R") == 0)) {
+						all = 1;
+					}
+					if ((strcmp(flag, "o") != 0) && (strcmp(flag, "s") != 0) && (strcmp(flag, "a") != 0) && (strcmp(flag, "r") != 0) &&
+						(strcmp(flag, "O") != 0) && (strcmp(flag, "S") != 0) && (strcmp(flag, "A") != 0) && (strcmp(flag, "R") != 0)) {
+							return;
+					}
+				}
+				pstf(files[i], cpane->dirn, flag);
 				unlink(files[i]);
 			}
 		}
@@ -1645,7 +1764,6 @@ selmv(void)
 	if (listdir(AddHi, NULL) < 0)
 		print_error(strerror(errno));
 	print_status(cprompt, "%d files are moved", selection_size);
-	sl = -1;
 }
 
 static char*
@@ -1656,6 +1774,18 @@ get_path_hdir(int Ndir)
 	strcat(path, "/");
 	strcat(path, cpane->direntr[Ndir-1].name);
 	return path;
+}
+
+static void
+yank(void)
+{
+	if (cpane->selection != NULL) {
+		free(cpane->selection);
+		cpane->selection = NULL;
+	}
+	cpane->selection = ecalloc(2, sizeof(size_t));
+	cpane->selection[0] = cpane->hdir;
+	selynk();
 }
 
 static void
