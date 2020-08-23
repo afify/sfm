@@ -997,7 +997,10 @@ mvmid(void)
 	if (cpane->dirc < 1)
 		return;
 	rm_hi(cpane, cpane->hdir - 1);
-	cpane->hdir = (scrheight / 2) + cpane->firstrow;
+	if (cpane->dirc < scrheight / 2)
+		cpane->hdir = (cpane->dirc + 1) / 2;
+	else
+		cpane->hdir = (scrheight / 2) + cpane->firstrow;
 	add_hi(cpane, cpane->hdir - 1);
 	print_info();
 }
