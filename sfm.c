@@ -17,25 +17,20 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-
-#ifdef __linux__
+#if defined(__linux__)
 #include <sys/inotify.h>
-#define INOTIFY
-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \
-defined(__APPLE__)
-#define KQUEUE
+#elif defined(__FreeBSD__) || defined(__NetBSD__) ||\
+      defined(__OpenBSD__) || defined(__APPLE__)
 #include <sys/event.h>
-#endif /* filesystem events */
+#endif
 
 #include "termbox.h"
 #include "util.h"
 
 /* macros */
-#define MAX_P       4095
-#define MAX_N       255
-#define MAX_USRI    32
-#define EVENTS      32
-#define EV_BUF_LEN  (EVENTS * (sizeof(struct inotify_event) + MAX_N + 1))
+#define MAX_P      4095
+#define MAX_N      255
+#define MAX_USRI   32
 
 /* enums */
 enum { AskDel, DAskDel }; /* delete directory */
@@ -65,6 +60,7 @@ typedef struct {
 	size_t hdir;          // highlighted dir
 	size_t firstrow;
 	Cpair dircol;
+	int inotify_wd;
 } Pane;
 
 typedef struct {
@@ -140,6 +136,11 @@ static int get_usrinput(char*, size_t, char*);
 static char *frules(char *);
 static char *getsw(char*);
 static int opnf(char*);
+static int fsev_init(void);
+static int addwatch(void);
+static int read_inotify(void);
+static void rmwatch(Pane *);
+static void fsev_shdn(void);
 static ssize_t findbm(uint32_t);
 static void filter(void);
 static void switch_pane(void);
@@ -155,12 +156,10 @@ static void start(void);
 
 /* global variables */
 static Pane pane_r, pane_l, *cpane;
+static char fed[] = "vi";
 static int parent_row = 1; // FIX
 static size_t scrheight;
-static char fed[] = "vi";
-
-static const uint32_t INOTIFY_MASK = IN_CREATE | IN_DELETE | IN_DELETE_SELF \
-	| IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO;
+static int inotify_fd;
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
@@ -1268,6 +1267,74 @@ opnf(char *fn)
 	return 0;
 }
 
+static int
+fsev_init(void)
+{
+#if defined _SYS_INOTIFY_H
+	inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (inotify_fd < 0)
+		return -1;
+	return 0;
+#elif defined _SYS_EVENT_H_
+#endif
+}
+
+static int
+addwatch(void)
+{
+	return cpane->inotify_wd = inotify_add_watch(inotify_fd, cpane->dirn,
+		IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |\
+		IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
+}
+
+static int
+read_inotify(void)
+{
+	char *p;
+	ssize_t r;
+	struct inotify_event *event;
+	const size_t events = 32;
+	const size_t evbuflen = events *
+		(sizeof(struct inotify_event) + MAX_N + 1);
+	char buf[evbuflen];
+
+	if (cpane->inotify_wd < 0)
+		return -1;
+	r = read(inotify_fd, buf, evbuflen);
+	if (r <= 0)
+		return r;
+
+	for (p = buf; p < buf + r;) {
+		event = (struct inotify_event *)p;
+		if (!event->wd)
+			break;
+		if (event->mask) {
+			return r;
+		}
+
+		p += sizeof(struct inotify_event) + event->len;
+	}
+	return -1;
+}
+
+static void
+rmwatch(Pane *pane)
+{
+	if (pane->inotify_wd >= 0)
+		inotify_rm_watch(inotify_fd, pane->inotify_wd);
+}
+
+static void
+fsev_shdn(void)
+{
+#if defined _SYS_INOTIFY_H
+	rmwatch(&pane_l);
+	rmwatch(&pane_r);
+	close(inotify_fd);
+#elif defined _SYS_EVENT_H_
+#endif
+}
+
 static ssize_t
 findbm(uint32_t event)
 {
@@ -1324,6 +1391,7 @@ quit(void)
 {
 	free(pane_l.direntr);
 	free(pane_r.direntr);
+	fsev_shdn();
 	tb_shutdown();
 	exit(EXIT_SUCCESS);
 }
@@ -1364,18 +1432,24 @@ start_ev(void)
 {
 	struct tb_event ev;
 
-	while (tb_poll_event(&ev) != 0) {
-		switch (ev.type) {
-		case TB_EVENT_KEY:
-			grabkeys(&ev);
-			tb_present();
-			break;
-		case TB_EVENT_RESIZE:
-			t_resize();
-			break;
-		default:
-			break;
+	for (;;) {
+		int t = tb_peek_event(&ev, 2000);
+		if (t < 0) {
+			tb_shutdown();
+			return;
 		}
+
+		if (t == 1) /* keyboard event */
+			grabkeys(&ev);
+		else if (t == 2) /* resize event */
+			t_resize();
+		else if (t == 0) /* filesystem event */
+			if (read_inotify() > 0)
+				if (listdir(AddHi, NULL) < 0)
+					print_error(strerror(errno));
+
+		tb_present();
+		continue;
 	}
 	tb_shutdown();
 }
@@ -1507,6 +1581,8 @@ listdir(int hi, char *filter)
 		}
 	}
 
+	if (addwatch() < 0)
+		print_error("can't add watch");
 	cpane->dirc = i;
 	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
 	refresh_pane();
@@ -1570,6 +1646,7 @@ set_panes(int paneitem)
 		pane_l.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_l.dirn, cwd);
 		pane_l.hdir = 1;
+		pane_l.inotify_wd = -1;
 	}
 
 	pane_r.dirx = (width / 2) + 2;
@@ -1579,6 +1656,7 @@ set_panes(int paneitem)
 		pane_r.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_r.dirn, home);
 		pane_r.hdir = 1;
+		pane_r.inotify_wd = -1;
 	}
 }
 
@@ -1625,6 +1703,8 @@ start(void)
 
 	draw_frame();
 	set_panes(AllP);
+	if (fsev_init() < 0)
+		print_error(strerror(errno));
 	cpane = &pane_r;
 	if (listdir(NoHi, NULL) < 0)
 		print_error(strerror(errno));
