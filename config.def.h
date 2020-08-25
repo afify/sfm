@@ -61,6 +61,7 @@ static Key nkeys[] = {
 	{ {.ch = 'v'},               selection },
 	{ {.ch = 'p'},               selpst },
 	{ {.ch = 'P'},               selmv },
+	{ {.ch = 'y'},               yank },
 	{ {.key = TB_KEY_SPACE},     switch_pane },
 };
 

@@ -18,25 +18,20 @@
 #include <time.h>
 #include <unistd.h>
 #include <libgen.h>
-
-#ifdef __linux__
+#if defined(__linux__)
 #include <sys/inotify.h>
-#define INOTIFY
-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \
-defined(__APPLE__)
-#define KQUEUE
+#elif defined(__FreeBSD__) || defined(__NetBSD__) ||\
+      defined(__OpenBSD__) || defined(__APPLE__)
 #include <sys/event.h>
-#endif /* filesystem events */
+#endif
 
 #include "termbox.h"
 #include "util.h"
 
 /* macros */
-#define MAX_P       4095
-#define MAX_N       255
-#define MAX_USRI    32
-#define EVENTS      32
-#define EV_BUF_LEN  (EVENTS * (sizeof(struct inotify_event) + MAX_N + 1))
+#define MAX_P      4095
+#define MAX_N      255
+#define MAX_USRI   32
 
 /* enums */
 enum { AskDel, DAskDel }; /* delete directory */
@@ -67,6 +62,7 @@ typedef struct {
 	size_t firstrow;
 	size_t *selection;
 	Cpair dircol;
+	int inotify_wd;
 } Pane;
 
 typedef struct {
@@ -142,6 +138,11 @@ static int get_usrinput(char*, size_t, const char*, ...);
 static char *frules(char *);
 static char *getsw(char*);
 static int opnf(char*);
+static int fsev_init(void);
+static int addwatch(void);
+static int read_inotify(void);
+static void rmwatch(Pane *);
+static void fsev_shdn(void);
 static ssize_t findbm(uint32_t);
 static void filter(void);
 static void selection(void);
@@ -178,6 +179,7 @@ static void start(void);
 
 /* global variables */
 static Pane pane_r, pane_l, *cpane;
+static char fed[] = "vi";
 static int parent_row = 1; // FIX
 static size_t scrheight;
 static const size_t nkeyslen = LEN(nkeys);
@@ -185,9 +187,9 @@ static const size_t skeyslen = LEN(skeys);
 static size_t selection_size = 0;
 static int sl = 0;
 static char **files;
-static char fed[] = "vi";
 static const uint32_t INOTIFY_MASK = IN_CREATE | IN_DELETE | IN_DELETE_SELF \
 	| IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO;
+static int inotify_fd;
 
 /* function implementations */
 static void
@@ -1021,7 +1023,10 @@ mvmid(void)
 	if (cpane->dirc < 1)
 		return;
 	rm_hi(cpane, cpane->hdir - 1);
-	cpane->hdir = (scrheight / 2) + cpane->firstrow;
+	if (cpane->dirc < scrheight / 2)
+		cpane->hdir = (cpane->dirc + 1) / 2;
+	else
+		cpane->hdir = (scrheight / 2) + cpane->firstrow;
 	add_hi(cpane, cpane->hdir - 1);
 	print_info();
 }
@@ -1188,6 +1193,7 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 
 	va_list vl;
 	Cpair col;
+	col = cprompt;
 	va_start(vl, fmt);
 	name_size = vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
@@ -1299,6 +1305,74 @@ opnf(char *fn)
 	return 0;
 }
 
+static int
+fsev_init(void)
+{
+#if defined _SYS_INOTIFY_H
+	inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	if (inotify_fd < 0)
+		return -1;
+	return 0;
+#elif defined _SYS_EVENT_H_
+#endif
+}
+
+static int
+addwatch(void)
+{
+	return cpane->inotify_wd = inotify_add_watch(inotify_fd, cpane->dirn,
+		IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |\
+		IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
+}
+
+static int
+read_inotify(void)
+{
+	char *p;
+	ssize_t r;
+	struct inotify_event *event;
+	const size_t events = 32;
+	const size_t evbuflen = events *
+		(sizeof(struct inotify_event) + MAX_N + 1);
+	char buf[evbuflen];
+
+	if (cpane->inotify_wd < 0)
+		return -1;
+	r = read(inotify_fd, buf, evbuflen);
+	if (r <= 0)
+		return r;
+
+	for (p = buf; p < buf + r;) {
+		event = (struct inotify_event *)p;
+		if (!event->wd)
+			break;
+		if (event->mask) {
+			return r;
+		}
+
+		p += sizeof(struct inotify_event) + event->len;
+	}
+	return -1;
+}
+
+static void
+rmwatch(Pane *pane)
+{
+	if (pane->inotify_wd >= 0)
+		inotify_rm_watch(inotify_fd, pane->inotify_wd);
+}
+
+static void
+fsev_shdn(void)
+{
+#if defined _SYS_INOTIFY_H
+	rmwatch(&pane_l);
+	rmwatch(&pane_r);
+	close(inotify_fd);
+#elif defined _SYS_EVENT_H_
+#endif
+}
+
 static ssize_t
 findbm(uint32_t event)
 {
@@ -1366,7 +1440,7 @@ seldwn(void)
 	if (cpane->hdir > cpane->selection[0]) {
 		cpane->selection[index] = cpane->hdir;
 		add_hi(cpane, cpane->selection[index] - 2);
-	} else if (index >= 0) {
+	} else {
 		cpane->selection[index + 1] = 0;
 	}
 	if (cpane->dirc >= scrheight || cpane->hdir >= cpane->dirc) { /* rehighlight all if scrolling */
@@ -1395,7 +1469,7 @@ selup(void)
 static void
 selref(void)
 {
-	for (int i = 0; i < cpane->dirc; i++) {
+	for (size_t i = 0; i < cpane->dirc; i++) {
 		if (cpane->selection[i] < (scrheight + cpane->firstrow) && cpane->selection[i] > cpane->firstrow) { /* checks if in the frame of the directories */
 			add_hi(cpane, cpane->selection[i] - 1);
 		}
@@ -1414,7 +1488,7 @@ selcan(void)
 static void
 selall(void)
 {
-	for (int i = 0; i < cpane->dirc; i++) {
+	for (size_t i = 0; i < cpane->dirc; i++) {
 		cpane->selection[i] = i + 1;
 	}
 	selref();
@@ -1424,7 +1498,7 @@ static void
 selcalc(void)
 {
 	selection_size = 0;
-	for (int j = 0; j < cpane->dirc; j++) { /* calculate used selection size */
+	for (size_t j = 0; j < cpane->dirc; j++) { /* calculate used selection size */
 		if (cpane->selection[j] != 0)
 			selection_size++;
 		else 
@@ -1435,7 +1509,7 @@ selcalc(void)
 static void
 free_files(void)
 {
-	for (int i = 0; i < selection_size; i++) {
+	for (size_t i = 0; i < selection_size; i++) {
 		free(files[i]);
 		files[i] = NULL;
 	}
@@ -1452,7 +1526,7 @@ init_files(void)
 	selcalc();
 	files = ecalloc(selection_size, sizeof(char*));
 
-	for (int i = 0; i < selection_size; i++) {
+	for (size_t i = 0; i < selection_size; i++) {
 		files[i] = ecalloc(MAX_P, sizeof(char));
 		char *tmp = get_path_hdir(cpane->selection[i]);
 		strcpy(files[i], tmp);
@@ -1495,7 +1569,7 @@ pstf(char *source_path, char* target_path, char *flag)
 	} else if (target != NULL && ((strcmp(flag, "s") == 0) || (strcmp(flag, "S") == 0))) {
 		fclose(target);
 		return 0;
-	} else if (target != NULL && (strcmp(flag, "r") == 0) || (strcmp(flag, "R") == 0)) {
+	} else if (target != NULL && ((strcmp(flag, "r") == 0) || (strcmp(flag, "R") == 0))) {
 		char new_name[MAX_N];
 		get_usrinput(new_name, MAX_USRI, "rename %s", filename);
 		strcat(temp, new_name);
@@ -1539,23 +1613,22 @@ pstd(char *source_path, char *target_path, char *flag)
 	tdir = opendir(base);
 
 	if (sdir == NULL) {
-		closedir(sdir);
 		return -1;
 	}
 
 	if (tdir == NULL) {
 		mkdir(base, S_IRWXU);
-	} else if (tdir != NULL && (strcmp(flag, "r") == 0) || (strcmp(flag, "R") == 0)) {
+	} else if (tdir != NULL && ((strcmp(flag, "r") == 0) || (strcmp(flag, "R") == 0))) {
 		char new_name[MAX_N];
 		get_usrinput(new_name, MAX_USRI, "rename %s", dir_name);
 		free(base);
 		base = get_fullpath(target_path, new_name);
 		strcpy(dir_name, new_name);
 		mkdir(base, S_IRWXU);
-	} else if (tdir != NULL && (strcmp(flag, "o") == 0) || (strcmp(flag, "O") == 0)) {
+	} else if (tdir != NULL && ((strcmp(flag, "o") == 0) || (strcmp(flag, "O") == 0))) {
 		deldir(base, DAskDel);
 		mkdir(base, S_IRWXU);
-	} else if (tdir != NULL && (strcmp(flag, "s") == 0) || (strcmp(flag, "S") == 0)) {
+	} else if (tdir != NULL && ((strcmp(flag, "s") == 0) || (strcmp(flag, "S") == 0))) {
 		closedir(tdir);
 		closedir(sdir);
 		return 0;
@@ -1599,7 +1672,7 @@ pstd(char *source_path, char *target_path, char *flag)
 					closedir(sdir);
 					return -1;
 				}
-
+				free(target_full);
 			} else if (S_ISREG(mode)) {
 				target_full = get_fullpath(target_path, dir_name);
 				if (pstf(source_full, target_full, "O") < 0) {
@@ -1608,10 +1681,10 @@ pstd(char *source_path, char *target_path, char *flag)
 					closedir(sdir);
 					return -1;
 				}
+				free(target_full);
 			}
 		}
 		free(source_full);
-		free(target_full);
 	}
 
 	if (closedir(sdir) < 0)
@@ -1640,7 +1713,7 @@ selpst(void)
 	char filepath[MAX_P];
 	all = 0; /* option to modify (file or allfiles) */
 	struct stat status;
-	for (int i = 0; i < selection_size; i++) {
+	for (size_t i = 0; i < selection_size; i++) {
 		if (lstat(files[i], &status) == 0) {
 			strcpy(filepath, cpane->dirn);
 			strcat(filepath, "/");
@@ -1697,7 +1770,7 @@ seldel(void)
 
 	init_files();
 	struct stat status;
-	for (int i = 0; i < selection_size; i++) {
+	for (size_t i = 0; i < selection_size; i++) {
 		if (lstat(files[i], &status) == 0) {
 			if (S_ISDIR(status.st_mode)) {
 				deldir(files[i], DAskDel);
@@ -1722,7 +1795,7 @@ selmv(void)
 	char filepath[MAX_P];
 	all = 0; /* option to modify (file or allfiles) */
 	struct stat status;
-	for (int i = 0; i < selection_size; i++) {
+	for (size_t i = 0; i < selection_size; i++) {
 		if (lstat(files[i], &status) == 0) {
 			strcpy(filepath, cpane->dirn);
 			strcat(filepath, "/");
@@ -1815,6 +1888,7 @@ quit(void)
 	}
 	free(pane_l.direntr);
 	free(pane_r.direntr);
+	fsev_shdn();
 	tb_shutdown();
 	exit(EXIT_SUCCESS);
 }
@@ -1855,18 +1929,24 @@ start_ev(void)
 {
 	struct tb_event ev;
 
-	while (tb_poll_event(&ev) != 0) {
-		switch (ev.type) {
-		case TB_EVENT_KEY:
-			grabkeys(&ev, nkeys, nkeyslen);
-			tb_present();
-			break;
-		case TB_EVENT_RESIZE:
-			t_resize();
-			break;
-		default:
-			break;
+	for (;;) {
+		int t = tb_peek_event(&ev, 2000);
+		if (t < 0) {
+			tb_shutdown();
+			return;
 		}
+
+		if (t == 1) /* keyboard event */
+			grabkeys(&ev, nkeys, nkeyslen);
+		else if (t == 2) /* resize event */
+			t_resize();
+		else if (t == 0) /* filesystem event */
+			if (read_inotify() > 0)
+				if (listdir(AddHi, NULL) < 0)
+					print_error(strerror(errno));
+
+		tb_present();
+		continue;
 	}
 	tb_shutdown();
 }
@@ -1998,6 +2078,8 @@ listdir(int hi, char *filter)
 		}
 	}
 
+	if (addwatch() < 0)
+		print_error("can't add watch");
 	cpane->dirc = i;
 	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
 	refresh_pane();
@@ -2061,6 +2143,7 @@ set_panes(int paneitem)
 		pane_l.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_l.dirn, cwd);
 		pane_l.hdir = 1;
+		pane_l.inotify_wd = -1;
 	}
 
 	pane_r.dirx = (width / 2) + 2;
@@ -2070,6 +2153,7 @@ set_panes(int paneitem)
 		pane_r.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_r.dirn, home);
 		pane_r.hdir = 1;
+		pane_r.inotify_wd = -1;
 	}
 }
 
@@ -2116,6 +2200,8 @@ start(void)
 
 	draw_frame();
 	set_panes(AllP);
+	if (fsev_init() < 0)
+		print_error(strerror(errno));
 	cpane = &pane_r;
 	if (listdir(NoHi, NULL) < 0)
 		print_error(strerror(errno));
