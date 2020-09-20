@@ -153,9 +153,6 @@ static void selcan(void);
 static void selall(void);
 static void selref(void);
 static void selcalc(void);
-static void selpst(void);
-static void seldel(void);
-static void selmv(void);
 static int pstf(char*, char*, char*);
 static int pstd(char*, char*, char*);
 static int check_if_file_exist(char*);
@@ -1705,89 +1702,7 @@ check_if_file_exist(char *filepath)
 }
 
 static void
-selpst(void)
-{
-	int flag_size, exist, all;
-	flag_size = 2;
-	char flag[flag_size];
-	char filepath[MAX_P];
-	all = 0; /* option to modify (file or allfiles) */
-	struct stat status;
-	for (size_t i = 0; i < selection_size; i++) {
-		if (lstat(files[i], &status) == 0) {
-			strcpy(filepath, cpane->dirn);
-			strcat(filepath, "/");
-			strcat(filepath, basename(files[i]));
-			exist = check_if_file_exist(filepath);
-			if (S_ISDIR(status.st_mode)) {
-				if (exist == 0) {
-					if (all == 0) {
-						get_usrinput(flag, flag_size, "Conflict on directory %s: (o)verright/(O)verright_all (s)kip/(S)kip_all (m)erge/(M)erge_all (r)ename/(R)ename_all", basename(files[i]));
-					}
-					if ((strcmp(flag, "O") == 0) || (strcmp(flag, "S") == 0) || (strcmp(flag, "M") == 0) || (strcmp(flag, "R") == 0)) {
-						all = 1;
-					}
-					if ((strcmp(flag, "o") != 0) && (strcmp(flag, "s") != 0) && (strcmp(flag, "m") != 0) && (strcmp(flag, "r") != 0) &&
-						(strcmp(flag, "O") != 0) && (strcmp(flag, "S") != 0) && (strcmp(flag, "M") != 0) && (strcmp(flag, "R") != 0)) {
-						return;
-					}
-				}
-				pstd(files[i], cpane->dirn, flag); 
-			} else {
-				if (exist == 0) {
-					if (all == 0) {
-						get_usrinput(flag, flag_size, "Conflict on file %s: (o)verright/(O)verright_all (s)kip/(S)kip_all (a)ppend/(A)ppend_all (r)ename/(R)ename_all", basename(files[i]));
-					}
-					if ((strcmp(flag, "O") == 0) || (strcmp(flag, "S") == 0) || (strcmp(flag, "A") == 0) || (strcmp(flag, "R") == 0)) {
-						all = 1;
-					}
-					if ((strcmp(flag, "o") != 0) && (strcmp(flag, "s") != 0) && (strcmp(flag, "a") != 0) && (strcmp(flag, "r") != 0) &&
-						(strcmp(flag, "O") != 0) && (strcmp(flag, "S") != 0) && (strcmp(flag, "A") != 0) && (strcmp(flag, "R") != 0)) {
-							return;
-					}
-				}
-				pstf(files[i], cpane->dirn, flag); 
-			}
-		}
-	}
-	if (listdir(AddHi, NULL) < 0)
-		print_error(strerror(errno));
-}
-
-static void
-seldel(void)
-{
-	char *confirmation;
-	confirmation = ecalloc((size_t)2, sizeof(char));
-	if ((get_usrinput(
-		confirmation, (size_t)2,"delete directory (Y) ?") < 0) ||
-		(strcmp(confirmation, "Y") != 0)) {
-		free(confirmation);
-		sl = -1;
-		return; /* canceled by user or wrong confirmation */
-	}
-	free(confirmation);
-
-	init_files();
-	struct stat status;
-	for (size_t i = 0; i < selection_size; i++) {
-		if (lstat(files[i], &status) == 0) {
-			if (S_ISDIR(status.st_mode)) {
-				deldir(files[i], DAskDel);
-			} else {
-				unlink(files[i]);
-			}
-		}
-	}
-	cpane->hdir = 1;
-	if (listdir(AddHi, NULL) < 0)
-		print_error(strerror(errno));
-	print_status(cprompt, "%d files are deleted", selection_size);
-	sl = -1;
-}
-
-static void
-selmv(void)
+mvmv(void)
 {
 	int flag_size, exist, all;
 	flag_size = 2;

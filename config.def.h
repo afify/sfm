@@ -59,8 +59,6 @@ static Key nkeys[] = {
 	{ {.ch = '/'},               filter },
 	{ {.ch = 'q'},               quit },
 	{ {.ch = 'v'},               selection },
-	{ {.ch = 'p'},               selpst },
-	{ {.ch = 'P'},               selmv },
 	{ {.ch = 'y'},               yank },
 	{ {.key = TB_KEY_SPACE},     switch_pane },
 };
@@ -70,7 +68,6 @@ static Key skeys[] = {
 	{ {.ch = 'k'},               selup },
 	{ {.ch = 'a'},               selall },
 	{ {.ch = 'y'},               selynk },
-	{ {.ch = 'D'},               seldel },
 	{ {.key = TB_KEY_ESC},       selcan },
 };
 
