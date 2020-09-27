@@ -54,6 +54,7 @@ typedef struct {
 } Cpair;
 
 typedef struct {
+	int pane_id;
 	char dirn[MAX_P]; // dir name cwd
 	Entry *direntr; // dir entries
 	int dirx; // pane cwd x pos
@@ -62,6 +63,7 @@ typedef struct {
 	size_t firstrow;
 	Cpair dircol;
 	int inotify_wd;
+	int event_fd;
 } Pane;
 
 typedef struct {
@@ -139,7 +141,7 @@ static char *getsw(char *);
 static int opnf(char *);
 static int fsev_init(void);
 static int addwatch(void);
-static int read_inotify(void);
+static int read_events(void);
 static void rmwatch(Pane *);
 static void fsev_shdn(void);
 static ssize_t findbm(uint32_t);
@@ -160,7 +162,14 @@ static Pane pane_r, pane_l, *cpane;
 static char fed[] = "vi";
 static int parent_row = 1; // FIX
 static size_t scrheight;
+#if defined _SYS_INOTIFY_H
 static int inotify_fd;
+#elif defined _SYS_EVENT_H_
+static int kq;
+struct kevent evlist[2];    /* events we want to monitor */
+struct kevent chlist[2];    /* events that were triggered */
+static struct timespec gtimeout;
+#endif
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
@@ -1261,24 +1270,37 @@ fsev_init(void)
 	inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (inotify_fd < 0)
 		return -1;
-	return 0;
 #elif defined _SYS_EVENT_H_
+	kq = kqueue();
+	if (kq < 0)
+		return -1;
 #endif
+	return 0;
 }
 
 static int
 addwatch(void)
 {
-	return cpane->inotify_wd =
-		   inotify_add_watch(inotify_fd, cpane->dirn,
-				     IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO |
-					 IN_CREATE | IN_DELETE |
-					 IN_DELETE_SELF | IN_MOVE_SELF);
+#if defined _SYS_INOTIFY_H
+	return cpane->inotify_wd = inotify_add_watch(inotify_fd, cpane->dirn,
+		IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
+		IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
+#elif defined _SYS_EVENT_H_
+	cpane->event_fd = open(cpane->dirn, O_RDONLY);
+	if (cpane->event_fd < 0)
+		return cpane->event_fd;
+	EV_SET(&evlist[cpane->pane_id], cpane->event_fd,
+		EVFILT_VNODE, EV_ADD | EV_CLEAR,
+		NOTE_DELETE | NOTE_EXTEND | NOTE_LINK |
+		NOTE_RENAME | NOTE_REVOKE | NOTE_WRITE, 0, NULL);
+	return 0;
+#endif
 }
 
 static int
-read_inotify(void)
+read_events(void)
 {
+#if defined _SYS_INOTIFY_H
 	char *p;
 	ssize_t r;
 	struct inotify_event *event;
@@ -1303,24 +1325,33 @@ read_inotify(void)
 
 		p += sizeof(struct inotify_event) + event->len;
 	}
+#elif defined _SYS_EVENT_H_
+	return kevent(kq, evlist, 2, chlist, 2, &gtimeout);
+#endif
 	return -1;
 }
 
 static void
 rmwatch(Pane *pane)
 {
+#if defined _SYS_INOTIFY_H
 	if (pane->inotify_wd >= 0)
 		inotify_rm_watch(inotify_fd, pane->inotify_wd);
+#elif defined _SYS_EVENT_H_
+	close(pane->event_fd);
+	return;
+#endif
 }
 
 static void
 fsev_shdn(void)
 {
-#if defined _SYS_INOTIFY_H
 	rmwatch(&pane_l);
 	rmwatch(&pane_r);
+#if defined _SYS_INOTIFY_H
 	close(inotify_fd);
 #elif defined _SYS_EVENT_H_
+	close(kq);
 #endif
 }
 
@@ -1433,7 +1464,7 @@ start_ev(void)
 		else if (t == 2) /* resize event */
 			t_resize();
 		else if (t == 0) /* filesystem event */
-			if (read_inotify() > 0)
+			if (read_events() > 0)
 				if (listdir(AddHi, NULL) < 0)
 					print_error(strerror(errno));
 
@@ -1628,6 +1659,7 @@ set_panes(int paneitem)
 	if (home == NULL)
 		home = "/";
 
+	pane_l.pane_id = 0;
 	pane_l.dirx = 2;
 	pane_l.dircol = cpanell;
 	pane_l.firstrow = 0;
@@ -1638,6 +1670,7 @@ set_panes(int paneitem)
 		pane_l.inotify_wd = -1;
 	}
 
+	pane_r.pane_id = 1;
 	pane_r.dirx = (width / 2) + 2;
 	pane_r.dircol = cpanelr;
 	pane_r.firstrow = 0;
