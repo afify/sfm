@@ -1087,7 +1087,7 @@ scrdwns(void)
 		refresh_pane();
 		add_hi(cpane, cpane->hdir - 1);
 	} else {
-		if (cpane->hdir < cpane->dirc - scrmv) {
+		if (cpane->hdir < cpane->dirc - scrmv - 1) {
 			rm_hi(cpane, cpane->hdir - 1);
 			cpane->hdir += scrmv;
 			add_hi(cpane, cpane->hdir - 1);
@@ -1662,8 +1662,8 @@ set_panes(int paneitem)
 	pane_l.pane_id = 0;
 	pane_l.dirx = 2;
 	pane_l.dircol = cpanell;
-	pane_l.firstrow = 0;
 	if (paneitem == AllP) {
+		pane_l.firstrow = 0;
 		pane_l.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_l.dirn, cwd);
 		pane_l.hdir = 1;
@@ -1673,8 +1673,8 @@ set_panes(int paneitem)
 	pane_r.pane_id = 1;
 	pane_r.dirx = (width / 2) + 2;
 	pane_r.dircol = cpanelr;
-	pane_r.firstrow = 0;
 	if (paneitem == AllP) {
+		pane_r.firstrow = 0;
 		pane_r.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_r.dirn, home);
 		pane_r.hdir = 1;
