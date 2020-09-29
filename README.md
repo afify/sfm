@@ -1,18 +1,16 @@
 ![sfm](https://github.com/afify/sfm/blob/master/sfm.png?raw=true)
 
-**simple file manager for unix-like systems**
+**simple file manager**
 
 [![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/afify/sfm.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/afify/sfm/context:cpp)
 [![Build status](https://ci.appveyor.com/api/projects/status/goq88ahjyvtjrui2?svg=true)](https://ci.appveyor.com/project/afify/sfm)
 [![License](https://img.shields.io/github/license/afify/sfm?color=blue)](https://github.com/afify/sfm/blob/master/LICENSE)
 
-Features
---------
-* No dependencies, static linking of [termbox](https://github.com/nsf/termbox).
-* Fast, minimal, lightweight, c99.
-* Open files (videos, images, ...).
-* Bookmarks.
-* Vim keys navigation.
+Description
+------------
+sfm is a simple file manager for unix-like systems based on [termbox](https://github.com/nsf/termbox).
+dual pane, bottom statusbar, bookmarks, open files by extention, vim-like key bindings as default configuration. cwd is left pane dir. No dependencies, static linking, c99.
+
 * Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
 * Follows the suckless [philosophy](https://suckless.org/philosophy/) and [code style](https://suckless.org/coding_style/).
 
@@ -25,6 +23,7 @@ $ sfm [-v]
 $ man sfm
 ```
 
+**normal mode**
 | key      | description         |
 |:---------|:--------------------|
 | `q`      | quit                |
@@ -34,6 +33,7 @@ $ man sfm
 | `l`      | open                |
 | `g`      | top                 |
 | `G`      | bottom              |
+| `M`      | middle              |
 | `ctrl+u` | scroll up           |
 | `ctrl+d` | scroll down         |
 | `n`      | create new file     |
@@ -43,6 +43,14 @@ $ man sfm
 | `ENTER`  | find  filter        |
 | `ESC`    | exit  filter        |
 | `SPACE`  | switch pane         |
+
+**visual mode**
+| key      | description         |
+|:---------|:--------------------|
+| `v`      | enter visual mode   |
+| `j`      | select down         |
+| `k`      | select up           |
+| `ESC`    | exit visual mode    |
 
 Installation
 ------------

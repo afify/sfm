@@ -1,5 +1,17 @@
 /* See LICENSE file for copyright and license details. */
 
+#include <sys/types.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#if defined(__linux__)
+#include <sys/inotify.h>
+#elif defined(__FreeBSD__) || defined(__NetBSD__) ||\
+      defined(__OpenBSD__) || defined(__APPLE__)
+#include <sys/event.h>
+#endif
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -10,28 +22,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-#include <libgen.h>
-#if defined(__linux__)
-#include <sys/inotify.h>
-#elif defined(__FreeBSD__) || defined(__NetBSD__) ||\
-      defined(__OpenBSD__) || defined(__APPLE__)
-#include <sys/event.h>
-#endif
 
 #include "termbox.h"
 #include "util.h"
 
 /* macros */
-#define MAX_P      4095
-#define MAX_N      255
-#define MAX_USRI   32
+#define MAX_P 4095
+#define MAX_N 255
+#define MAX_USRI 32
 
 /* enums */
 enum { AskDel, DAskDel }; /* delete directory */
@@ -54,15 +54,17 @@ typedef struct {
 } Cpair;
 
 typedef struct {
-	char dirn[MAX_P];     // dir name cwd
-	Entry *direntr;       // dir entries
-	int dirx;             // pane cwd x pos
-	size_t dirc;          // dir entries sum
-	size_t hdir;          // highlighted dir
+	int pane_id;
+	char dirn[MAX_P]; // dir name cwd
+	Entry *direntr; // dir entries
+	int dirx; // pane cwd x pos
+	size_t dirc; // dir entries sum
+	size_t hdir; // highlighted dir
 	size_t firstrow;
 	size_t *selection;
 	Cpair dircol;
 	int inotify_wd;
+	int event_fd;
 } Pane;
 
 typedef struct {
@@ -78,7 +80,7 @@ typedef struct {
 
 typedef union {
 	uint16_t key; /* one of the TB_KEY_* constants */
-	uint32_t ch;  /* unicode character */
+	uint32_t ch; /* unicode character */
 } Evkey;
 
 typedef struct {
@@ -87,36 +89,36 @@ typedef struct {
 } Key;
 
 /* function declarations */
-static void print_tb(const char*, int, int, uint16_t, uint16_t);
-static void printf_tb(int, int, Cpair, const char*, ...);
-static void print_status(Cpair, const char*, ...);
+static void print_tb(const char *, int, int, uint16_t, uint16_t);
+static void printf_tb(int, int, Cpair, const char *, ...);
+static void print_status(Cpair, const char *, ...);
 static void print_xstatus(char, int);
-static void print_error(char*);
-static void print_prompt(char*);
+static void print_error(char *);
+static void print_prompt(char *);
 static void print_info(void);
-static void print_row(Pane*, size_t, Cpair);
+static void print_row(Pane *, size_t, Cpair);
 static void clear(int, int, int, uint16_t);
 static void clear_status(void);
 static void clear_pane(int);
-static void add_hi(Pane*, size_t);
-static void rm_hi(Pane*, size_t);
-static void float_to_string(float, char*);
-static int check_dir(char*);
+static void add_hi(Pane *, size_t);
+static void rm_hi(Pane *, size_t);
+static void float_to_string(float, char *);
+static int check_dir(char *);
 static mode_t chech_execf(mode_t);
 static int sort_name(const void *const, const void *const);
-static char *get_ext(char*);
-static int get_fdt(char*, size_t, time_t);
+static char *get_ext(char *);
+static int get_fdt(char *, size_t, time_t);
 static char *get_fgrp(gid_t, size_t);
-static char *get_finfo(Entry*);
+static char *get_finfo(Entry *);
 static char *get_fperm(mode_t);
 static char *get_fsize(off_t);
-static char *get_fullpath(char*, char*);
+static char *get_fullpath(char *, char *);
 static char *get_fusr(uid_t, size_t);
-static void get_dirsize(char*, off_t*);
-static void get_hicol(Cpair*, mode_t);
-static int deldir(char*, int);
+static void get_dirsize(char *, off_t *);
+static void get_hicol(Cpair *, mode_t);
+static int deldir(char *, int);
 static int delent(char *);
-static int delf(char*);
+static int delf(char *);
 static void calcdir(void);
 static void crnd(void);
 static void crnf(void);
@@ -136,11 +138,11 @@ static void scrup(void);
 static void scrups(void);
 static int get_usrinput(char*, size_t, const char*, ...);
 static char *frules(char *);
-static char *getsw(char*);
-static int opnf(char*);
+static char *getsw(char *);
+static int opnf(char *);
 static int fsev_init(void);
 static int addwatch(void);
-static int read_inotify(void);
+static int read_events(void);
 static void rmwatch(Pane *);
 static void fsev_shdn(void);
 static ssize_t findbm(uint32_t);
@@ -165,7 +167,7 @@ static void quit(void);
 static void grabkeys(struct tb_event*, Key*, size_t);
 static void start_ev(void);
 static void refresh_pane(void);
-static int listdir(int, char*);
+static int listdir(int, char *);
 static void t_resize(void);
 static void set_panes(int);
 static void draw_frame(void);
@@ -186,7 +188,14 @@ static int sl = 0;
 static char **files;
 static const uint32_t INOTIFY_MASK = IN_CREATE | IN_DELETE | IN_DELETE_SELF \
 	| IN_MODIFY | IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO;
+#if defined _SYS_INOTIFY_H
 static int inotify_fd;
+#elif defined _SYS_EVENT_H_
+static int kq;
+struct kevent evlist[2];    /* events we want to monitor */
+struct kevent chlist[2];    /* events that were triggered */
+static struct timespec gtimeout;
+#endif
 
 /* function implementations */
 static void
@@ -223,8 +232,7 @@ print_status(Cpair col, const char *fmt, ...)
 	(void)vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
 	clear_status();
-	print_tb(buf, 1, height-1, col.fg, col.bg);
-
+	print_tb(buf, 1, height - 1, col.fg, col.bg);
 }
 
 static void
@@ -234,7 +242,7 @@ print_xstatus(char c, int x)
 	uint32_t uni = 0;
 	height = tb_height();
 	(void)tb_utf8_char_to_unicode(&uni, &c);
-	tb_change_cell(x, height-1, uni,  cstatus.fg , cstatus.bg);
+	tb_change_cell(x, height - 1, uni, cstatus.fg, cstatus.bg);
 }
 
 static void
@@ -253,9 +261,8 @@ static void
 print_info(void)
 {
 	char *fileinfo;
-	fileinfo = get_finfo(&cpane->direntr[cpane->hdir-1]);
-	print_status(cstatus, "%lu/%lu %s",
-		cpane->hdir, cpane->dirc, fileinfo);
+	fileinfo = get_finfo(&cpane->direntr[cpane->hdir - 1]);
+	print_status(cstatus, "%lu/%lu %s", cpane->hdir, cpane->dirc, fileinfo);
 	free(fileinfo);
 }
 
@@ -274,7 +281,7 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	y = entpos - cpane->firstrow + 1;
 
 	if (S_ISLNK(pane->direntr[entpos].mode) &&
-			realpath(pane->direntr[entpos].name, buf) != NULL) {
+	    realpath(pane->direntr[entpos].name, buf) != NULL) {
 		strncpy(lnk_full, pane->direntr[entpos].name, MAX_N);
 		strcat(lnk_full, " -> ");
 		strncat(lnk_full, buf, MAX_N);
@@ -294,7 +301,6 @@ clear(int sx, int ex, int y, uint16_t bg)
 	for (i = sx; i < ex; i++) {
 		tb_change_cell(i, y, 0x0000, TB_DEFAULT, bg);
 	}
-
 }
 
 static void
@@ -303,7 +309,7 @@ clear_status(void)
 	int width, height;
 	width = tb_width();
 	height = tb_height();
-	clear(1, width-1, height-1, cstatus.bg);
+	clear(1, width - 1, height - 1, cstatus.bg);
 }
 
 static void
@@ -316,22 +322,21 @@ clear_pane(int pane)
 
 	if (pane == 2) {
 		x = 2;
-		ex = (width/2) - 1;
-	} else if (pane == (width/2) + 2) {
-		x = (width/2) + 1;
-		ex = width -1;
+		ex = (width / 2) - 1;
+	} else if (pane == (width / 2) + 2) {
+		x = (width / 2) + 1;
+		ex = width - 1;
 	}
 
-	while (i < height-2) {
+	while (i < height - 2) {
 		clear(x, ex, y, TB_DEFAULT);
 		i++;
 		y++;
 	}
 	/* draw top line */
-	for (y = x; y < ex ; ++y) {
+	for (y = x; y < ex; ++y) {
 		tb_change_cell(y, 0, u_hl, cframe.fg, cframe.bg);
 	}
-
 }
 
 static void
@@ -339,7 +344,7 @@ add_hi(Pane *pane, size_t entpos)
 {
 	Cpair col;
 	get_hicol(&col, pane->direntr[entpos].mode);
-	col.fg |= TB_REVERSE|TB_BOLD;
+	col.fg |= TB_REVERSE | TB_BOLD;
 	col.bg |= TB_REVERSE;
 	print_row(pane, entpos, col);
 }
@@ -355,7 +360,8 @@ rm_hi(Pane *pane, size_t entpos)
 static void
 float_to_string(float f, char *r)
 {
-	int length, length2, i, number, position, tenth; /* length is size of decimal part, length2 is size of tenth part */
+	int length, length2, i, number, position,
+	    tenth; /* length is size of decimal part, length2 is size of tenth part */
 	float number2;
 
 	f = (float)(int)(f * 10) / 10;
@@ -366,8 +372,8 @@ float_to_string(float f, char *r)
 	tenth = 1;
 
 	/* Calculate length2 tenth part */
-	while ((number2 - (float)number) != 0.0 && !((number2 - (float)number) < 0.0))
-	{
+	while ((number2 - (float)number) != 0.0 &&
+	       !((number2 - (float)number) < 0.0)) {
 		tenth *= 10.0;
 		number2 = f * (float)tenth;
 		number = (int)number2;
@@ -383,30 +389,23 @@ float_to_string(float f, char *r)
 	length = length + 1 + length2;
 	number = (int)number2;
 
-	if (length2 > 0)
-	{
-		for (i = length; i >= 0; i--)
-		{
+	if (length2 > 0) {
+		for (i = length; i >= 0; i--) {
 			if (i == (length))
 				r[i] = '\0';
 			else if (i == (position))
 				r[i] = '.';
-			else
-			{
+			else {
 				r[i] = (char)(number % 10) + '0';
 				number /= 10;
 			}
 		}
-	}
-	else
-	{
+	} else {
 		length--;
-		for (i = length; i >= 0; i--)
-		{
+		for (i = length; i >= 0; i--) {
 			if (i == (length))
 				r[i] = '\0';
-			else
-			{
+			else {
 				r[i] = (char)(number % 10) + '0';
 				number /= 10;
 			}
@@ -446,13 +445,13 @@ static int
 sort_name(const void *const A, const void *const B)
 {
 	int result;
-	mode_t data1 = (*(Entry*) A).mode;
-	mode_t data2 = (*(Entry*) B).mode;
+	mode_t data1 = (*(Entry *)A).mode;
+	mode_t data2 = (*(Entry *)B).mode;
 
 	if (data1 < data2) {
 		return -1;
 	} else if (data1 == data2) {
-		result = strcmp((*(Entry*) A).name,(*(Entry*) B).name);
+		result = strcmp((*(Entry *)A).name, (*(Entry *)B).name);
 		return result;
 	} else {
 		return 1;
@@ -470,7 +469,7 @@ get_ext(char *str)
 	counter = 0;
 	len = strlen(str);
 
-	for (i = len-1; i > 0; i--) {
+	for (i = len - 1; i > 0; i--) {
 		if (str[i] == dot) {
 			break;
 		} else {
@@ -478,8 +477,8 @@ get_ext(char *str)
 		}
 	}
 
-	ext = ecalloc(counter+1, sizeof(char));
-	strncpy(ext, &str[len-counter], counter);
+	ext = ecalloc(counter + 1, sizeof(char));
+	strncpy(ext, &str[len - counter], counter);
 	return ext;
 }
 
@@ -500,9 +499,9 @@ get_fgrp(gid_t status, size_t len)
 	result = ecalloc(len, sizeof(char));
 	gr = getgrgid(status);
 	if (gr == NULL)
-		(void)snprintf(result, len-1, "%d", (int)status);
+		(void)snprintf(result, len - 1, "%d", (int)status);
 	else
-		strncpy(result, gr->gr_name, len-1);
+		strncpy(result, gr->gr_name, len - 1);
 
 	return result;
 }
@@ -582,7 +581,7 @@ get_fperm(mode_t mode)
 		buf[0] = '?';
 
 	for (i = 1; i < 10; i++) {
-		buf[i] = (mode & (1 << (9-i))) ? chars[i-1] : '-';
+		buf[i] = (mode & (1 << (9 - i))) ? chars[i - 1] : '-';
 	}
 	buf[10] = '\0';
 
@@ -592,7 +591,6 @@ get_fperm(mode_t mode)
 static char *
 get_fsize(off_t size)
 {
-
 	/* need to be freed */
 	char *Rsize;
 	float lsize;
@@ -602,16 +600,14 @@ get_fsize(off_t size)
 	Rsize = ecalloc((size_t)10, sizeof(char));
 	lsize = (float)size;
 
-	while (lsize >= 1000.0)
-	{
+	while (lsize >= 1000.0) {
 		lsize /= 1024.0;
 		++counter;
 	}
 
 	float_to_string(lsize, Rsize);
 
-	switch (counter)
-	{
+	switch (counter) {
 	case 0:
 		strcat(Rsize, "B");
 		break;
@@ -645,8 +641,8 @@ get_fullpath(char *first, char *second)
 		(void)snprintf(full_path, full_path_len, "/%s", second);
 
 	} else {
-		(void)snprintf(
-			full_path, full_path_len, "%s/%s", first, second);
+		(void)snprintf(full_path, full_path_len, "%s/%s", first,
+			       second);
 	}
 
 	return full_path;
@@ -661,9 +657,9 @@ get_fusr(uid_t status, size_t len)
 	result = ecalloc(len, sizeof(char));
 	pw = getpwuid(status);
 	if (pw == NULL)
-		(void)snprintf(result, len-1, "%d", (int)status);
+		(void)snprintf(result, len - 1, "%d", (int)status);
 	else
-		strncpy(result, pw->pw_name, len-1);
+		strncpy(result, pw->pw_name, len - 1);
 
 	return result;
 }
@@ -678,15 +674,13 @@ get_dirsize(char *fullpath, off_t *fullsize)
 	struct stat status;
 
 	dir = opendir(fullpath);
-	if (dir == NULL)
-	{
+	if (dir == NULL) {
 		return;
 	}
 
-	while ((entry = readdir(dir)) != 0)
-	{
+	while ((entry = readdir(dir)) != 0) {
 		if ((strcmp(entry->d_name, ".") == 0 ||
-		strcmp(entry->d_name, "..") == 0))
+		     strcmp(entry->d_name, "..") == 0))
 			continue;
 
 		ent_full = get_fullpath(fullpath, entry->d_name);
@@ -696,7 +690,6 @@ get_dirsize(char *fullpath, off_t *fullsize)
 				get_dirsize(ent_full, fullsize);
 				free(ent_full);
 			} else {
-
 				*fullsize += status.st_size;
 				free(ent_full);
 			}
@@ -725,9 +718,9 @@ deldir(char *fullpath, int delchoice)
 	if (delchoice == (int)AskDel) {
 		char *confirmation;
 		confirmation = ecalloc((size_t)2, sizeof(char));
-		if ((get_usrinput(
-			confirmation, (size_t)2,"delete directory (Y) ?") < 0) ||
-			(strcmp(confirmation, "Y") != 0)) {
+		if ((get_usrinput(confirmation, (size_t)2,
+				  "delete directory (Y) ?") < 0) ||
+		    (strcmp(confirmation, "Y") != 0)) {
 			free(confirmation);
 			return 1; /* canceled by user or wrong confirmation */
 		}
@@ -749,8 +742,8 @@ deldir(char *fullpath, int delchoice)
 	}
 
 	while ((entry = readdir(dir)) != 0) {
-		if ((strcmp(entry->d_name, ".") == 0  ||
-			strcmp(entry->d_name, "..") == 0))
+		if ((strcmp(entry->d_name, ".") == 0 ||
+		     strcmp(entry->d_name, "..") == 0))
 			continue;
 
 		ent_full = get_fullpath(fullpath, entry->d_name);
@@ -802,7 +795,7 @@ delf(char *fullpath)
 	confirmation = ecalloc((size_t)2, sizeof(char));
 
 	if ((get_usrinput(confirmation, (size_t)2, "delete file (Y) ?") < 0) ||
-		(strcmp(confirmation, "Y") != 0)) {
+	    (strcmp(confirmation, "Y") != 0)) {
 		free(confirmation);
 		return 1; /* canceled by user or wrong confirmation */
 	}
@@ -818,15 +811,15 @@ calcdir(void)
 	char *csize;
 	char *result;
 
-	if (S_ISDIR(cpane->direntr[cpane->hdir-1].mode)) {
+	if (S_ISDIR(cpane->direntr[cpane->hdir - 1].mode)) {
 		fullsize = ecalloc(50, sizeof(off_t));
-		get_dirsize(cpane->direntr[cpane->hdir-1].name, fullsize);
+		get_dirsize(cpane->direntr[cpane->hdir - 1].name, fullsize);
 		csize = get_fsize(*fullsize);
-		result = get_finfo(&cpane->direntr[cpane->hdir-1]);
+		result = get_finfo(&cpane->direntr[cpane->hdir - 1]);
 
 		clear_status();
-		print_status(cstatus, "%lu/%lu %s%s",
-			cpane->hdir, cpane->dirc, result, csize);
+		print_status(cstatus, "%lu/%lu %s%s", cpane->hdir, cpane->dirc,
+			     result, csize);
 		free(csize);
 		free(fullsize);
 		free(result);
@@ -855,9 +848,8 @@ crnd(void)
 
 	if (mkdir(path, ndir_perm) < 0)
 		print_error(strerror(errno));
-	else
-		if (listdir(AddHi, NULL) < 0)
-			print_error(strerror(errno));
+	else if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
 
 	free(user_input);
 	free(path);
@@ -884,16 +876,15 @@ crnf(void)
 		return;
 	}
 
-	rf = open(path, O_CREAT|O_EXCL, nf_perm);
+	rf = open(path, O_CREAT | O_EXCL, nf_perm);
 
 	if (rf < 0) {
 		print_error(strerror(errno));
 	} else {
 		if (close(rf) < 0)
 			print_error(strerror(errno));
-		else
-			if (listdir(AddHi, NULL) < 0)
-				print_error(strerror(errno));
+		else if (listdir(AddHi, NULL) < 0)
+			print_error(strerror(errno));
 	}
 
 	free(user_input);
@@ -903,12 +894,12 @@ crnf(void)
 static void
 delfd(void)
 {
-	switch (delent(cpane->direntr[cpane->hdir-1].name)) {
+	switch (delent(cpane->direntr[cpane->hdir - 1].name)) {
 	case -1:
 		print_error(strerror(errno));
 		break;
 	case 0:
-		if (BETWEEN(cpane->hdir-1, 1, cpane->dirc)) /* last entry */
+		if (BETWEEN(cpane->hdir - 1, 1, cpane->dirc)) /* last entry */
 			cpane->hdir--;
 		if (listdir(AddHi, NULL) < 0)
 			print_error(strerror(errno));
@@ -935,15 +926,15 @@ mvbtm(void)
 		return;
 	if (cpane->dirc > scrheight) {
 		clear_pane(cpane->dirx);
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = cpane->dirc;
 		cpane->firstrow = cpane->dirc - scrheight + 1;
 		refresh_pane();
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	} else {
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = cpane->dirc;
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	}
 	print_info();
 }
@@ -954,9 +945,9 @@ mvdwn(void)
 	if (cpane->dirc < 1)
 		return;
 	if (cpane->dirc < scrheight && cpane->hdir < cpane->dirc) {
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir++;
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	} else {
 		mvdwns(); /* scroll */
 	}
@@ -967,19 +958,19 @@ static void
 mvdwns(void)
 {
 	size_t real;
-	real= cpane->hdir - 1 - cpane->firstrow;
+	real = cpane->hdir - 1 - cpane->firstrow;
 
 	if (real > scrheight - 3 - scrsp && cpane->hdir + scrsp < cpane->dirc) {
 		cpane->firstrow++;
 		clear_pane(cpane->dirx);
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir++;
 		refresh_pane();
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	} else if (cpane->hdir < cpane->dirc) {
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir++;
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	}
 }
 
@@ -990,9 +981,9 @@ mvfor(void)
 		return;
 	int s;
 
-	switch (check_dir(cpane->direntr[cpane->hdir-1].name)) {
+	switch (check_dir(cpane->direntr[cpane->hdir - 1].name)) {
 	case 0:
-		chdir(cpane->direntr[cpane->hdir-1].name);
+		chdir(cpane->direntr[cpane->hdir - 1].name);
 		getcwd(cpane->dirn, MAX_P);
 		parent_row = (int)cpane->hdir;
 		cpane->hdir = 1;
@@ -1002,7 +993,7 @@ mvfor(void)
 		break;
 	case 1: /* not a directory open file */
 		tb_shutdown();
-		s = opnf(cpane->direntr[cpane->hdir-1].name);
+		s = opnf(cpane->direntr[cpane->hdir - 1].name);
 		if (tb_init() != 0)
 			die("tb_init");
 		t_resize();
@@ -1035,15 +1026,15 @@ mvtop(void)
 		return;
 	if (cpane->dirc > scrheight) {
 		clear_pane(cpane->dirx);
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
 		refresh_pane();
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	} else {
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = 1;
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 		print_info();
 	}
 }
@@ -1054,9 +1045,9 @@ mvup(void)
 	if (cpane->dirc < 1)
 		return;
 	if (cpane->dirc < scrheight && cpane->hdir > 1) {
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir--;
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	} else {
 		mvups(); /* scroll */
 	}
@@ -1067,19 +1058,19 @@ static void
 mvups(void)
 {
 	size_t real;
-	real= cpane->hdir - 1 -  cpane->firstrow;
+	real = cpane->hdir - 1 - cpane->firstrow;
 
 	if (cpane->firstrow > 0 && real < 1 + scrsp) {
 		cpane->firstrow--;
 		clear_pane(cpane->dirx);
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir--;
 		refresh_pane();
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	} else if (cpane->hdir > 1) {
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir--;
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	}
 }
 
@@ -1090,9 +1081,9 @@ scrdwn(void)
 		return;
 	if (cpane->dirc < scrheight && cpane->hdir < cpane->dirc) {
 		if (cpane->hdir < cpane->dirc - scrmv) {
-			rm_hi(cpane, cpane->hdir-1);
+			rm_hi(cpane, cpane->hdir - 1);
 			cpane->hdir += scrmv;
-			add_hi(cpane, cpane->hdir-1);
+			add_hi(cpane, cpane->hdir - 1);
 		} else {
 			mvbtm();
 		}
@@ -1108,21 +1099,21 @@ scrdwns(void)
 	size_t real;
 	int dynmv;
 	real = cpane->hdir - cpane->firstrow;
-	dynmv = MIN(cpane->dirc - cpane->hdir - cpane->firstrow , scrmv);
+	dynmv = MIN(cpane->dirc - cpane->hdir - cpane->firstrow, scrmv);
 
 	if (real + scrmv + 1 > scrheight &&
-		cpane->hdir + scrsp + scrmv < cpane->dirc) { /* scroll */
+	    cpane->hdir + scrsp + scrmv < cpane->dirc) { /* scroll */
 		cpane->firstrow += dynmv;
 		clear_pane(cpane->dirx);
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir += scrmv;
 		refresh_pane();
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	} else {
-		if (cpane->hdir < cpane->dirc - scrmv) {
-			rm_hi(cpane, cpane->hdir-1);
+		if (cpane->hdir < cpane->dirc - scrmv - 1) {
+			rm_hi(cpane, cpane->hdir - 1);
 			cpane->hdir += scrmv;
-			add_hi(cpane, cpane->hdir-1);
+			add_hi(cpane, cpane->hdir - 1);
 		} else {
 			mvbtm();
 		}
@@ -1136,9 +1127,9 @@ scrup(void)
 		return;
 	if (cpane->dirc < scrheight && cpane->hdir > 1) {
 		if (cpane->hdir > scrmv) {
-			rm_hi(cpane, cpane->hdir-1);
+			rm_hi(cpane, cpane->hdir - 1);
 			cpane->hdir = cpane->hdir - scrmv;
-			add_hi(cpane, cpane->hdir-1);
+			add_hi(cpane, cpane->hdir - 1);
 			print_info();
 		} else {
 			mvtop();
@@ -1154,20 +1145,20 @@ scrups(void)
 	size_t real;
 	int dynmv;
 	real = cpane->hdir - cpane->firstrow;
-	dynmv = MIN(cpane->firstrow , scrmv);
+	dynmv = MIN(cpane->firstrow, scrmv);
 
-	if (cpane->firstrow > 0  && real < scrmv + scrsp) {
+	if (cpane->firstrow > 0 && real < scrmv + scrsp) {
 		cpane->firstrow -= dynmv;
 		clear_pane(cpane->dirx);
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir -= scrmv;
 		refresh_pane();
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 	} else {
 		if (cpane->hdir > scrmv + 1) {
-			rm_hi(cpane, cpane->hdir-1);
+			rm_hi(cpane, cpane->hdir - 1);
 			cpane->hdir -= scrmv;
-			add_hi(cpane, cpane->hdir-1);
+			add_hi(cpane, cpane->hdir - 1);
 		} else {
 			mvtop();
 		}
@@ -1209,26 +1200,29 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 			}
 
 			if (fev.key == (uint16_t)TB_KEY_BACKSPACE ||
-				fev.key == (uint16_t)TB_KEY_BACKSPACE2) {
+			    fev.key == (uint16_t)TB_KEY_BACKSPACE2) {
 				if (BETWEEN(counter, (size_t)2, sout)) {
-					out[x-1] = '\0';
+					out[x - 1] = '\0';
 					counter--;
 					x--;
 					print_xstatus(empty, startat + counter);
-					tb_set_cursor(
-						(int)startat + counter, height - 1);
+					tb_set_cursor((int)startat + counter,
+						      height - 1);
 				}
 
 			} else if (fev.key == (uint16_t)TB_KEY_ENTER) {
 				tb_set_cursor(-1, -1);
-				out[counter-1] = '\0';
+				out[counter - 1] = '\0';
 				return 0;
 
 			} else {
 				if (counter < sout) {
-					print_xstatus((char)fev.ch, (int)(startat+counter));
+					print_xstatus((char)fev.ch,
+						      (int)(startat + counter));
 					out[x] = (char)fev.ch;
-					tb_set_cursor((int)(startat + counter + 1),height-1);
+					tb_set_cursor((int)(startat + counter +
+							    1),
+						      height - 1);
 					counter++;
 					x++;
 				}
@@ -1243,7 +1237,6 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 	}
 
 	return -1;
-
 }
 
 static char *
@@ -1282,7 +1275,7 @@ opnf(char *fn)
 	pid_t pid, r;
 
 	sw = getsw(fn);
-	char *filex[] = {sw, fn, NULL};
+	char *filex[] = { sw, fn, NULL };
 	pid = fork();
 
 	switch (pid) {
@@ -1309,28 +1302,43 @@ fsev_init(void)
 	inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
 	if (inotify_fd < 0)
 		return -1;
-	return 0;
 #elif defined _SYS_EVENT_H_
+	kq = kqueue();
+	if (kq < 0)
+		return -1;
 #endif
+	return 0;
 }
 
 static int
 addwatch(void)
 {
+#if defined _SYS_INOTIFY_H
 	return cpane->inotify_wd = inotify_add_watch(inotify_fd, cpane->dirn,
-		IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |\
+		IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
 		IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
+#elif defined _SYS_EVENT_H_
+	cpane->event_fd = open(cpane->dirn, O_RDONLY);
+	if (cpane->event_fd < 0)
+		return cpane->event_fd;
+	EV_SET(&evlist[cpane->pane_id], cpane->event_fd,
+		EVFILT_VNODE, EV_ADD | EV_CLEAR,
+		NOTE_DELETE | NOTE_EXTEND | NOTE_LINK |
+		NOTE_RENAME | NOTE_REVOKE | NOTE_WRITE, 0, NULL);
+	return 0;
+#endif
 }
 
 static int
-read_inotify(void)
+read_events(void)
 {
+#if defined _SYS_INOTIFY_H
 	char *p;
 	ssize_t r;
 	struct inotify_event *event;
 	const size_t events = 32;
-	const size_t evbuflen = events *
-		(sizeof(struct inotify_event) + MAX_N + 1);
+	const size_t evbuflen =
+	    events * (sizeof(struct inotify_event) + MAX_N + 1);
 	char buf[evbuflen];
 
 	if (cpane->inotify_wd < 0)
@@ -1349,24 +1357,33 @@ read_inotify(void)
 
 		p += sizeof(struct inotify_event) + event->len;
 	}
+#elif defined _SYS_EVENT_H_
+	return kevent(kq, evlist, 2, chlist, 2, &gtimeout);
+#endif
 	return -1;
 }
 
 static void
 rmwatch(Pane *pane)
 {
+#if defined _SYS_INOTIFY_H
 	if (pane->inotify_wd >= 0)
 		inotify_rm_watch(inotify_fd, pane->inotify_wd);
+#elif defined _SYS_EVENT_H_
+	close(pane->event_fd);
+	return;
+#endif
 }
 
 static void
 fsev_shdn(void)
 {
-#if defined _SYS_INOTIFY_H
 	rmwatch(&pane_l);
 	rmwatch(&pane_r);
+#if defined _SYS_INOTIFY_H
 	close(inotify_fd);
 #elif defined _SYS_EVENT_H_
+	close(kq);
 #endif
 }
 
@@ -1780,14 +1797,14 @@ static void
 switch_pane(void)
 {
 	if (cpane->dirc > 0)
-		rm_hi(cpane, cpane->hdir-1);
+		rm_hi(cpane, cpane->hdir - 1);
 	if (cpane == &pane_l)
 		cpane = &pane_r;
 	else if (cpane == &pane_r)
 		cpane = &pane_l;
 	chdir(cpane->dirn);
 	if (cpane->dirc > 0) {
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 		print_info();
 	} else {
 		clear_status();
@@ -1856,7 +1873,7 @@ start_ev(void)
 		else if (t == 2) /* resize event */
 			t_resize();
 		else if (t == 0) /* filesystem event */
-			if (read_inotify() > 0)
+			if (read_events() > 0)
 				if (listdir(AddHi, NULL) < 0)
 					print_error(strerror(errno));
 
@@ -1890,7 +1907,7 @@ refresh_pane(void)
 
 	/* print current directory title */
 	cpane->dircol.fg |= TB_BOLD;
-	printf_tb(cpane->dirx, 0, cpane->dircol," %.*s ", width, cpane->dirn);
+	printf_tb(cpane->dirx, 0, cpane->dircol, " %.*s ", width, cpane->dirn);
 }
 
 static int
@@ -1927,12 +1944,12 @@ listdir(int hi, char *filter)
 
 	if (filter == NULL) {
 		clear_pane(cpane->dirx);
-		cpane->dirc -=2;
+		cpane->dirc -= 2;
 	}
 
 	if (filter != NULL) {
 		if (filtercount > 0) {
-			cpane->dirc -=2;
+			cpane->dirc -= 2;
 			cpane->dirc = filtercount;
 			clear_pane(cpane->dirx);
 			cpane->hdir = 1;
@@ -1946,7 +1963,7 @@ listdir(int hi, char *filter)
 
 	/* print current directory title */
 	cpane->dircol.fg |= TB_BOLD;
-	printf_tb(cpane->dirx, 0, cpane->dircol," %.*s ", width, cpane->dirn);
+	printf_tb(cpane->dirx, 0, cpane->dircol, " %.*s ", width, cpane->dirn);
 
 	/* empty directory */
 	if (cpane->dirc == 0) {
@@ -1962,8 +1979,8 @@ listdir(int hi, char *filter)
 	i = 0;
 	cpane->direntr = erealloc(cpane->direntr, cpane->dirc * sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
-		if ((strcmp(entry->d_name, ".") == 0  ||
-			strcmp(entry->d_name, "..") == 0))
+		if ((strcmp(entry->d_name, ".") == 0 ||
+		     strcmp(entry->d_name, "..") == 0))
 			continue;
 
 		/* list found filter */
@@ -1981,15 +1998,15 @@ listdir(int hi, char *filter)
 			}
 
 		} else {
-		strcpy(cpane->direntr[i].name, entry->d_name);
-		if (lstat(entry->d_name, &status) == 0) {
-			cpane->direntr[i].size = status.st_size;
-			cpane->direntr[i].mode = status.st_mode;
-			cpane->direntr[i].group = status.st_gid;
-			cpane->direntr[i].user = status.st_uid;
-			cpane->direntr[i].td = status.st_mtime;
-		}
-		i++;
+			strcpy(cpane->direntr[i].name, entry->d_name);
+			if (lstat(entry->d_name, &status) == 0) {
+				cpane->direntr[i].size = status.st_size;
+				cpane->direntr[i].mode = status.st_mode;
+				cpane->direntr[i].group = status.st_gid;
+				cpane->direntr[i].user = status.st_uid;
+				cpane->direntr[i].td = status.st_mtime;
+			}
+			i++;
 		}
 	}
 
@@ -2000,7 +2017,7 @@ listdir(int hi, char *filter)
 	refresh_pane();
 
 	if (hi == AddHi)
-		add_hi(cpane, cpane->hdir-1);
+		add_hi(cpane, cpane->hdir - 1);
 
 	if (closedir(dir) < 0)
 		return -1;
@@ -2022,7 +2039,7 @@ t_resize(void)
 		chdir(pane_l.dirn);
 		cpane = &pane_l;
 		refresh_pane();
-		add_hi(&pane_l, pane_l.hdir-1);
+		add_hi(&pane_l, pane_l.hdir - 1);
 	} else if (cpane == &pane_r) {
 		chdir(pane_l.dirn);
 		cpane = &pane_l;
@@ -2030,7 +2047,7 @@ t_resize(void)
 		chdir(pane_r.dirn);
 		cpane = &pane_r;
 		refresh_pane();
-		add_hi(&pane_r, pane_r.hdir-1);
+		add_hi(&pane_r, pane_r.hdir - 1);
 	}
 
 	tb_present();
@@ -2051,20 +2068,22 @@ set_panes(int paneitem)
 	if (home == NULL)
 		home = "/";
 
+	pane_l.pane_id = 0;
 	pane_l.dirx = 2;
 	pane_l.dircol = cpanell;
-	pane_l.firstrow = 0;
 	if (paneitem == AllP) {
+		pane_l.firstrow = 0;
 		pane_l.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_l.dirn, cwd);
 		pane_l.hdir = 1;
 		pane_l.inotify_wd = -1;
 	}
 
+	pane_r.pane_id = 1;
 	pane_r.dirx = (width / 2) + 2;
 	pane_r.dircol = cpanelr;
-	pane_r.firstrow = 0;
 	if (paneitem == AllP) {
+		pane_r.firstrow = 0;
 		pane_r.direntr = ecalloc(0, sizeof(Entry));
 		strcpy(pane_r.dirn, home);
 		pane_r.hdir = 1;
@@ -2081,33 +2100,34 @@ draw_frame(void)
 	height = tb_height();
 
 	/* 2 horizontal lines */
-	for (i = 1; i < width-1 ; ++i) {
-		tb_change_cell(i, 0,        u_hl, cframe.fg, cframe.bg);
-		tb_change_cell(i, height-2, u_hl, cframe.fg, cframe.bg);
+	for (i = 1; i < width - 1; ++i) {
+		tb_change_cell(i, 0, u_hl, cframe.fg, cframe.bg);
+		tb_change_cell(i, height - 2, u_hl, cframe.fg, cframe.bg);
 	}
 
 	/* 3 vertical lines */
-	for (i = 1; i < height-1 ; ++i) {
-		tb_change_cell(0,           i,   u_vl, cframe.fg, cframe.bg);
-		tb_change_cell((width-1)/2, i-1, u_vl, cframe.fg, cframe.bg);
-		tb_change_cell(width-1,     i,   u_vl, cframe.fg, cframe.bg);
+	for (i = 1; i < height - 1; ++i) {
+		tb_change_cell(0, i, u_vl, cframe.fg, cframe.bg);
+		tb_change_cell((width - 1) / 2, i - 1, u_vl, cframe.fg,
+			       cframe.bg);
+		tb_change_cell(width - 1, i, u_vl, cframe.fg, cframe.bg);
 	}
 
 	/* 4 corners */
-	tb_change_cell(0,       0,        u_cnw, cframe.fg, cframe.bg);
-	tb_change_cell(width-1, 0,        u_cne, cframe.fg, cframe.bg);
-	tb_change_cell(0,       height-2, u_csw, cframe.fg, cframe.bg);
-	tb_change_cell(width-1, height-2, u_cse, cframe.fg, cframe.bg);
+	tb_change_cell(0, 0, u_cnw, cframe.fg, cframe.bg);
+	tb_change_cell(width - 1, 0, u_cne, cframe.fg, cframe.bg);
+	tb_change_cell(0, height - 2, u_csw, cframe.fg, cframe.bg);
+	tb_change_cell(width - 1, height - 2, u_cse, cframe.fg, cframe.bg);
 
 	/* 2 middel top and bottom */
-	tb_change_cell((width-1)/2, 0,        u_mn, cframe.fg, cframe.bg);
-	tb_change_cell((width-1)/2, height-2, u_ms, cframe.fg, cframe.bg);
+	tb_change_cell((width - 1) / 2, 0, u_mn, cframe.fg, cframe.bg);
+	tb_change_cell((width - 1) / 2, height - 2, u_ms, cframe.fg, cframe.bg);
 }
 
 static void
 start(void)
 {
-	if (tb_init()!= 0)
+	if (tb_init() != 0)
 		die("tb_init");
 	if (tb_select_output_mode(TB_OUTPUT_256) != TB_OUTPUT_256)
 		if (tb_select_output_mode(TB_OUTPUT_NORMAL) != TB_OUTPUT_NORMAL)
@@ -2131,17 +2151,15 @@ int
 main(int argc, char *argv[])
 {
 #ifdef __OpenBSD__
-	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath", NULL) == -1)
+	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath",
+		   NULL) == -1)
 		die("pledge");
 #endif /* __OpenBSD__ */
-	if (argc == 1) {
+	if (argc == 1)
 		start();
-	} else if (
-		argc == 2 && strlen(argv[1]) == (size_t)2 &&
-		strcmp("-v", argv[1]) == 0) {
-			die("sfm-"VERSION);
-	} else {
+	else if (argc == 2 && strncmp("-v", argv[1], 2) == 0)
+		die("sfm-" VERSION);
+	else
 		die("usage: sfm [-v]");
-	}
 	return 0;
 }
