@@ -62,6 +62,7 @@ typedef struct {
 	size_t dirc; // dir entries sum
 	size_t hdir; // highlighted dir
 	size_t firstrow;
+	int parent_row; // FIX
 	Cpair dircol;
 	int inotify_wd;
 	int event_fd;
@@ -161,7 +162,6 @@ static void start(void);
 /* global variables */
 static Pane pane_r, pane_l, *cpane;
 static char fed[] = "vi";
-static int parent_row = 1; // FIX
 static size_t scrheight;
 #if defined _SYS_INOTIFY_H
 static int inotify_fd;
@@ -891,10 +891,10 @@ mvbk(void)
 	chdir("..");
 	getcwd(cpane->dirn, MAX_P);
 	cpane->firstrow = 0;
-	cpane->hdir = parent_row;
+	cpane->hdir = cpane->parent_row;
 	if (listdir(AddHi, NULL) < 0)
 		print_error(strerror(errno));
-	parent_row = 1;
+	cpane->parent_row = 1;
 }
 
 static void
@@ -963,7 +963,7 @@ mvfor(void)
 	case 0:
 		chdir(cpane->direntr[cpane->hdir - 1].name);
 		getcwd(cpane->dirn, MAX_P);
-		parent_row = (int)cpane->hdir;
+		cpane->parent_row = (int)cpane->hdir;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
 		if (listdir(AddHi, NULL) < 0)
@@ -1684,6 +1684,7 @@ set_panes(int paneitem)
 		strcpy(pane_l.dirn, cwd);
 		pane_l.hdir = 1;
 		pane_l.inotify_wd = -1;
+		pane_l.parent_row = 1;
 	}
 
 	pane_r.pane_id = 1;
@@ -1695,6 +1696,7 @@ set_panes(int paneitem)
 		strcpy(pane_r.dirn, home);
 		pane_r.hdir = 1;
 		pane_r.inotify_wd = -1;
+		pane_r.parent_row = 1;
 	}
 }
 
