@@ -888,6 +888,7 @@ delfd(void)
 static void
 mvbk(void)
 {
+	rmwatch(cpane);
 	chdir("..");
 	getcwd(cpane->dirn, MAX_P);
 	cpane->firstrow = 0;
@@ -955,6 +956,7 @@ mvdwns(void)
 static void
 mvfor(void)
 {
+	rmwatch(cpane);
 	if (cpane->dirc < 1)
 		return;
 	int s;
@@ -1456,6 +1458,7 @@ grabkeys(struct tb_event *event)
 	b = findbm(event->ch);
 	if (b < 0)
 		return;
+	rmwatch(cpane);
 	strcpy(cpane->dirn, bmarks[b].path);
 	cpane->firstrow = 0;
 	cpane->hdir = 1;
