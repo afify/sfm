@@ -32,6 +32,7 @@
 #define MAX_P 4095
 #define MAX_N 255
 #define MAX_USRI 32
+#define MAX_EXT 4
 
 /* enums */
 enum { AskDel, DAskDel }; /* delete directory */
@@ -72,9 +73,9 @@ typedef struct {
 } Bookmark;
 
 typedef struct {
-	char *soft;
 	const char **ext;
-	size_t len;
+	size_t exlen;
+	const void *v;
 } Rule;
 
 typedef union {
@@ -136,8 +137,8 @@ static void scrdwns(void);
 static void scrup(void);
 static void scrups(void);
 static int get_usrinput(char *, size_t, char *);
-static char *frules(char *);
-static char *getsw(char *);
+static int frules(char *);
+static int spawn(const void *, char *);
 static int opnf(char *);
 static int fsev_init(void);
 static int addwatch(void);
@@ -1207,50 +1208,44 @@ get_usrinput(char *out, size_t sout, char *prompt)
 	return -1;
 }
 
-static char *
+static int
 frules(char *ex)
 {
 	size_t c, d;
 
 	for (c = 0; c < LEN(rules); c++)
-		for (d = 0; d < rules[c].len; d++)
-			if (strcmp(rules[c].ext[d], ex) == 0)
-				return rules[c].soft;
-	return NULL;
-}
-
-static char *
-getsw(char *fn)
-{
-	char *ed, *ex, *sw;
-
-	ed = getenv("EDITOR");
-	if (ed == NULL)
-		ed = fed;
-	ex = get_ext(fn);
-	sw = frules(ex);
-	if (sw == NULL)
-		sw = ed;
-	free(ex);
-	return sw;
+		for (d = 0; d < rules[c].exlen; d++)
+			if (strncmp(rules[c].ext[d], ex, MAX_EXT) == 0)
+				return c;
+	return -1;
 }
 
 static int
-opnf(char *fn)
+spawn(const void *v, char *fn)
 {
-	char *sw;
-	int ws;
+	int ws, x, argc;
 	pid_t pid, r;
 
-	sw = getsw(fn);
-	char *filex[] = { sw, fn, NULL };
-	pid = fork();
+	x = 0;
+	argc = 0;
 
+	/* count args */
+	while (((char **)v)[x++] != NULL)
+		argc++;
+
+	char *argv[argc + 2];
+	for ( x = 0; x < argc; x++)
+		argv[x] = ((char **)v)[x];
+
+	argv[argc] = fn;
+	argv[argc + 1] = NULL;
+
+	pid = fork();
 	switch (pid) {
 	case -1:
 		return -1;
 	case 0:
-		execvp(filex[0], filex);
+		execvp(argv[0], argv);
 		exit(EXIT_SUCCESS);
 	default:
 		while ((r = waitpid(pid, &ws, 0)) == -1 && errno == EINTR)
@@ -1261,6 +1256,27 @@ opnf(char *fn)
 			return -1;
 	}
 	return 0;
+}
+
+static int
+opnf(char *fn)
+{
+	char *ed[2], *ex;
+	int c;
+
+	ex = get_ext(fn);
+	c = frules(ex);
+	free(ex);
+
+	if (c < 0) { /* extension not found open in editor */
+		ed[0] = getenv("EDITOR");
+		ed[1] = NULL;
+		if (ed[0] == NULL)
+			ed[0] = fed;
+		return spawn(ed, fn);
+	} else {
+		return spawn((char **)rules[c].v, fn);
+	}
 }
 
 static int
