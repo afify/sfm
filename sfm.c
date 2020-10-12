@@ -1461,6 +1461,7 @@ grabkeys(struct tb_event *event)
 	rmwatch(cpane);
 	strcpy(cpane->dirn, bmarks[b].path);
 	cpane->firstrow = 0;
+	cpane->parent_row = 1;
 	cpane->hdir = 1;
 	if (listdir(AddHi, NULL) < 0)
 		print_error(strerror(errno));
