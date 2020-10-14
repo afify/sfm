@@ -1579,6 +1579,9 @@ listdir(int hi, char *filter)
 	cpane->dircol.fg |= TB_BOLD;
 	printf_tb(cpane->dirx, 0, cpane->dircol, " %.*s ", width, cpane->dirn);
 
+	if (addwatch() < 0)
+		print_error("can't add watch");
+
 	/* empty directory */
 	if (cpane->dirc == 0) {
 		clear_status();
@@ -1624,8 +1627,6 @@ listdir(int hi, char *filter)
 		}
 	}
 
-	if (addwatch() < 0)
-		print_error("can't add watch");
 	cpane->dirc = i;
 	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
 	refresh_pane();
