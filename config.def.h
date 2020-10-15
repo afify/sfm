@@ -78,8 +78,8 @@ static const mode_t ndir_perm = S_IRWXU | S_IRWXG |S_IROTH | S_IXOTH;
 static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
 
 /* scroll */
-static const size_t scrmv = 10; /* ctrl+u, ctrl+d movement */
-static const size_t scrsp = 3;  /* space before scroll */
+static const int scrmv = 10; /* ctrl+u, ctrl+d movement */
+static const int scrsp = 3;  /* space before scroll */
 
 /* statusbar */
 static const int show_ug   = 1;

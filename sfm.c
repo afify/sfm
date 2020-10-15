@@ -59,9 +59,9 @@ typedef struct {
 	char dirn[MAX_P]; // dir name cwd
 	Entry *direntr; // dir entries
 	int dirx; // pane cwd x pos
-	size_t dirc; // dir entries sum
-	size_t hdir; // highlighted dir
-	size_t firstrow;
+	int dirc; // dir entries sum
+	int hdir; // highlighted dir
+	int firstrow;
 	int parent_row; // FIX
 	Cpair dircol;
 	int inotify_wd;
@@ -162,7 +162,7 @@ static void start(void);
 /* global variables */
 static Pane pane_r, pane_l, *cpane;
 static char fed[] = "vi";
-static size_t scrheight;
+static int theight, twidth, scrheight;
 #if defined _SYS_INOTIFY_H
 static int inotify_fd;
 #elif defined _SYS_EVENT_H_
@@ -201,26 +201,21 @@ printf_tb(int x, int y, Cpair col, const char *fmt, ...)
 static void
 print_status(Cpair col, const char *fmt, ...)
 {
-	int height;
-	height = tb_height();
-
 	char buf[256];
 	va_list vl;
 	va_start(vl, fmt);
 	(void)vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
 	clear_status();
-	print_tb(buf, 1, height - 1, col.fg, col.bg);
+	print_tb(buf, 1, theight - 1, col.fg, col.bg);
 }
 
 static void
 print_xstatus(char c, int x)
 {
-	int height;
 	uint32_t uni = 0;
-	height = tb_height();
 	(void)tb_utf8_char_to_unicode(&uni, &c);
-	tb_change_cell(x, height - 1, uni, cstatus.fg, cstatus.bg);
+	tb_change_cell(x, theight - 1, uni, cstatus.fg, cstatus.bg);
 }
 
 static void
@@ -253,7 +248,7 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	char lnk_full[MAX_P];
 	int width;
 
-	width = (tb_width() / 2) - 4;
+	width = (twidth / 2) - 4;
 	result = pane->direntr[entpos].name;
 	x = pane->dirx;
 	y = entpos - cpane->firstrow + 1;
@@ -284,29 +279,24 @@ clear(int sx, int ex, int y, uint16_t bg)
 static void
 clear_status(void)
 {
-	int width, height;
-	width = tb_width();
-	height = tb_height();
-	clear(1, width - 1, height - 1, cstatus.bg);
+	clear(1, twidth - 1, theight - 1, cstatus.bg);
 }
 
 static void
 clear_pane(int pane)
 {
-	int i, x, ex, y, width, height;
-	width = tb_width();
-	height = tb_height();
+	int i, x, ex, y;
 	x = 0, y = 0, i = 0, ex = 0;
 
 	if (pane == 2) {
 		x = 2;
-		ex = (width / 2) - 1;
-	} else if (pane == (width / 2) + 2) {
-		x = (width / 2) + 1;
-		ex = width - 1;
+		ex = (twidth / 2) - 1;
+	} else if (pane == (twidth / 2) + 2) {
+		x = (twidth / 2) + 1;
+		ex = twidth - 1;
 	}
 
-	while (i < height - 2) {
+	while (i < scrheight) {
 		clear(x, ex, y, TB_DEFAULT);
 		i++;
 		y++;
@@ -936,7 +926,7 @@ mvdwn(void)
 static void
 mvdwns(void)
 {
-	size_t real;
+	int real;
 	real = cpane->hdir - 1 - cpane->firstrow;
 
 	if (real > scrheight - 3 - scrsp && cpane->hdir + scrsp < cpane->dirc) {
@@ -1076,8 +1066,8 @@ scrdwn(void)
 static void
 scrdwns(void)
 {
-	size_t real;
-	int dynmv;
+	int real, dynmv;
+
 	real = cpane->hdir - cpane->firstrow;
 	dynmv = MIN(cpane->dirc - cpane->hdir - cpane->firstrow, scrmv);
 
@@ -1122,8 +1112,7 @@ scrup(void)
 static void
 scrups(void)
 {
-	size_t real;
-	int dynmv;
+	int real, dynmv;
 	real = cpane->hdir - cpane->firstrow;
 	dynmv = MIN(cpane->firstrow, scrmv);
 
@@ -1148,7 +1137,6 @@ scrups(void)
 static int
 get_usrinput(char *out, size_t sout, char *prompt)
 {
-	int height = tb_height();
 	size_t startat;
 	struct tb_event fev;
 	size_t counter = (size_t)1;
@@ -1158,7 +1146,7 @@ get_usrinput(char *out, size_t sout, char *prompt)
 	clear_status();
 	startat = strlen(prompt) + 1;
 	print_prompt(prompt);
-	tb_set_cursor((int)(startat + 1), height - 1);
+	tb_set_cursor((int)(startat + 1), theight - 1);
 	tb_present();
 
 	while (tb_poll_event(&fev) != 0) {
@@ -1178,7 +1166,7 @@ get_usrinput(char *out, size_t sout, char *prompt)
 					x--;
 					print_xstatus(empty, startat + counter);
 					tb_set_cursor((int)startat + counter,
-						      height - 1);
+						      theight - 1);
 				}
 
 			} else if (fev.key == (uint16_t)TB_KEY_ENTER) {
@@ -1193,7 +1181,7 @@ get_usrinput(char *out, size_t sout, char *prompt)
 					out[x] = (char)fev.ch;
 					tb_set_cursor((int)(startat + counter +
 							    1),
-						      height - 1);
+						      theight - 1);
 					counter++;
 					x++;
 				}
@@ -1499,7 +1487,7 @@ refresh_pane(void)
 {
 	size_t y, dyn_max, start_from;
 	int width;
-	width = (tb_width() / 2) - 4;
+	width = (twidth / 2) - 4;
 	Cpair col;
 
 	y = 1;
@@ -1535,7 +1523,7 @@ listdir(int hi, char *filter)
 	int filtercount = 0;
 	size_t oldc = cpane->dirc;
 
-	width = (tb_width() / 2) - 4;
+	width = (twidth / 2) - 4;
 	cpane->dirc = 0;
 	i = 0;
 
@@ -1644,8 +1632,8 @@ t_resize(void)
 {
 	/* TODO need refactoring */
 	tb_clear();
-	draw_frame();
 	set_panes(PtP);
+	draw_frame();
 
 	if (cpane == &pane_l) {
 		chdir(pane_r.dirn);
@@ -1673,13 +1661,13 @@ t_resize(void)
 static void
 set_panes(int paneitem)
 {
-	int width;
 	char *home;
 	char cwd[MAX_P];
-	scrheight = tb_height() - 2;
+	theight = tb_height();
+	twidth = tb_width();
+	scrheight = theight - 2;
 
 	home = getenv("HOME");
-	width = tb_width();
 	if ((getcwd(cwd, sizeof(cwd)) == NULL))
 		return;
 	if (home == NULL)
@@ -1698,7 +1686,7 @@ set_panes(int paneitem)
 	}
 
 	pane_r.pane_id = 1;
-	pane_r.dirx = (width / 2) + 2;
+	pane_r.dirx = (twidth / 2) + 2;
 	pane_r.dircol = cpanelr;
 	if (paneitem == AllP) {
 		pane_r.firstrow = 0;
@@ -1713,34 +1701,31 @@ set_panes(int paneitem)
 static void
 draw_frame(void)
 {
-	int height, width, i;
-
-	width = tb_width();
-	height = tb_height();
+	int i;
 
 	/* 2 horizontal lines */
-	for (i = 1; i < width - 1; ++i) {
+	for (i = 1; i < twidth - 1; ++i) {
 		tb_change_cell(i, 0, u_hl, cframe.fg, cframe.bg);
-		tb_change_cell(i, height - 2, u_hl, cframe.fg, cframe.bg);
+		tb_change_cell(i, theight - 2, u_hl, cframe.fg, cframe.bg);
 	}
 
 	/* 3 vertical lines */
-	for (i = 1; i < height - 1; ++i) {
+	for (i = 1; i < theight - 1; ++i) {
 		tb_change_cell(0, i, u_vl, cframe.fg, cframe.bg);
-		tb_change_cell((width - 1) / 2, i - 1, u_vl, cframe.fg,
+		tb_change_cell((twidth - 1) / 2, i - 1, u_vl, cframe.fg,
 			       cframe.bg);
-		tb_change_cell(width - 1, i, u_vl, cframe.fg, cframe.bg);
+		tb_change_cell(twidth - 1, i, u_vl, cframe.fg, cframe.bg);
 	}
 
 	/* 4 corners */
 	tb_change_cell(0, 0, u_cnw, cframe.fg, cframe.bg);
-	tb_change_cell(width - 1, 0, u_cne, cframe.fg, cframe.bg);
-	tb_change_cell(0, height - 2, u_csw, cframe.fg, cframe.bg);
-	tb_change_cell(width - 1, height - 2, u_cse, cframe.fg, cframe.bg);
+	tb_change_cell(twidth - 1, 0, u_cne, cframe.fg, cframe.bg);
+	tb_change_cell(0, theight - 2, u_csw, cframe.fg, cframe.bg);
+	tb_change_cell(twidth - 1, theight - 2, u_cse, cframe.fg, cframe.bg);
 
 	/* 2 middel top and bottom */
-	tb_change_cell((width - 1) / 2, 0, u_mn, cframe.fg, cframe.bg);
-	tb_change_cell((width - 1) / 2, height - 2, u_ms, cframe.fg, cframe.bg);
+	tb_change_cell((twidth - 1) / 2, 0, u_mn, cframe.fg, cframe.bg);
+	tb_change_cell((twidth - 1) / 2, theight - 2, u_ms, cframe.fg, cframe.bg);
 }
 
 static void
@@ -1752,8 +1737,8 @@ start(void)
 		if (tb_select_output_mode(TB_OUTPUT_NORMAL) != TB_OUTPUT_NORMAL)
 			die("output error");
 
-	draw_frame();
 	set_panes(AllP);
+	draw_frame();
 	if (fsev_init() < 0)
 		print_error(strerror(errno));
 	cpane = &pane_r;
