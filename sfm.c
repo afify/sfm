@@ -37,7 +37,6 @@
 /* enums */
 enum { AskDel, DAskDel }; /* delete directory */
 enum { AddHi, NoHi }; /* add highlight in listdir */
-enum { AllP, PtP }; /* set pane items */
 
 /* typedef */
 typedef struct {
@@ -155,12 +154,14 @@ static void start_ev(void);
 static void refresh_pane(void);
 static int listdir(int, char *);
 static void t_resize(void);
-static void set_panes(int);
+static void get_editor(void);
+static void set_panes(void);
 static void draw_frame(void);
 static void start(void);
 
 /* global variables */
 static Pane pane_r, pane_l, *cpane;
+static char *editor[2];
 static char fed[] = "vi";
 static int theight, twidth, scrheight;
 #if defined _SYS_INOTIFY_H
@@ -235,7 +236,7 @@ print_info(void)
 {
 	char *fileinfo;
 	fileinfo = get_finfo(&cpane->direntr[cpane->hdir - 1]);
-	print_status(cstatus, "%lu/%lu %s", cpane->hdir, cpane->dirc, fileinfo);
+	print_status(cstatus, "%d/%d %s", cpane->hdir, cpane->dirc, fileinfo);
 	free(fileinfo);
 }
 
@@ -786,7 +787,7 @@ calcdir(void)
 		result = get_finfo(&cpane->direntr[cpane->hdir - 1]);
 
 		clear_status();
-		print_status(cstatus, "%lu/%lu %s%s", cpane->hdir, cpane->dirc,
+		print_status(cstatus, "%d/%d %s%s", cpane->hdir, cpane->dirc,
 			     result, csize);
 		free(csize);
 		free(fullsize);
@@ -1251,22 +1252,17 @@ spawn(const void *v, char *fn)
 static int
 opnf(char *fn)
 {
-	char *ed[2], *ex;
+	char *ex;
 	int c;
 
 	ex = get_ext(fn);
 	c = frules(ex);
 	free(ex);
 
-	if (c < 0) { /* extension not found open in editor */
-		ed[0] = getenv("EDITOR");
-		ed[1] = NULL;
-		if (ed[0] == NULL)
-			ed[0] = fed;
-		return spawn(ed, fn);
-	} else {
+	if (c < 0) /* extension not found open in editor */
+		return spawn(editor, fn);
+	else
 		return spawn((char **)rules[c].v, fn);
-	}
 }
 
 static int
@@ -1632,8 +1628,8 @@ t_resize(void)
 {
 	/* TODO need refactoring */
 	tb_clear();
-	set_panes(PtP);
 	draw_frame();
+	pane_r.dirx = (twidth / 2) + 2;
 
 	if (cpane == &pane_l) {
 		chdir(pane_r.dirn);
@@ -1659,49 +1655,55 @@ t_resize(void)
 }
 
 static void
-set_panes(int paneitem)
+get_editor(void)
+{
+	editor[0] = getenv("EDITOR");
+	editor[1] = NULL;
+
+	if (editor[0] == NULL)
+		editor[0] = fed;
+}
+
+static void
+set_panes(void)
 {
 	char *home;
 	char cwd[MAX_P];
-	theight = tb_height();
-	twidth = tb_width();
-	scrheight = theight - 2;
 
 	home = getenv("HOME");
-	if ((getcwd(cwd, sizeof(cwd)) == NULL))
-		return;
 	if (home == NULL)
 		home = "/";
+	if ((getcwd(cwd, sizeof(cwd)) == NULL))
+		strncpy(cwd, home, MAX_P);
 
 	pane_l.pane_id = 0;
 	pane_l.dirx = 2;
 	pane_l.dircol = cpanell;
-	if (paneitem == AllP) {
-		pane_l.firstrow = 0;
-		pane_l.direntr = ecalloc(0, sizeof(Entry));
-		strcpy(pane_l.dirn, cwd);
-		pane_l.hdir = 1;
-		pane_l.inotify_wd = -1;
-		pane_l.parent_row = 1;
-	}
+	pane_l.firstrow = 0;
+	pane_l.direntr = ecalloc(0, sizeof(Entry));
+	strcpy(pane_l.dirn, cwd);
+	pane_l.hdir = 1;
+	pane_l.inotify_wd = -1;
+	pane_l.parent_row = 1;
 
 	pane_r.pane_id = 1;
 	pane_r.dirx = (twidth / 2) + 2;
 	pane_r.dircol = cpanelr;
-	if (paneitem == AllP) {
-		pane_r.firstrow = 0;
-		pane_r.direntr = ecalloc(0, sizeof(Entry));
-		strcpy(pane_r.dirn, home);
-		pane_r.hdir = 1;
-		pane_r.inotify_wd = -1;
-		pane_r.parent_row = 1;
-	}
+	pane_r.firstrow = 0;
+	pane_r.direntr = ecalloc(0, sizeof(Entry));
+	strcpy(pane_r.dirn, home);
+	pane_r.hdir = 1;
+	pane_r.inotify_wd = -1;
+	pane_r.parent_row = 1;
 }
 
 static void
 draw_frame(void)
 {
 	int i;
+	theight = tb_height();
+	twidth = tb_width();
+	scrheight = theight - 2;
 
 	/* 2 horizontal lines */
 	for (i = 1; i < twidth - 1; ++i) {
@@ -1737,8 +1739,9 @@ start(void)
 		if (tb_select_output_mode(TB_OUTPUT_NORMAL) != TB_OUTPUT_NORMAL)
 			die("output error");
 
-	set_panes(AllP);
 	draw_frame();
+	set_panes();
+	get_editor();
 	if (fsev_init() < 0)
 		print_error(strerror(errno));
 	cpane = &pane_r;
