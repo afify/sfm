@@ -60,6 +60,9 @@ static Key nkeys[] = {
 	{ {.ch = 'q'},               quit },
 	{ {.ch = 'v'},               selection },
 	{ {.ch = 'y'},               yank },
+	{ {.ch = 'p'},               selpst },
+	{ {.ch = 'P'},               selmv },
+	{ {.ch = 'r'},               rname },
 	{ {.key = TB_KEY_SPACE},     switch_pane },
 };
 
@@ -68,7 +71,9 @@ static Key skeys[] = {
 	{ {.ch = 'k'},               selup },
 	{ {.ch = 'a'},               selall },
 	{ {.ch = 'y'},               selynk },
+	{ {.ch = 'D'},               seldel },
 	{ {.key = TB_KEY_ESC},       selcan },
+	{ {.ch = 'r'},               selrename },
 };
 
 static const mode_t ndir_perm = S_IRWXU | S_IRWXG |S_IROTH | S_IXOTH;
