@@ -24,6 +24,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <libgen.h>
 
 #include "termbox.h"
 #include "util.h"
@@ -37,6 +38,7 @@
 enum { AskDel, DAskDel }; /* delete directory */
 enum { AddHi, NoHi }; /* add highlight in listdir */
 enum { AllP, PtP }; /* set pane items */
+enum { WithS, WithoutS }; /* concatenation with space or not in xstrcat */
 
 /* typedef */
 typedef struct {
@@ -114,11 +116,9 @@ static char *get_fperm(mode_t);
 static char *get_fsize(off_t);
 static char *get_fullpath(char *, char *);
 static char *get_fusr(uid_t, size_t);
-static void get_dirsize(char *, off_t *);
-static void get_hicol(Cpair *, mode_t);
-static int deldir(char *, int);
+static void get_dirsize(char*, off_t*);
+static void get_hicol(Cpair*, mode_t);
 static int delent(char *);
-static int delf(char *);
 static void calcdir(void);
 static void crnd(void);
 static void crnf(void);
@@ -155,13 +155,19 @@ static void selcan(void);
 static void selall(void);
 static void selref(void);
 static void selcalc(void);
-static int pstf(char*, char*, char*);
-static int pstd(char*, char*, char*);
+static void selpst(void);
+static void selmv(void);
+static void seldel(void);
+static void selrename(void);
 static int check_if_file_exist(char*);
 static char *get_path_hdir(int);
 static void init_files(void);
 static void free_files(void);
 static void yank(void);
+static void rname(void);
+static int xsystem(char *);
+static char* xstrcat(int, int, char *, ...);
+static void xrename(char *);
 static void switch_pane(void);
 static void quit(void);
 static void grabkeys(struct tb_event*, Key*, size_t);
@@ -713,95 +719,42 @@ get_hicol(Cpair *col, mode_t mode)
 }
 
 static int
-deldir(char *fullpath, int delchoice)
-{
-	if (delchoice == (int)AskDel) {
-		char *confirmation;
-		confirmation = ecalloc((size_t)2, sizeof(char));
-		if ((get_usrinput(confirmation, (size_t)2,
-				  "delete directory (Y) ?") < 0) ||
-		    (strcmp(confirmation, "Y") != 0)) {
-			free(confirmation);
-			return 1; /* canceled by user or wrong confirmation */
-		}
-		free(confirmation);
-	}
-
-	if (rmdir(fullpath) == 0)
-		return 0; /* empty directory */
-
-	DIR *dir;
-	char *ent_full;
-	mode_t mode;
-	struct dirent *entry;
-	struct stat status;
-
-	dir = opendir(fullpath);
-	if (dir == NULL) {
-		return -1;
-	}
-
-	while ((entry = readdir(dir)) != 0) {
-		if ((strcmp(entry->d_name, ".") == 0 ||
-		     strcmp(entry->d_name, "..") == 0))
-			continue;
-
-		ent_full = get_fullpath(fullpath, entry->d_name);
-		if (lstat(ent_full, &status) == 0) {
-			mode = status.st_mode;
-			if (S_ISDIR(mode)) {
-				if (deldir(ent_full, (int)DAskDel) < 0) {
-					free(ent_full);
-					return -1;
-				}
-			} else if (S_ISREG(mode)) {
-				if (unlink(ent_full) < 0) {
-					free(ent_full);
-					return -1;
-				}
-			}
-		}
-		free(ent_full);
-	}
-
-	print_status(cstatus, "gotit");
-	if (closedir(dir) < 0)
-		return -1;
-
-	return rmdir(fullpath); /* directory after delete all entries */
-}
-
-static int
 delent(char *fullpath)
 {
 	struct stat status;
+	char *cmd, *confirmation;
 	mode_t mode;
 
-	if (lstat(fullpath, &status) < 0)
-		return -1;
-
-	mode = status.st_mode;
-	if (S_ISDIR(mode)) {
-		return deldir(fullpath, (int)AskDel);
-	} else {
-		return delf(fullpath);
-	}
-}
-
-static int
-delf(char *fullpath)
-{
-	char *confirmation;
 	confirmation = ecalloc((size_t)2, sizeof(char));
-
 	if ((get_usrinput(confirmation, (size_t)2, "delete file (Y) ?") < 0) ||
 	    (strcmp(confirmation, "Y") != 0)) {
 		free(confirmation);
 		return 1; /* canceled by user or wrong confirmation */
 	}
-
 	free(confirmation);
-	return unlink(fullpath);
+
+	if (lstat(fullpath, &status) < 0)
+		return -1;
+
+	mode = status.st_mode;
+	
+	if (S_ISDIR(mode)) {
+		cmd = xstrcat(2, WithS, "rm -rf", fullpath);
+		if (xsystem(cmd) < 0) {
+			free(cmd);
+			return -1;
+		}
+	} else {
+		cmd = xstrcat(2, WithS, "rm -f", fullpath);
+		if (xsystem(cmd) < 0) {
+			free(cmd);
+			return -1;
+		}
+	}
+	free(cmd);
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
+	return 0;
 }
 
 static void
@@ -1267,31 +1220,75 @@ getsw(char *fn)
 	return sw;
 }
 
-static int
-opnf(char *fn)
+static char *
+xstrcat(int no_args, int flag, char *args, ...)
 {
-	char *sw;
-	int ws;
-	pid_t pid, r;
+	char *result, *temp;
+	int result_size, temp_size;
+	va_list vl;
 
-	sw = getsw(fn);
-	char *filex[] = { sw, fn, NULL };
+	result_size = strlen(args);
+	result = calloc(result_size + 1, sizeof(char));
+	strcpy(result, args);
+
+	va_start(vl, args);
+	for (int i = 0; i < no_args - 1; i++) {
+		temp = va_arg(vl, char *);
+		temp_size = strlen(temp);
+		result = realloc(result, (result_size + temp_size + 2));
+		if (flag == WithS) {
+			strcat(result, " ");
+		}
+		strcat(result, temp);
+		result_size = result_size + temp_size + 2;
+	}
+	va_end(vl);
+	
+	return result;
+}
+
+static int
+xsystem(char *cmd)
+{
+	pid_t pid, pid2;
+	int status;
+
+	if (cmd == NULL)
+		return -1;
+	
 	pid = fork();
-
 	switch (pid) {
 	case -1:
 		return -1;
 	case 0:
-		execvp(filex[0], filex);
+		execlp("/usr/bin/sh", "sh", "-c", cmd, NULL);
 		exit(EXIT_SUCCESS);
 	default:
-		while ((r = waitpid(pid, &ws, 0)) == -1 && errno == EINTR)
+		while ((pid2 = waitpid(pid, &status, 0)) == -1 && errno == EINTR)
 			continue;
-		if (r == -1)
+		if (pid2 == -1) {
 			return -1;
-		if ((WIFEXITED(ws) != 0) && (WEXITSTATUS(ws) != 0))
+		}
+		if ((WIFEXITED(status) != 0) && (WEXITSTATUS(status) != 0)) {
 			return -1;
+		}
 	}
+	return 0;
+}
+
+static int
+opnf(char *fn)
+{
+	char *sw, *cmd;
+
+	sw = getsw(fn);
+	cmd = xstrcat(2, WithS, sw, fn);
+
+	if (xsystem(cmd) < 0) {
+		free(cmd);
+		return -1;
+	}
+	free(cmd);
 	return 0;
 }
 
@@ -1515,7 +1512,7 @@ selcalc(void)
 	for (size_t j = 0; j < cpane->dirc; j++) { /* calculate used selection size */
 		if (cpane->selection[j] != 0)
 			selection_size++;
-		else 
+		else
 			break;
 	}
 }
@@ -1552,159 +1549,10 @@ static void
 selynk(void)
 {
 	init_files();
-	refresh_pane();
-	add_hi(cpane, cpane->hdir - 1);
+	if (listdir(AddHi, NULL) < 0)
+			print_error(strerror(errno));
 	print_status(cprompt, "%d files are yanked", selection_size);
 	sl = -1;
-}
-
-static int
-pstf(char *source_path, char* target_path, char *flag)
-{
-	FILE *target, *source;
-	size_t ch;
-	int buf_size = 4096;
-	size_t buf[buf_size];
-	char filename[MAX_N], dirpath[MAX_P], temp[MAX_P];
-
-	strcpy(filename, basename(source_path));
-	strcpy(dirpath, target_path);
-	strcat(dirpath, "/");
-	strcpy(temp, dirpath);
-	strcat(dirpath, filename);
-	target = fopen(dirpath, "r");
-
-	if (target == NULL) {
-		target = fopen(dirpath, "w");
-	} else if (target != NULL && ((strcmp(flag, "o") == 0) || (strcmp(flag, "O") == 0))) {
-		target = freopen(dirpath, "w", target);
-	} else if (target != NULL && ((strcmp(flag, "a") == 0) || (strcmp(flag, "A") == 0))) {
-		target = freopen(dirpath, "a", target);
-	} else if (target != NULL && ((strcmp(flag, "s") == 0) || (strcmp(flag, "S") == 0))) {
-		fclose(target);
-		return 0;
-	} else if (target != NULL && ((strcmp(flag, "r") == 0) || (strcmp(flag, "R") == 0))) {
-		char new_name[MAX_N];
-		get_usrinput(new_name, MAX_USRI, "rename %s", filename);
-		strcat(temp, new_name);
-		target = freopen(temp, "w", target);
-	}
-	
-	source = fopen(source_path, "r");
-
-	if (source == NULL) {
-		fclose(target);
-		return -1;
-	}
-	if (target == NULL) {
-		fclose(source);
-		return -1;
-	}
-
-	while ((ch = fread(&buf, 1, buf_size, source)))
-		fwrite(&buf, 1, ch, target);
-
-	fclose(target);
-	fclose(source);
-
-	return 0;
-}
-
-static int
-pstd(char *source_path, char *target_path, char *flag)
-{
-	DIR *sdir, *tdir;
-	char *source_full, *target_full, *dir_name, *base;
-	char temp[MAX_P];
-	mode_t mode;
-	struct dirent *entry;
-	struct stat status;
-
-	sdir = opendir(source_path);
-	dir_name = calloc(MAX_N, sizeof(char));
-	strcpy(dir_name, basename(source_path));
-	base = get_fullpath(target_path, dir_name);
-	tdir = opendir(base);
-
-	if (sdir == NULL) {
-		return -1;
-	}
-
-	if (tdir == NULL) {
-		mkdir(base, S_IRWXU);
-	} else if (tdir != NULL && ((strcmp(flag, "r") == 0) || (strcmp(flag, "R") == 0))) {
-		char new_name[MAX_N];
-		get_usrinput(new_name, MAX_USRI, "rename %s", dir_name);
-		free(base);
-		base = get_fullpath(target_path, new_name);
-		strcpy(dir_name, new_name);
-		mkdir(base, S_IRWXU);
-	} else if (tdir != NULL && ((strcmp(flag, "o") == 0) || (strcmp(flag, "O") == 0))) {
-		deldir(base, DAskDel);
-		mkdir(base, S_IRWXU);
-	} else if (tdir != NULL && ((strcmp(flag, "s") == 0) || (strcmp(flag, "S") == 0))) {
-		closedir(tdir);
-		closedir(sdir);
-		return 0;
-	}
-	closedir(tdir);
-	free(base);
-		
-	while ((entry = readdir(sdir)) != 0) {
-		if ((strcmp(entry->d_name, ".") == 0 ||
-			strcmp(entry->d_name, "..") == 0))
-			continue;
-
-		source_full = get_fullpath(source_path, entry->d_name);
-		
-		if (lstat(source_full, &status) == 0) {
-			mode = status.st_mode;
-			if (S_ISDIR(mode)) {
-				strcpy(temp, target_path);
-				strcat(temp, "/");
-				strcat(temp, dir_name);
-				target_full = get_fullpath(temp, entry->d_name);
-				DIR *tmpdir = opendir(target_full);
-
-				if (tmpdir == NULL) {
-					if (errno == ENOENT) {  /* checks if the dir doesn't exist */
-						if (mkdir(target_full, S_IRWXU) < 0) {
-							free(source_full);
-							free(target_full);
-							return -1;
-					} } else {
-						free(source_full);
-						free(target_full);
-						return -1;
-					}
-				} else {
-					closedir(tmpdir);
-				}
-				if (pstd(source_full, target_full, flag) < 0) {
-					free(source_full);
-					free(target_full);
-					closedir(sdir);
-					return -1;
-				}
-				free(target_full);
-			} else if (S_ISREG(mode)) {
-				target_full = get_fullpath(target_path, dir_name);
-				if (pstf(source_full, target_full, "O") < 0) {
-					free(source_full);
-					free(target_full);
-					closedir(sdir);
-					return -1;
-				}
-				free(target_full);
-			}
-		}
-		free(source_full);
-	}
-
-	if (closedir(sdir) < 0)
-		return -1;
-
-	return 0;
 }
 
 static int
@@ -1719,66 +1567,253 @@ check_if_file_exist(char *filepath)
 }
 
 static void
-mvmv(void)
+seldel(void)
 {
-	int flag_size, exist, all;
-	flag_size = 2;
-	char flag[flag_size];
-	char filepath[MAX_P];
-	all = 0; /* option to modify (file or allfiles) */
+	char *confirmation, *cmd;
+	confirmation = ecalloc((size_t)2, sizeof(char));
+	if ((get_usrinput(
+		confirmation, (size_t)2,"delete directory (Y) ?") < 0) ||
+		(strcmp(confirmation, "Y") != 0)) {
+		free(confirmation);
+		if (listdir(AddHi, NULL) < 0)
+			print_error(strerror(errno));
+		sl = -1;
+		return;
+	}
+	free(confirmation);
+
+	init_files();
 	struct stat status;
 	for (size_t i = 0; i < selection_size; i++) {
 		if (lstat(files[i], &status) == 0) {
-			strcpy(filepath, cpane->dirn);
-			strcat(filepath, "/");
-			strcat(filepath, basename(files[i]));
-			exist = check_if_file_exist(filepath);
 			if (S_ISDIR(status.st_mode)) {
-				if (exist == 0) {
-					if (all == 0) {
-						get_usrinput(flag, flag_size, "Conflict on directory %s: (o)verright/(O)verright_all (s)kip/(S)kip_all (m)erge/(M)erge_all (r)ename/(R)ename_all", basename(files[i]));
-					}
-					if ((strcmp(flag, "O") == 0) || (strcmp(flag, "S") == 0) || (strcmp(flag, "M") == 0) || (strcmp(flag, "R") == 0)) {
-						all = 1;
-					}
-					if ((strcmp(flag, "o") != 0) && (strcmp(flag, "s") != 0) && (strcmp(flag, "m") != 0) && (strcmp(flag, "r") != 0) &&
-						(strcmp(flag, "O") != 0) && (strcmp(flag, "S") != 0) && (strcmp(flag, "M") != 0) && (strcmp(flag, "R") != 0)) {
-						return;
-					}
+				cmd = xstrcat(2, WithS, "rm -rf", files[i]);
+				if (xsystem(cmd) < 0) {
+					free(cmd);
+					return;
 				}
-				pstd(files[i], cpane->dirn, flag);
-				deldir(files[i], DAskDel);
+				free(cmd);
 			} else {
-				if (exist == 0) {
-					if (all == 0) {
-						get_usrinput(flag, flag_size, "Conflict on file %s: (o)verright/(O)verright_all (s)kip/(S)kip_all (a)ppend/(A)ppend_all (r)ename/(R)ename_all", basename(files[i]));
-					}
-					if ((strcmp(flag, "O") == 0) || (strcmp(flag, "S") == 0) || (strcmp(flag, "A") == 0) || (strcmp(flag, "R") == 0)) {
-						all = 1;
-					}
-					if ((strcmp(flag, "o") != 0) && (strcmp(flag, "s") != 0) && (strcmp(flag, "a") != 0) && (strcmp(flag, "r") != 0) &&
-						(strcmp(flag, "O") != 0) && (strcmp(flag, "S") != 0) && (strcmp(flag, "A") != 0) && (strcmp(flag, "R") != 0)) {
-							return;
-					}
+				cmd = xstrcat(2, WithS, "rm -f", files[i]);
+				if (xsystem(cmd) < 0) {
+					free(cmd);
+					return;
 				}
-				pstf(files[i], cpane->dirn, flag);
-				unlink(files[i]);
+				free(cmd);
 			}
 		}
 	}
+	cpane->hdir = 1;
 	if (listdir(AddHi, NULL) < 0)
 		print_error(strerror(errno));
+	print_status(cprompt, "%d files are deleted", selection_size);
+	free_files();
+	sl = -1;
+}
+
+static void
+selpst(void)
+{
+	if (files == NULL) {
+		return;
+	}
+	char *cmd, *filepath, *flag;
+	int flag_size, exist;
+	struct stat status;
+
+	flag_size = 2;
+	flag = ecalloc(flag_size, sizeof(char));
+
+	for (size_t i = 0; i < selection_size; i++) {
+		if (lstat(files[i], &status) == 0) {
+			filepath = xstrcat(3, WithoutS, cpane->dirn, "/", basename(files[i]));
+			exist = check_if_file_exist(filepath);
+			free(filepath);
+			if (S_ISDIR(status.st_mode)) {
+				if (exist == 0) {
+					if (get_usrinput(flag, flag_size, "Conflict on directory %s: (o)verwrite/(s)kip/(m)erge/(b)ackup", basename(files[i])) < 0) {
+						free(flag);
+						return;
+					}
+					if (strcmp(flag, "o") == 0) {
+							cmd = xstrcat(3, WithS, "cp -rf", files[i], cpane->dirn);
+					} else if (strcmp(flag, "s") == 0) {
+							continue;
+					} else if (strcmp(flag, "m") == 0) {
+							cmd = xstrcat(3, WithS, "rsync -a", files[i], cpane->dirn);
+					} else if (strcmp(flag, "b") == 0) {
+							cmd = xstrcat(3, WithS, "cp -rf --backup=t", files[i], cpane->dirn);
+					} else {
+						free(flag);
+						return;
+					}
+				} else {
+					cmd = xstrcat(3, WithS, "cp -rf", files[i], cpane->dirn);
+				}
+				if (xsystem(cmd) < 0) {
+					free(cmd);
+					return;
+				}
+				free(cmd);
+			} else {
+				if (exist == 0) {
+					if (get_usrinput(flag, flag_size, "Conflict on file %s: (o)verright/(s)kip/(b)ackup", basename(files[i])) < 0) {
+						free(flag);
+						return;
+					}
+					if (strcmp(flag, "o") == 0) {
+							cmd = xstrcat(3, WithS, "cp -f", files[i], cpane->dirn);
+					} else if (strcmp(flag, "s") == 0) {
+							continue;
+					} else if (strcmp(flag, "b") == 0) {
+							cmd = xstrcat(3, WithS, "cp -f --backup=t", files[i], cpane->dirn);
+					} else {
+						free(flag);
+						return;
+					} 
+				} else {
+					cmd = xstrcat(3, WithS, "cp -f", files[i], cpane->dirn);
+				}
+				if (xsystem(cmd) < 0) {
+					free(cmd);
+					return;
+				}
+				free(cmd);
+			}
+		}
+	}
+	free(flag);
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
+	free_files();
+	print_status(cprompt, "%d files are copied", selection_size);
+
+}
+
+static void
+selmv(void)
+{
+	char *cmd, *filepath, *flag;
+	int flag_size, exist;
+	struct stat status;
+
+	flag_size = 2;
+	flag = ecalloc(flag_size, sizeof(char));
+
+	for (size_t i = 0; i < selection_size; i++) {
+		if (lstat(files[i], &status) == 0) {
+			filepath = xstrcat(3, WithoutS, cpane->dirn, "/", basename(files[i]));
+			exist = check_if_file_exist(filepath);
+			free(filepath);
+			if (S_ISDIR(status.st_mode)) {
+				if (exist == 0) {
+					if (get_usrinput(flag, flag_size, "Conflict on directory %s: (o)verwrite/(s)kip/(m)erge/(b)ackup", basename(files[i])) < 0) {
+						free(flag);
+						return;
+					}
+					if (strcmp(flag, "o") == 0) {
+							cmd = xstrcat(3, WithS, "mv -f", files[i], cpane->dirn);
+					} else if (strcmp(flag, "s") == 0) {
+							continue;
+					} else if (strcmp(flag, "m") == 0) {
+							cmd = xstrcat(3, WithS, "rsync -a", files[i], cpane->dirn);
+					} else if (strcmp(flag, "b") == 0) {
+							cmd = xstrcat(3, WithS, "mv --backup=t", files[i], cpane->dirn);
+					} else {
+						free(flag);
+						return;
+					}
+				} else {
+					cmd = xstrcat(3, WithS, "mv", files[i], cpane->dirn);
+				}
+				if (xsystem(cmd) < 0) {
+					free(cmd);
+					return;
+				}
+				free(cmd);
+			} else {
+				if (exist == 0) {
+					if (get_usrinput(flag, flag_size, "Conflict on file %s: (o)verright/(s)kip/(b)ackup", basename(files[i])) < 0) {
+						free(flag);
+						return;
+					}
+					if (strcmp(flag, "o") == 0) {
+							cmd = xstrcat(3, WithS, "mv -f", files[i], cpane->dirn);
+					} else if (strcmp(flag, "s") == 0) {
+							continue;
+					} else if (strcmp(flag, "b") == 0) {
+							cmd = xstrcat(3, WithS, "mv --backup=t", files[i], cpane->dirn);
+					} else {
+						free(flag);
+						return;
+					} 
+				} else {
+					cmd = xstrcat(3, WithS, "mv -f", files[i], cpane->dirn);
+				}
+				if (xsystem(cmd) < 0) {
+					free(cmd);
+					return;
+				}
+				free(cmd);
+			}
+		}
+	}
+	free(flag);
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
+	free_files();
 	print_status(cprompt, "%d files are moved", selection_size);
+}
+
+static void
+selrename(void)
+{
+	init_files();
+	for (size_t i = 0; i < selection_size; i++) {
+		xrename(files[i]);
+	}
+	if (listdir(AddHi, NULL) < 0)
+		print_error(strerror(errno));
+	free_files();
+	sl = -1;
+}
+
+static void
+xrename(char *path)
+{
+	char *cmd, *new_name;
+	
+	new_name = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(new_name, MAX_N, "rename: %s", basename(path)) < 0) {
+		free(new_name);
+		return;
+	}
+	cmd = xstrcat(3, WithS, "mv", path, new_name);
+	if (xsystem(cmd) < 0) {
+		free(cmd);
+		return;
+	}
+	free(new_name);
+	free(cmd);
 }
 
 static char*
 get_path_hdir(int Ndir)
-{	
-	char *path = ecalloc(MAX_P, sizeof(char));
-	strcpy(path, cpane->dirn);
-	strcat(path, "/");
-	strcat(path, cpane->direntr[Ndir-1].name);
-	return path;
+{
+	return xstrcat(3, WithoutS, cpane->dirn, "/", cpane->direntr[Ndir-1].name);
+}
+
+static void
+rname(void)
+{
+	if (cpane->selection != NULL) {
+		free(cpane->selection);
+		cpane->selection = NULL;
+	}
+	cpane->selection = ecalloc(2, sizeof(size_t));
+	cpane->selection[0] = cpane->hdir;
+	selrename();
 }
 
 static void
@@ -1816,7 +1851,8 @@ quit(void)
 {
 	if (sl == -1) { /* check if selection was allocated */
 		free(cpane->selection);
-		free_files();
+		if (files != NULL)
+			free_files();
 	}
 	free(pane_l.direntr);
 	free(pane_r.direntr);
