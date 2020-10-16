@@ -99,7 +99,7 @@ static void print_info(void);
 static void print_row(Pane *, size_t, Cpair);
 static void clear(int, int, int, uint16_t);
 static void clear_status(void);
-static void clear_pane(int);
+static void clear_pane(void);
 static void add_hi(Pane *, size_t);
 static void rm_hi(Pane *, size_t);
 static void float_to_string(float, char *);
@@ -284,26 +284,24 @@ clear_status(void)
 }
 
 static void
-clear_pane(int pane)
+clear_pane(void)
 {
-	int i, x, ex, y;
-	x = 0, y = 0, i = 0, ex = 0;
+	int i, ex, y;
+	y = 0, i = 0, ex = 0;
 
-	if (pane == 2) {
-		x = 2;
+	if (cpane->pane_id == pane_l.pane_id)
 		ex = (twidth / 2) - 1;
-	} else if (pane == (twidth / 2) + 2) {
-		x = (twidth / 2) + 1;
+	else if (cpane->pane_id == pane_r.pane_id)
 		ex = twidth - 1;
-	}
 
 	while (i < scrheight) {
-		clear(x, ex, y, TB_DEFAULT);
+		clear(cpane->dirx, ex, y, TB_DEFAULT);
 		i++;
 		y++;
 	}
+
 	/* draw top line */
-	for (y = x; y < ex; ++y) {
+	for (y = cpane->dirx; y < ex; ++y) {
 		tb_change_cell(y, 0, u_hl, cframe.fg, cframe.bg);
 	}
 }
@@ -895,7 +893,6 @@ mvbtm(void)
 	if (cpane->dirc < 1)
 		return;
 	if (cpane->dirc > scrheight) {
-		clear_pane(cpane->dirx);
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = cpane->dirc;
 		cpane->firstrow = cpane->dirc - scrheight + 1;
@@ -932,7 +929,6 @@ mvdwns(void)
 
 	if (real > scrheight - 3 - scrsp && cpane->hdir + scrsp < cpane->dirc) {
 		cpane->firstrow++;
-		clear_pane(cpane->dirx);
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir++;
 		refresh_pane();
@@ -996,7 +992,6 @@ mvtop(void)
 	if (cpane->dirc < 1)
 		return;
 	if (cpane->dirc > scrheight) {
-		clear_pane(cpane->dirx);
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
@@ -1033,7 +1028,6 @@ mvups(void)
 
 	if (cpane->firstrow > 0 && real < 1 + scrsp) {
 		cpane->firstrow--;
-		clear_pane(cpane->dirx);
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir--;
 		refresh_pane();
@@ -1075,7 +1069,6 @@ scrdwns(void)
 	if (real + scrmv + 1 > scrheight &&
 	    cpane->hdir + scrsp + scrmv < cpane->dirc) { /* scroll */
 		cpane->firstrow += dynmv;
-		clear_pane(cpane->dirx);
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir += scrmv;
 		refresh_pane();
@@ -1119,7 +1112,6 @@ scrups(void)
 
 	if (cpane->firstrow > 0 && real < scrmv + scrsp) {
 		cpane->firstrow -= dynmv;
-		clear_pane(cpane->dirx);
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir -= scrmv;
 		refresh_pane();
@@ -1543,7 +1535,7 @@ listdir(int hi, char *filter)
 	}
 
 	if (filter == NULL) {
-		clear_pane(cpane->dirx);
+		clear_pane();
 		cpane->dirc -= 2;
 	}
 
@@ -1551,7 +1543,7 @@ listdir(int hi, char *filter)
 		if (filtercount > 0) {
 			cpane->dirc -= 2;
 			cpane->dirc = filtercount;
-			clear_pane(cpane->dirx);
+			clear_pane();
 			cpane->hdir = 1;
 		} else if (filtercount == 0) {
 			if (closedir(dir) < 0)
