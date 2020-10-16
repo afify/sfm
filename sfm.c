@@ -468,7 +468,7 @@ get_fgrp(gid_t status, size_t len)
 	result = ecalloc(len, sizeof(char));
 	gr = getgrgid(status);
 	if (gr == NULL)
-		(void)snprintf(result, len - 1, "%d", (int)status);
+		(void)snprintf(result, len - 1, "%u", status);
 	else
 		strncpy(result, gr->gr_name, len - 1);
 
@@ -530,7 +530,7 @@ get_fperm(mode_t mode)
 	size_t i;
 
 	const char chars[] = "rwxrwxrwx";
-	buf = ecalloc((size_t)11, sizeof(char));
+	buf = ecalloc(11, sizeof(char));
 
 	if (S_ISDIR(mode))
 		buf[0] = 'd';
@@ -566,7 +566,7 @@ get_fsize(off_t size)
 	int counter;
 	counter = 0;
 
-	Rsize = ecalloc((size_t)10, sizeof(char));
+	Rsize = ecalloc(10, sizeof(char));
 	lsize = (float)size;
 
 	while (lsize >= 1000.0) {
@@ -626,7 +626,7 @@ get_fusr(uid_t status, size_t len)
 	result = ecalloc(len, sizeof(char));
 	pw = getpwuid(status);
 	if (pw == NULL)
-		(void)snprintf(result, len - 1, "%d", (int)status);
+		(void)snprintf(result, len - 1, "%u", status);
 	else
 		strncpy(result, pw->pw_name, len - 1);
 
@@ -684,10 +684,10 @@ get_hicol(Cpair *col, mode_t mode)
 static int
 deldir(char *fullpath, int delchoice)
 {
-	if (delchoice == (int)AskDel) {
+	if (delchoice == AskDel) {
 		char *confirmation;
-		confirmation = ecalloc((size_t)2, sizeof(char));
-		if ((get_usrinput(confirmation, (size_t)2,
+		confirmation = ecalloc(2, sizeof(char));
+		if ((get_usrinput(confirmation, 2,
 				  "delete directory (Y) ?") < 0) ||
 		    (strcmp(confirmation, "Y") != 0)) {
 			free(confirmation);
@@ -719,7 +719,7 @@ deldir(char *fullpath, int delchoice)
 		if (lstat(ent_full, &status) == 0) {
 			mode = status.st_mode;
 			if (S_ISDIR(mode)) {
-				if (deldir(ent_full, (int)DAskDel) < 0) {
+				if (deldir(ent_full, DAskDel) < 0) {
 					free(ent_full);
 					return -1;
 				}
@@ -751,7 +751,7 @@ delent(char *fullpath)
 
 	mode = status.st_mode;
 	if (S_ISDIR(mode)) {
-		return deldir(fullpath, (int)AskDel);
+		return deldir(fullpath, AskDel);
 	} else {
 		return delf(fullpath);
 	}
@@ -761,9 +761,9 @@ static int
 delf(char *fullpath)
 {
 	char *confirmation;
-	confirmation = ecalloc((size_t)2, sizeof(char));
+	confirmation = ecalloc(2, sizeof(char));
 
-	if ((get_usrinput(confirmation, (size_t)2, "delete file (Y) ?") < 0) ||
+	if ((get_usrinput(confirmation, 2, "delete file (Y) ?") < 0) ||
 	    (strcmp(confirmation, "Y") != 0)) {
 		free(confirmation);
 		return 1; /* canceled by user or wrong confirmation */
@@ -956,7 +956,7 @@ mvfor(void)
 	case 0:
 		chdir(cpane->direntr[cpane->hdir - 1].name);
 		getcwd(cpane->dirn, MAX_P);
-		cpane->parent_row = (int)cpane->hdir;
+		cpane->parent_row = cpane->hdir;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
 		if (listdir(AddHi, NULL) < 0)
@@ -1138,39 +1138,42 @@ scrups(void)
 static int
 get_usrinput(char *out, size_t sout, char *prompt)
 {
-	size_t startat;
 	struct tb_event fev;
-	size_t counter = (size_t)1;
-	char empty = ' ';
-	int x = 0;
+	size_t startat, counter;
+	char empty;
+	int x;
+
+	startat = strlen(prompt) + 1;
+	counter = 1;
+	empty = ' ';
+	x = 0;
 
 	clear_status();
-	startat = strlen(prompt) + 1;
 	print_prompt(prompt);
-	tb_set_cursor((int)(startat + 1), theight - 1);
+	tb_set_cursor((startat + 1), theight - 1);
 	tb_present();
 
 	while (tb_poll_event(&fev) != 0) {
 		switch (fev.type) {
 		case TB_EVENT_KEY:
-			if (fev.key == (uint16_t)TB_KEY_ESC) {
+			if (fev.key == TB_KEY_ESC) {
 				tb_set_cursor(-1, -1);
 				clear_status();
 				return -1;
 			}
 
-			if (fev.key == (uint16_t)TB_KEY_BACKSPACE ||
-			    fev.key == (uint16_t)TB_KEY_BACKSPACE2) {
-				if (BETWEEN(counter, (size_t)2, sout)) {
+			if (fev.key == TB_KEY_BACKSPACE ||
+			    fev.key == TB_KEY_BACKSPACE2) {
+				if (BETWEEN(counter, 2, sout)) {
 					out[x - 1] = '\0';
 					counter--;
 					x--;
 					print_xstatus(empty, startat + counter);
-					tb_set_cursor((int)startat + counter,
+					tb_set_cursor(startat + counter,
 						      theight - 1);
 				}
 
-			} else if (fev.key == (uint16_t)TB_KEY_ENTER) {
+			} else if (fev.key == TB_KEY_ENTER) {
 				tb_set_cursor(-1, -1);
 				out[counter - 1] = '\0';
 				return 0;
@@ -1178,10 +1181,9 @@ get_usrinput(char *out, size_t sout, char *prompt)
 			} else {
 				if (counter < sout) {
 					print_xstatus((char)fev.ch,
-						      (int)(startat + counter));
+						      (startat + counter));
 					out[x] = (char)fev.ch;
-					tb_set_cursor((int)(startat + counter +
-							    1),
+					tb_set_cursor((startat + counter + 1),
 						      theight - 1);
 					counter++;
 					x++;
