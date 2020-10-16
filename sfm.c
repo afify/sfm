@@ -159,7 +159,6 @@ static void selpst(void);
 static void selmv(void);
 static void seldel(void);
 static void selrename(void);
-static int check_if_file_exist(char*);
 static char *get_path_hdir(int);
 static void init_files(void);
 static void free_files(void);
@@ -1555,17 +1554,6 @@ selynk(void)
 	sl = -1;
 }
 
-static int
-check_if_file_exist(char *filepath)
-{
-	FILE *file = fopen(filepath, "r");
-	if (file == NULL) {
-		return -1;
-	}
-	fclose(file);
-	return 0;
-}
-
 static void
 seldel(void)
 {
@@ -1617,8 +1605,8 @@ selpst(void)
 	if (files == NULL) {
 		return;
 	}
-	char *cmd, *filepath, *flag;
-	int flag_size, exist;
+	char *cmd, *flag;
+	int flag_size;
 	struct stat status;
 
 	flag_size = 2;
@@ -1626,60 +1614,20 @@ selpst(void)
 
 	for (size_t i = 0; i < selection_size; i++) {
 		if (lstat(files[i], &status) == 0) {
-			filepath = xstrcat(3, WithoutS, cpane->dirn, "/", basename(files[i]));
-			exist = check_if_file_exist(filepath);
-			free(filepath);
 			if (S_ISDIR(status.st_mode)) {
-				if (exist == 0) {
-					if (get_usrinput(flag, flag_size, "Conflict on directory %s: (o)verwrite/(s)kip/(m)erge/(b)ackup", basename(files[i])) < 0) {
-						free(flag);
-						return;
-					}
-					if (strcmp(flag, "o") == 0) {
-							cmd = xstrcat(3, WithS, "cp -rf", files[i], cpane->dirn);
-					} else if (strcmp(flag, "s") == 0) {
-							continue;
-					} else if (strcmp(flag, "m") == 0) {
-							cmd = xstrcat(3, WithS, "rsync -a", files[i], cpane->dirn);
-					} else if (strcmp(flag, "b") == 0) {
-							cmd = xstrcat(3, WithS, "cp -rf --backup=t", files[i], cpane->dirn);
-					} else {
-						free(flag);
-						return;
-					}
-				} else {
-					cmd = xstrcat(3, WithS, "cp -rf", files[i], cpane->dirn);
-				}
+				cmd = xstrcat(3, WithS, "cp -rf", files[i], cpane->dirn);
 				if (xsystem(cmd) < 0) {
 					free(cmd);
 					return;
 				}
-				free(cmd);
 			} else {
-				if (exist == 0) {
-					if (get_usrinput(flag, flag_size, "Conflict on file %s: (o)verright/(s)kip/(b)ackup", basename(files[i])) < 0) {
-						free(flag);
-						return;
-					}
-					if (strcmp(flag, "o") == 0) {
-							cmd = xstrcat(3, WithS, "cp -f", files[i], cpane->dirn);
-					} else if (strcmp(flag, "s") == 0) {
-							continue;
-					} else if (strcmp(flag, "b") == 0) {
-							cmd = xstrcat(3, WithS, "cp -f --backup=t", files[i], cpane->dirn);
-					} else {
-						free(flag);
-						return;
-					} 
-				} else {
-					cmd = xstrcat(3, WithS, "cp -f", files[i], cpane->dirn);
-				}
+				cmd = xstrcat(3, WithS, "cp -f", files[i], cpane->dirn);
 				if (xsystem(cmd) < 0) {
 					free(cmd);
 					return;
 				}
-				free(cmd);
 			}
+			free(cmd);
 		}
 	}
 	free(flag);
@@ -1693,8 +1641,8 @@ selpst(void)
 static void
 selmv(void)
 {
-	char *cmd, *filepath, *flag;
-	int flag_size, exist;
+	char *cmd, *flag;
+	int flag_size;
 	struct stat status;
 
 	flag_size = 2;
@@ -1702,60 +1650,20 @@ selmv(void)
 
 	for (size_t i = 0; i < selection_size; i++) {
 		if (lstat(files[i], &status) == 0) {
-			filepath = xstrcat(3, WithoutS, cpane->dirn, "/", basename(files[i]));
-			exist = check_if_file_exist(filepath);
-			free(filepath);
 			if (S_ISDIR(status.st_mode)) {
-				if (exist == 0) {
-					if (get_usrinput(flag, flag_size, "Conflict on directory %s: (o)verwrite/(s)kip/(m)erge/(b)ackup", basename(files[i])) < 0) {
-						free(flag);
-						return;
-					}
-					if (strcmp(flag, "o") == 0) {
-							cmd = xstrcat(3, WithS, "mv -f", files[i], cpane->dirn);
-					} else if (strcmp(flag, "s") == 0) {
-							continue;
-					} else if (strcmp(flag, "m") == 0) {
-							cmd = xstrcat(3, WithS, "rsync -a", files[i], cpane->dirn);
-					} else if (strcmp(flag, "b") == 0) {
-							cmd = xstrcat(3, WithS, "mv --backup=t", files[i], cpane->dirn);
-					} else {
-						free(flag);
-						return;
-					}
-				} else {
-					cmd = xstrcat(3, WithS, "mv", files[i], cpane->dirn);
-				}
+				cmd = xstrcat(3, WithS, "mv", files[i], cpane->dirn);
 				if (xsystem(cmd) < 0) {
 					free(cmd);
 					return;
 				}
-				free(cmd);
 			} else {
-				if (exist == 0) {
-					if (get_usrinput(flag, flag_size, "Conflict on file %s: (o)verright/(s)kip/(b)ackup", basename(files[i])) < 0) {
-						free(flag);
-						return;
-					}
-					if (strcmp(flag, "o") == 0) {
-							cmd = xstrcat(3, WithS, "mv -f", files[i], cpane->dirn);
-					} else if (strcmp(flag, "s") == 0) {
-							continue;
-					} else if (strcmp(flag, "b") == 0) {
-							cmd = xstrcat(3, WithS, "mv --backup=t", files[i], cpane->dirn);
-					} else {
-						free(flag);
-						return;
-					} 
-				} else {
-					cmd = xstrcat(3, WithS, "mv -f", files[i], cpane->dirn);
-				}
+				cmd = xstrcat(3, WithS, "mv -f", files[i], cpane->dirn);
 				if (xsystem(cmd) < 0) {
 					free(cmd);
 					return;
 				}
-				free(cmd);
 			}
+			free(cmd);
 		}
 	}
 	free(flag);
