@@ -55,7 +55,7 @@ static Rule rules[] = {
 	{obj,       LEN(obj),       r2},
 };
 
-static Key keys[] = {
+static Key nkeys[] = {
 	{ {.ch = 'j'},               mvdwn },
 	{ {.ch = 'k'},               mvup },
 	{ {.ch = 'l'},               mvfor },
@@ -71,8 +71,26 @@ static Key keys[] = {
 	{ {.ch = 'x'},               calcdir },
 	{ {.ch = '/'},               filter },
 	{ {.ch = 'q'},               quit },
+	{ {.ch = 'v'},               selection },
+	{ {.ch = 'y'},               yank },
+	{ {.ch = 'p'},               selpst },
+	{ {.ch = 'P'},               selmv },
+	{ {.ch = 'r'},               rname },
 	{ {.key = TB_KEY_SPACE},     switch_pane },
 };
+
+static Key skeys[] = {
+	{ {.ch = 'j'},               seldwn },
+	{ {.ch = 'k'},               selup },
+	{ {.ch = 'a'},               selall },
+	{ {.ch = 'y'},               selynk },
+	{ {.ch = 'D'},               seldel },
+	{ {.key = TB_KEY_ESC},       selcan },
+	{ {.ch = 'r'},               selrename },
+};
+
+static const size_t nkeyslen = LEN(nkeys);
+static const size_t skeyslen = LEN(skeys);
 
 static const mode_t ndir_perm = S_IRWXU | S_IRWXG |S_IROTH | S_IXOTH;
 static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
