@@ -34,9 +34,9 @@
 #define MAX_N 255
 #define MAX_USRI 32
 #define MAX_EXT 4
+#define CURSOR_NAME cpane->direntr[cpane->hdir - 1].name
 
 /* enums */
-enum { AskDel, DAskDel }; /* delete directory */
 enum { AddHi, NoHi }; /* add highlight in listdir */
 
 /* typedef */
@@ -108,6 +108,7 @@ static void float_to_string(float, char *);
 static int check_dir(char *);
 static mode_t chech_execf(mode_t);
 static int sort_name(const void *const, const void *const);
+static void get_dirp(char *);
 static char *get_ext(char *);
 static int get_fdt(char *, size_t, time_t);
 static char *get_fgrp(gid_t, size_t);
@@ -170,6 +171,7 @@ static void quit(void);
 static void grabkeys(struct tb_event*, Key*, size_t);
 static void start_ev(void);
 static void refresh_pane(void);
+static void set_direntr(struct dirent *, DIR *);
 static int listdir(int, char *);
 static void t_resize(void);
 static void set_panes(void);
@@ -443,6 +445,25 @@ sort_name(const void *const A, const void *const B)
 	} else {
 		return 1;
 	}
+}
+
+
+static void
+get_dirp(char *cdir)
+{
+	int counter, len, i;
+
+	counter = 0;
+	len = strlen(cdir);
+
+	for (i = len - 1; i > 1; i--) {
+		if (cdir[i] == '/')
+			break;
+		else
+			counter++;
+	}
+
+	cdir[len-counter-1] = '\0';
 }
 
 static char *
@@ -725,7 +746,7 @@ calcdir(void)
 
 	if (S_ISDIR(cpane->direntr[cpane->hdir - 1].mode)) {
 		fullsize = ecalloc(50, sizeof(off_t));
-		get_dirsize(cpane->direntr[cpane->hdir - 1].name, fullsize);
+		get_dirsize(CURSOR_NAME, fullsize);
 		csize = get_fsize(*fullsize);
 		result = get_finfo(&cpane->direntr[cpane->hdir - 1]);
 
@@ -806,7 +827,7 @@ crnf(void)
 static void
 delfd(void)
 {
-	switch (delent(cpane->direntr[cpane->hdir - 1].name)) {
+	switch (delent(CURSOR_NAME)) {
 	case -1:
 		print_error(strerror(errno));
 		break;
@@ -823,8 +844,7 @@ static void
 mvbk(void)
 {
 	rmwatch(cpane);
-	chdir("..");
-	getcwd(cpane->dirn, MAX_P);
+	get_dirp(cpane->dirn);
 	cpane->firstrow = 0;
 	cpane->hdir = cpane->parent_row;
 	if (listdir(AddHi, NULL) < 0)
@@ -893,10 +913,9 @@ mvfor(void)
 		return;
 	int s;
 
-	switch (check_dir(cpane->direntr[cpane->hdir - 1].name)) {
+	switch (check_dir(CURSOR_NAME)) {
 	case 0:
-		chdir(cpane->direntr[cpane->hdir - 1].name);
-		getcwd(cpane->dirn, MAX_P);
+		strcpy(cpane->dirn, CURSOR_NAME);
 		cpane->parent_row = cpane->hdir;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
@@ -905,7 +924,7 @@ mvfor(void)
 		break;
 	case 1: /* not a directory open file */
 		tb_shutdown();
-		s = opnf(cpane->direntr[cpane->hdir - 1].name);
+		s = opnf(CURSOR_NAME);
 		if (tb_init() != 0)
 			die("tb_init");
 		t_resize();
@@ -1621,7 +1640,6 @@ switch_pane(void)
 		cpane = &pane_r;
 	else if (cpane == &pane_r)
 		cpane = &pane_l;
-	chdir(cpane->dirn);
 	if (cpane->dirc > 0) {
 		add_hi(cpane, cpane->hdir - 1);
 		print_info();
@@ -1735,12 +1753,40 @@ refresh_pane(void)
 	printf_tb(cpane->dirx, 0, cpane->dircol, " %.*s ", width, cpane->dirn);
 }
 
+static void
+set_direntr(struct dirent *entry, DIR *dir)
+{
+	int i;
+	struct stat status;
+
+	i = 0;
+	cpane->direntr = erealloc(cpane->direntr, cpane->dirc * sizeof(Entry));
+	while ((entry = readdir(dir)) != 0) {
+		if ((strcmp(entry->d_name, ".") == 0 ||
+		     strcmp(entry->d_name, "..") == 0))
+			continue;
+
+		char *full = get_fullpath(cpane->dirn, entry->d_name);
+		strcpy(cpane->direntr[i].name, full);
+		if (lstat(full, &status) == 0) {
+			cpane->direntr[i].size = status.st_size;
+			cpane->direntr[i].mode = status.st_mode;
+			cpane->direntr[i].group = status.st_gid;
+			cpane->direntr[i].user = status.st_uid;
+			cpane->direntr[i].td = status.st_mtime;
+		}
+		i++;
+		free(full);
+// 		}
+	}
+	cpane->dirc = i;
+}
+
 static int
 listdir(int hi, char *filter)
 {
 	DIR *dir;
 	struct dirent *entry;
-	struct stat status;
 	int width;
 	size_t i;
 	int filtercount = 0;
@@ -1749,9 +1795,6 @@ listdir(int hi, char *filter)
 	width = (twidth / 2) - 4;
 	cpane->dirc = 0;
 	i = 0;
-
-	if (chdir(cpane->dirn) < 0)
-		return -1;
 
 	dir = opendir(cpane->dirn);
 	if (dir == NULL)
@@ -1802,43 +1845,7 @@ listdir(int hi, char *filter)
 	}
 
 	rewinddir(dir); /* reset position */
-
-	/* create array of entries */
-	i = 0;
-	cpane->direntr = erealloc(cpane->direntr, cpane->dirc * sizeof(Entry));
-	while ((entry = readdir(dir)) != 0) {
-		if ((strcmp(entry->d_name, ".") == 0 ||
-		     strcmp(entry->d_name, "..") == 0))
-			continue;
-
-		/* list found filter */
-		if (filter != NULL) {
-			if (strstr(entry->d_name, filter) != NULL) {
-				strcpy(cpane->direntr[i].name, entry->d_name);
-				if (lstat(entry->d_name, &status) == 0) {
-					cpane->direntr[i].size = status.st_size;
-					cpane->direntr[i].mode = status.st_mode;
-					cpane->direntr[i].group = status.st_gid;
-					cpane->direntr[i].user = status.st_uid;
-					cpane->direntr[i].td = status.st_mtime;
-				}
-				i++;
-			}
-
-		} else {
-			strcpy(cpane->direntr[i].name, entry->d_name);
-			if (lstat(entry->d_name, &status) == 0) {
-				cpane->direntr[i].size = status.st_size;
-				cpane->direntr[i].mode = status.st_mode;
-				cpane->direntr[i].group = status.st_gid;
-				cpane->direntr[i].user = status.st_uid;
-				cpane->direntr[i].td = status.st_mtime;
-			}
-			i++;
-		}
-	}
-
-	cpane->dirc = i;
+	set_direntr(entry, dir); /* create array of entries */
 	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
 	refresh_pane();
 
@@ -1859,19 +1866,15 @@ t_resize(void)
 	pane_r.dirx = (twidth / 2) + 2;
 
 	if (cpane == &pane_l) {
-		chdir(pane_r.dirn);
 		cpane = &pane_r;
 		refresh_pane();
-		chdir(pane_l.dirn);
 		cpane = &pane_l;
 		refresh_pane();
 		if (cpane->dirc > 0)
 			add_hi(&pane_l, pane_l.hdir - 1);
 	} else if (cpane == &pane_r) {
-		chdir(pane_l.dirn);
 		cpane = &pane_l;
 		refresh_pane();
-		chdir(pane_r.dirn);
 		cpane = &pane_r;
 		refresh_pane();
 		if (cpane->dirc > 0)
