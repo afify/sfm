@@ -272,7 +272,7 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	int width;
 
 	width = (twidth / 2) - 4;
-	result = pane->direntr[entpos].name;
+	result = basename(pane->direntr[entpos].name);
 	x = pane->dirx;
 	y = entpos - cpane->firstrow + 1;
 
@@ -455,6 +455,8 @@ get_dirp(char *cdir)
 
 	counter = 0;
 	len = strlen(cdir);
+	if (len ==1)
+		return;
 
 	for (i = len - 1; i > 1; i--) {
 		if (cdir[i] == '/')
@@ -843,8 +845,13 @@ delfd(void)
 static void
 mvbk(void)
 {
-	rmwatch(cpane);
 	get_dirp(cpane->dirn);
+	if (check_dir(cpane->dirn) < 0) {
+		print_error(strerror(errno));
+		return;
+	}
+
+	rmwatch(cpane);
 	cpane->firstrow = 0;
 	cpane->hdir = cpane->parent_row;
 	if (listdir(AddHi, NULL) < 0)
