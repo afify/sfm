@@ -62,6 +62,7 @@ typedef struct {
 	int dirc; // dir entries sum
 	int hdir; // highlighted dir
 	int firstrow;
+	int parent_firstrow;
 	int parent_row; // FIX
 	int *selection;
 	Cpair dircol;
@@ -852,10 +853,11 @@ mvbk(void)
 	}
 
 	rmwatch(cpane);
-	cpane->firstrow = 0;
+	cpane->firstrow = cpane->parent_firstrow;
 	cpane->hdir = cpane->parent_row;
 	if (listdir(AddHi, NULL) < 0)
 		print_error(strerror(errno));
+	cpane->parent_firstrow = 0;
 	cpane->parent_row = 1;
 }
 
@@ -924,6 +926,7 @@ mvfor(void)
 	case 0:
 		strcpy(cpane->dirn, CURSOR_NAME);
 		cpane->parent_row = cpane->hdir;
+		cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
 		if (listdir(AddHi, NULL) < 0)
