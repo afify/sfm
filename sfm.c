@@ -1575,19 +1575,34 @@ selpst(void)
 static void
 selmv(void)
 {
-	if (files == NULL) {
+	if (strlen(yank_file) != 0) {
+		char *mv_cmd[] = { "mv", yank_file, NULL };
+		print_status(cprompt, "moving");
+		if (spawn(mv_cmd, cpane->dirn) != 0)
+			print_error("moving failed");
+		else
+			print_status(cprompt, "file moved");
+		yank_file[0] = '\0'; /* set yank_file len 0 */
 		return;
 	}
 
-	size_t i;
+	print_error("nothing to move");
 
-	for (i = 0; i < selection_size; i++) {
-		char *mv_cmd[] = { "mv", files[i], cpane->dirn, NULL };
-		spawn(mv_cmd, NULL);
-	}
 
-	free_files();
-	print_status(cprompt, "%d files are copied", selection_size);
+
+// 	if (files == NULL) {
+// 		return;
+// 	}
+// 
+// 	size_t i;
+// 
+// 	for (i = 0; i < selection_size; i++) {
+// 		char *mv_cmd[] = { "mv", files[i], cpane->dirn, NULL };
+// 		spawn(mv_cmd, NULL);
+// 	}
+// 
+// 	free_files();
+// 	print_status(cprompt, "%d files are copied", selection_size);
 
 }
 
