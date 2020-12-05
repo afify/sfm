@@ -185,6 +185,7 @@ static char *editor[2];
 static char fed[] = "vi";
 static int theight, twidth, scrheight;
 static size_t selection_size = 0;
+static char yank_file[MAX_P];
 static int sl = 0;
 static char **files;
 #if defined _SYS_INOTIFY_H
@@ -1189,7 +1190,7 @@ frules(char *ex)
 static int
 spawn(const void *v, char *fn)
 {
-	int ws, x, argc;
+	int ws, x, argc, fd;
 	pid_t pid, r;
 
 	x = 0;
@@ -1211,8 +1212,11 @@ spawn(const void *v, char *fn)
 	case -1:
 		return -1;
 	case 0:
+		fd = open("/dev/null",O_WRONLY);
+		dup2(fd, STDERR_FILENO);
 		execvp(argv[0], argv);
 		exit(EXIT_SUCCESS);
+		close(fd);
 	default:
 		while ((r = waitpid(pid, &ws, 0)) == -1 && errno == EINTR)
 			continue;
@@ -1539,19 +1543,32 @@ seldel(void)
 static void
 selpst(void)
 {
-	if (files == NULL) {
+	if (strlen(yank_file) != 0) {
+		char *cp_cmd[] = { "cp", "-r", yank_file, NULL };
+		print_status(cprompt, "coping");
+		if (spawn(cp_cmd, cpane->dirn) != 0)
+			print_error("coping failed");
+		else
+			print_status(cprompt, "files are copied");
+		yank_file[0] = '\0'; /* set yank_file len 0 */
 		return;
 	}
 
-	size_t i;
+	print_error("nothing to paste");
 
-	for (i = 0; i < selection_size; i++) {
-		char *cp_cmd[] = { "cp", "-rf", files[i], cpane->dirn, NULL };
-		spawn(cp_cmd, NULL);
-	}
+// 	if (files == NULL) {
+// 		return;
+// 	}
 
-	free_files();
-	print_status(cprompt, "%d files are copied", selection_size);
+// 	size_t i;
+
+// 	for (i = 0; i < selection_size; i++) {
+// 		char *cp_cmd[] = { "cp", "-rf", files[i], cpane->dirn, NULL };
+// 		spawn(cp_cmd, NULL);
+// 	}
+
+// 	free_files();
+// 	print_status(cprompt, "%d files are copied", selection_size);
 
 }
 
@@ -1632,13 +1649,9 @@ rname(void)
 static void
 yank(void)
 {
-	if (cpane->selection != NULL) {
-		free(cpane->selection);
-		cpane->selection = NULL;
-	}
-	cpane->selection = ecalloc(2, sizeof(size_t));
-	cpane->selection[0] = cpane->hdir;
-	selynk();
+	strncpy(yank_file, CURSOR_NAME, MAX_P);
+	print_status(cprompt, "1 file is yanked", selection_size);
+
 }
 
 static void
