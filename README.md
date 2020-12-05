@@ -1,10 +1,9 @@
-![sfm](https://github.com/afify/sfm/blob/master/sfm.png?raw=true)
+![sfm](https://github.com/afify/sfm/blob/main/sfm.png?raw=true)
 
 **simple file manager**
 
 [![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/afify/sfm.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/afify/sfm/context:cpp)
 [![Build status](https://ci.appveyor.com/api/projects/status/goq88ahjyvtjrui2?svg=true)](https://ci.appveyor.com/project/afify/sfm)
-[![License](https://img.shields.io/github/license/afify/sfm?color=blue)](https://github.com/afify/sfm/blob/master/LICENSE)
 
 Description
 ------------
@@ -14,7 +13,7 @@ dual pane, bottom statusbar, bookmarks, open files by extention, vim-like key bi
 * Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
 * Follows the suckless [philosophy](https://suckless.org/philosophy/) and [code style](https://suckless.org/coding_style/).
 
-<img src="https://github.com/afify/afify.github.io/raw/master/img/sfm_sc.png" alt="drawing" width="800"/>
+<img src="https://github.com/afify/afify.github.io/raw/main/img/sfm_sc.png" alt="drawing" width="800"/>
 
 Options
 -------
@@ -38,7 +37,11 @@ $ man sfm
 | `ctrl+d` | scroll down         |
 | `n`      | create new file     |
 | `N`      | create new dir      |
-| `D`      | delete file \| dir  |
+| `d`      | delete file \| dir  |
+| `y`      | yank                |
+| `p`      | past                |
+| `P`      | move                |
+| `c`      | rename              |
 | `/`      | start filter        |
 | `ENTER`  | find  filter        |
 | `ESC`    | exit  filter        |

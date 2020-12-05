@@ -160,13 +160,11 @@ static void selcalc(void);
 static void selpst(void);
 static void selmv(void);
 static void seldel(void);
-static void selrename(void);
 static char *get_path_hdir(int);
 static void init_files(void);
 static void free_files(void);
 static void yank(void);
 static void rname(void);
-static void xrename(char *);
 static void switch_pane(void);
 static void quit(void);
 static void grabkeys(struct tb_event*, Key*, size_t);
@@ -1608,37 +1606,6 @@ selmv(void)
 
 }
 
-static void
-selrename(void)
-{
-	init_files();
-	for (size_t i = 0; i < selection_size; i++) {
-		xrename(files[i]);
-	}
-	if (listdir(AddHi, NULL) < 0)
-		print_error(strerror(errno));
-	free_files();
-	sl = -1;
-}
-
-static void
-xrename(char *path)
-{
-	char *new_name;
-	new_name = ecalloc(MAX_N, sizeof(char));
-
-	if (get_usrinput(new_name, MAX_N, "rename: %s", basename(path)) < 0) {
-		free(new_name);
-		return;
-	}
-	char *rename_cmd[] = {"mv", path, new_name, NULL};
-
-	if (spawn(rename_cmd, NULL) < 0)
-		print_error(strerror(errno));
-
-	free(new_name);
-}
-
 static char*
 get_path_hdir(int Ndir)
 {
@@ -1654,13 +1621,19 @@ get_path_hdir(int Ndir)
 static void
 rname(void)
 {
-	if (cpane->selection != NULL) {
-		free(cpane->selection);
-		cpane->selection = NULL;
+	char *new_name;
+	new_name = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(new_name, MAX_N, "rename: %s", basename(CURSOR_NAME)) < 0) {
+		free(new_name);
+		return;
 	}
-	cpane->selection = ecalloc(2, sizeof(size_t));
-	cpane->selection[0] = cpane->hdir;
-	selrename();
+
+	char *rename_cmd[] = { "mv", CURSOR_NAME, new_name, NULL };
+	if (spawn(rename_cmd, NULL) < 0)
+		print_error(strerror(errno));
+
+	free(new_name);
 }
 
 static void

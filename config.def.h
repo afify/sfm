@@ -75,7 +75,7 @@ static Key nkeys[] = {
 	{ {.ch = 'y'},               yank },
 	{ {.ch = 'p'},               selpst },
 	{ {.ch = 'P'},               selmv },
-	{ {.ch = 'r'},               rname },
+	{ {.ch = 'c'},               rname },
 	{ {.key = TB_KEY_SPACE},     switch_pane },
 };
 
@@ -86,7 +86,6 @@ static Key skeys[] = {
 	{ {.ch = 'y'},               selynk },
 	{ {.ch = 'd'},               seldel },
 	{ {.key = TB_KEY_ESC},       selcan },
-	{ {.ch = 'r'},               selrename },
 };
 
 static const size_t nkeyslen = LEN(nkeys);
