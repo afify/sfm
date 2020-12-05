@@ -39,7 +39,7 @@ $ man sfm
 | `N`      | create new dir      |
 | `d`      | delete file \| dir  |
 | `y`      | yank                |
-| `p`      | past                |
+| `p`      | paste               |
 | `P`      | move                |
 | `c`      | rename              |
 | `/`      | start filter        |

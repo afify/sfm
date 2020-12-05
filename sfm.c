@@ -1954,10 +1954,12 @@ draw_frame(void)
 		tb_change_cell(i, theight - 2, u_hl, cframe.fg, cframe.bg);
 	}
 
-	/* 3 vertical lines */
+	/* 4 vertical lines */
 	for (i = 1; i < theight - 1; ++i) {
 		tb_change_cell(0, i, u_vl, cframe.fg, cframe.bg);
 		tb_change_cell((twidth - 1) / 2, i - 1, u_vl, cframe.fg,
+			       cframe.bg);
+		tb_change_cell(((twidth - 1) / 2) + 1, i - 1, u_vl, cframe.fg,
 			       cframe.bg);
 		tb_change_cell(twidth - 1, i, u_vl, cframe.fg, cframe.bg);
 	}

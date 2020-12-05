@@ -3,20 +3,18 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "termbox.h"
-
-/* colors                     fg,          bg */
-static const Cpair cdir    = { 33,         TB_DEFAULT };
-static const Cpair cerr    = { 124,        TB_DEFAULT };
-static const Cpair cexec   = { 2,          TB_DEFAULT };
-static const Cpair cfile   = { TB_DEFAULT, TB_DEFAULT };
-static const Cpair cframe  = { TB_DEFAULT, TB_DEFAULT };
-static const Cpair cother  = { 3,          TB_DEFAULT };
-static const Cpair cpanell = { 166,        TB_DEFAULT };
-static const Cpair cpanelr = { 5,          TB_DEFAULT };
-static const Cpair cprompt = { 33,         TB_DEFAULT };
-static const Cpair csearch = { 255,        TB_DEFAULT };
-static const Cpair cstatus = { TB_DEFAULT, TB_DEFAULT };
+/* colors                      fg,  bg */
+static const Cpair cdir    = { 33,  0 };
+static const Cpair cerr    = { 124, 0 };
+static const Cpair cexec   = { 2,   0 };
+static const Cpair cfile   = { 243, 0 };
+static const Cpair cframe  = { 233, 233 };
+static const Cpair cother  = { 3,   0 };
+static const Cpair cpanell = { 166, 233 };
+static const Cpair cpanelr = { 5,   233 };
+static const Cpair cprompt = { 33,  0 };
+static const Cpair csearch = { 255, 0 };
+static const Cpair cstatus = { 243, 0 };
 
 /* bookmarks */
 static Bookmark bmarks[] = {
@@ -31,7 +29,6 @@ static const char *mupdf[]        = { "mupdf", "-I", NULL };
 static const char *libreoffice[]  = { "libreoffice", NULL };
 static const char *gimp[]         = { "gimp", NULL };
 static const char *r2[]           = { "r2", "-c", "vv", NULL };
-static const char *binary[]       = { "r2", "-d", "-c", "vv", NULL };
 
 /* extension */
 static const char *images[]    = { "bmp", "jpg", "jpeg", "png", "gif", "xpm" };
@@ -85,6 +82,7 @@ static Key skeys[] = {
 	{ {.ch = 'a'},               selall },
 	{ {.ch = 'y'},               selynk },
 	{ {.ch = 'd'},               seldel },
+	{ {.ch = 'v'},               selcan },
 	{ {.key = TB_KEY_ESC},       selcan },
 };
 
