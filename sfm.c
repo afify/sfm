@@ -727,16 +727,18 @@ get_hicol(Cpair *col, mode_t mode)
 static int
 delent(char *fullpath)
 {
-	char *confirmation;
+	char *inp_conf;
 	char *rm_cmd[] = { "rm", "-rf", NULL };
+	int conf_len = 4;
+	char conf[] = "yes";
 
-	confirmation = ecalloc(2, sizeof(char));
-	if ((get_usrinput(confirmation, 2, "delete file (Y) ?") < 0) ||
-	    (strcmp(confirmation, "Y") != 0)) {
-		free(confirmation);
-		return 1; /* canceled by user or wrong confirmation */
+	inp_conf = ecalloc(conf_len, sizeof(char));
+	if ((get_usrinput(inp_conf, conf_len, "delete file (yes) ?") < 0) ||
+	    (strncmp(inp_conf, conf, conf_len) != 0)) {
+		free(inp_conf);
+		return 1; /* canceled by user or wrong inp_conf */
 	}
-	free(confirmation);
+	free(inp_conf);
 
 	return spawn(rm_cmd, fullpath);
 }

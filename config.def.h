@@ -67,7 +67,7 @@ static Key nkeys[] = {
 	{ {.key = TB_KEY_CTRL_D},    scrdwn },
 	{ {.ch = 'n'},               crnf },
 	{ {.ch = 'N'},               crnd },
-	{ {.ch = 'D'},               delfd },
+	{ {.ch = 'd'},               delfd },
 	{ {.ch = 'x'},               calcdir },
 	{ {.ch = '/'},               filter },
 	{ {.ch = 'q'},               quit },
@@ -84,7 +84,7 @@ static Key skeys[] = {
 	{ {.ch = 'k'},               selup },
 	{ {.ch = 'a'},               selall },
 	{ {.ch = 'y'},               selynk },
-	{ {.ch = 'D'},               seldel },
+	{ {.ch = 'd'},               seldel },
 	{ {.key = TB_KEY_ESC},       selcan },
 	{ {.ch = 'r'},               selrename },
 };
