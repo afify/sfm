@@ -1621,19 +1621,25 @@ get_path_hdir(int Ndir)
 static void
 rname(void)
 {
-	char *new_name;
-	new_name = ecalloc(MAX_N, sizeof(char));
+	char new_name[MAX_P];
+	char *input_name;
 
-	if (get_usrinput(new_name, MAX_N, "rename: %s", basename(CURSOR_NAME)) < 0) {
-		free(new_name);
+	input_name = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(input_name, MAX_N, "rename: %s", basename(CURSOR_NAME)) < 0) {
+		free(input_name);
 		return;
 	}
+
+	strcpy(new_name, cpane->dirn);
+	strcat(new_name, "/");
+	strcat(new_name, input_name);
 
 	char *rename_cmd[] = { "mv", CURSOR_NAME, new_name, NULL };
 	if (spawn(rename_cmd, NULL) < 0)
 		print_error(strerror(errno));
 
-	free(new_name);
+	free(input_name);
 }
 
 static void
