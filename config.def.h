@@ -68,7 +68,7 @@ static Key nkeys[] = {
 	{ {.ch = 'x'},               calcdir },
 	{ {.ch = '/'},               filter },
 	{ {.ch = 'q'},               quit },
-	{ {.ch = 'v'},               selection },
+	{ {.ch = 'v'},               start_vmode },
 	{ {.ch = 'y'},               yank },
 	{ {.ch = 'p'},               selpst },
 	{ {.ch = 'P'},               selmv },
@@ -82,8 +82,9 @@ static Key skeys[] = {
 	{ {.ch = 'a'},               selall },
 	{ {.ch = 'y'},               selynk },
 	{ {.ch = 'd'},               seldel },
-	{ {.ch = 'v'},               selcan },
-	{ {.key = TB_KEY_ESC},       selcan },
+	{ {.ch = 'q'},               exit_vmode },
+	{ {.ch = 'v'},               exit_vmode },
+	{ {.key = TB_KEY_ESC},       exit_vmode },
 };
 
 static const size_t nkeyslen = LEN(nkeys);

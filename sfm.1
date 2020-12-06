@@ -63,6 +63,9 @@ move
 .B c
 rename
 .TP
+.B v
+start visual mode
+.TP
 .B /
 start filter
 .TP
@@ -76,14 +79,20 @@ exit filter
 switch pane
 .SS Visual Mode
 .TP
-.B v
-enter visual mode
-.TP
 .B j
 select down
 .TP
 .B k
 select up
+.TP
+.B d
+delete selection
+.TP
+.B v
+exit visual mode
+.TP
+.B q
+exit visual mode
 .TP
 .B ESC
 exit visual mode

@@ -42,6 +42,7 @@ $ man sfm
 | `p`      | paste               |
 | `P`      | move                |
 | `c`      | rename              |
+| `v`      | start visual mode   |
 | `/`      | start filter        |
 | `ENTER`  | find  filter        |
 | `ESC`    | exit  filter        |
@@ -50,9 +51,11 @@ $ man sfm
 **visual mode**
 | key      | description         |
 |:---------|:--------------------|
-| `v`      | enter visual mode   |
 | `j`      | select down         |
 | `k`      | select up           |
+| `d`      | delete selection    |
+| `v`      | exit visual mode    |
+| `q`      | exit visual mode    |
 | `ESC`    | exit visual mode    |
 
 Installation
