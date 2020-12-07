@@ -156,7 +156,7 @@ static void selall(void);
 static void selref(void);
 static void selynk(void);
 static void selcalc(void);
-static void selpst(void);
+static void paste(void);
 static void selmv(void);
 static void seldel(void);
 static void init_files(void);
@@ -1542,8 +1542,9 @@ seldel(void)
 }
 
 static void
-selpst(void)
+paste(void)
 {
+	size_t i;
 	if (strlen(yank_file) != 0) {
 		print_status(cprompt, "coping");
 		if (spawn(cp_cmd, cpane->dirn) != 0)
@@ -1555,32 +1556,16 @@ selpst(void)
 	}
 
 	print_error("nothing to paste");
-// 
-// 	if (selected_files == NULL)
-// 		return;
-// 	print_status(cprompt, "coping");
-// 	if (spawn(cp_cmd, cpane->dirn) != 0)
-// 		print_error("coping failed");
-// 	else
-// 		print_status(cprompt, "files are copied");
-// 	free_files();
-// 	return;
 
+	if (selected_files == NULL)
+		return;
 
-// 	if (files == NULL) {
-// 		return;
-// 	}
-
-// 	size_t i;
-
-// 	for (i = 0; i < selection_size; i++) {
-// 		char *cp_cmd[] = { "cp", "-rf", files[i], cpane->dirn, NULL };
-// 		spawn(cp_cmd, NULL);
-// 	}
-
-// 	free_files();
-// 	print_status(cprompt, "%d files are copied", selection_size);
-
+	for (i = 0; i < selection_size; i++) {
+		char *selcp_cmd[] = { "cp", "-r", selected_files[i], cpane->dirn, NULL };
+		spawn(selcp_cmd,NULL);
+	}
+	print_status(cprompt, "%d files are copied", selection_size);
+	free_files();
 }
 
 static void
