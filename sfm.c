@@ -725,7 +725,6 @@ static int
 delent(char *fullpath)
 {
 	char *inp_conf;
-	char *rm_cmd[] = { "rm", "-rf", NULL };
 	int conf_len = 4;
 	char conf[] = "yes";
 
@@ -1521,7 +1520,6 @@ seldel(void)
 	char *inp_conf;
 	int conf_len = 4;
 	char conf[] = "yes";
-	char *rm_cmd[] = { "rm", "-rf", NULL };
 	size_t i;
 
 	inp_conf = ecalloc(conf_len, sizeof(char));
@@ -1547,7 +1545,6 @@ static void
 selpst(void)
 {
 	if (strlen(yank_file) != 0) {
-		char *cp_cmd[] = { "cp", "-r", yank_file, NULL };
 		print_status(cprompt, "coping");
 		if (spawn(cp_cmd, cpane->dirn) != 0)
 			print_error("coping failed");
@@ -1561,7 +1558,6 @@ selpst(void)
 // 
 // 	if (selected_files == NULL)
 // 		return;
-// 	char *cp_cmd[] = { "cp", "-r", selected_files, NULL };
 // 	print_status(cprompt, "coping");
 // 	if (spawn(cp_cmd, cpane->dirn) != 0)
 // 		print_error("coping failed");
@@ -1591,7 +1587,6 @@ static void
 selmv(void)
 {
 	if (strlen(yank_file) != 0) {
-		char *mv_cmd[] = { "mv", yank_file, NULL };
 		print_status(cprompt, "moving");
 		if (spawn(mv_cmd, cpane->dirn) != 0)
 			print_error("moving failed");

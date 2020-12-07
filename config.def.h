@@ -16,6 +16,11 @@ static const Cpair cprompt = { 33,  0 };
 static const Cpair csearch = { 255, 0 };
 static const Cpair cstatus = { 243, 0 };
 
+/* commands */
+static const char *rm_cmd[] = { "rm", "-rf", NULL }; /* delete */
+static const char *cp_cmd[] = { "cp", "-r", yank_file, NULL }; /* copy */
+static const char *mv_cmd[] = { "mv", yank_file, NULL }; /* move */
+
 /* bookmarks */
 static Bookmark bmarks[] = {
 	{'\\', "/root"},
