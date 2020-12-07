@@ -1510,7 +1510,7 @@ selynk(void)
 	init_files();
 	refresh_pane();
 	add_hi(cpane, cpane->hdir -1);
-	print_status(cprompt, "%d files are yanked", selection_size);
+	print_status(cprompt, "%zu files are yanked", selection_size);
 	cont_vmode = -1;
 }
 
@@ -1536,7 +1536,7 @@ seldel(void)
 	}
 
 	cpane->hdir = cpane->dirc - selection_size;
-	print_status(cprompt, "%d files are deleted", selection_size);
+	print_status(cprompt, "%zu files are deleted", selection_size);
 	free_files();
 	cont_vmode = -1;
 }
@@ -1550,7 +1550,7 @@ paste(void)
 		if (spawn(cp_cmd, cpane->dirn) != 0)
 			print_error("coping failed");
 		else
-			print_status(cprompt, "files are copied");
+			print_status(cprompt, "file copied");
 		yank_file[0] = '\0'; /* set yank_file len 0 */
 		return;
 	}
@@ -1564,13 +1564,15 @@ paste(void)
 		char *selcp_cmd[] = { "cp", "-r", selected_files[i], cpane->dirn, NULL };
 		spawn(selcp_cmd,NULL);
 	}
-	print_status(cprompt, "%d files are copied", selection_size);
+	print_status(cprompt, "%zu files are copied", selection_size);
 	free_files();
 }
 
 static void
 selmv(void)
 {
+	size_t i;
+
 	if (strlen(yank_file) != 0) {
 		print_status(cprompt, "moving");
 		if (spawn(mv_cmd, cpane->dirn) != 0)
@@ -1583,22 +1585,15 @@ selmv(void)
 
 	print_error("nothing to move");
 
+	if (selected_files == NULL)
+		return;
 
-
-// 	if (files == NULL) {
-// 		return;
-// 	}
-// 
-// 	size_t i;
-// 
-// 	for (i = 0; i < selection_size; i++) {
-// 		char *mv_cmd[] = { "mv", files[i], cpane->dirn, NULL };
-// 		spawn(mv_cmd, NULL);
-// 	}
-// 
-// 	free_files();
-// 	print_status(cprompt, "%d files are copied", selection_size);
-
+	for (i = 0; i < selection_size; i++) {
+		char *selmv_cmd[] = { "mv", selected_files[i], cpane->dirn, NULL };
+		spawn(selmv_cmd,NULL);
+	}
+	print_status(cprompt, "%zu files are moved", selection_size);
+	free_files();
 }
 
 static void
@@ -1790,13 +1785,11 @@ listdir(int hi, char *filter)
 	DIR *dir;
 	struct dirent *entry;
 	int width;
-	size_t i;
 	int filtercount = 0;
 	size_t oldc = cpane->dirc;
 
 	width = (twidth / 2) - 4;
 	cpane->dirc = 0;
-	i = 0;
 
 	dir = opendir(cpane->dirn);
 	if (dir == NULL)
