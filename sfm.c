@@ -783,8 +783,6 @@ crnd(void)
 
 	if (mkdir(path, ndir_perm) < 0)
 		print_error(strerror(errno));
-	else if (listdir(AddHi, NULL) < 0)
-		print_error(strerror(errno));
 
 	free(user_input);
 	free(path);
@@ -813,14 +811,11 @@ crnf(void)
 
 	rf = open(path, O_CREAT | O_EXCL, nf_perm);
 
-	if (rf < 0) {
+	if (rf < 0)
 		print_error(strerror(errno));
-	} else {
+	else
 		if (close(rf) < 0)
 			print_error(strerror(errno));
-		else if (listdir(AddHi, NULL) < 0)
-			print_error(strerror(errno));
-	}
 
 	free(user_input);
 	free(path);
@@ -836,8 +831,6 @@ delfd(void)
 	case 0:
 		if (BETWEEN(cpane->hdir - 1, 1, cpane->dirc)) /* last entry */
 			cpane->hdir--;
-// 		if (listdir(AddHi, NULL) < 0)
-// 			print_error(strerror(errno));
 		break;
 	}
 }
