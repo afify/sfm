@@ -1710,9 +1710,23 @@ start_ev(void)
 		else if (t == 2) /* resize event */
 			t_resize();
 		else if (t == 0) /* filesystem event */
-			if (read_events() > 0)
-				if (listdir(AddHi, NULL) < 0)
-					print_error(strerror(errno));
+			if (read_events() > 0) { /* TODO need refactoring */
+				if (cpane == &pane_l) {
+					cpane = &pane_r;
+					if (listdir(NoHi, NULL) < 0)
+						print_error(strerror(errno));
+					cpane = &pane_l;
+					if (listdir(AddHi, NULL) < 0)
+						print_error(strerror(errno));
+				} else if (cpane == &pane_r) {
+					cpane = &pane_l;
+					if (listdir(NoHi, NULL) < 0)
+						print_error(strerror(errno));
+					cpane = &pane_r;
+					if (listdir(AddHi, NULL) < 0)
+						print_error(strerror(errno));
+				}
+			}
 
 		tb_present();
 		continue;
