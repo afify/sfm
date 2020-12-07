@@ -168,7 +168,7 @@ static void quit(void);
 static void grabkeys(struct tb_event*, Key*, size_t);
 static void start_ev(void);
 static void refresh_pane(void);
-static void set_direntr(struct dirent *, DIR *);
+static void set_direntr(struct dirent *, DIR *, char *);
 static int listdir(int, char *);
 static void t_resize(void);
 static void set_panes(void);
@@ -1758,10 +1758,23 @@ refresh_pane(void)
 }
 
 static void
-set_direntr(struct dirent *entry, DIR *dir)
+set_direntr(struct dirent *entry, DIR *dir, char *filter)
 {
 	int i;
+	char *tmpfull;
 	struct stat status;
+
+
+#define ADD_ENTRY						\
+	tmpfull = get_fullpath(cpane->dirn, entry->d_name);	\
+	strcpy(cpane->direntr[i].name, tmpfull);		\
+	if (lstat(tmpfull, &status) == 0) {			\
+		cpane->direntr[i].size = status.st_size;	\
+		cpane->direntr[i].mode = status.st_mode;	\
+		cpane->direntr[i].group = status.st_gid;	\
+		cpane->direntr[i].user = status.st_uid;		\
+		cpane->direntr[i].td = status.st_mtime;		\
+	}i++;free(tmpfull);
 
 	i = 0;
 	cpane->direntr = erealloc(cpane->direntr, cpane->dirc * sizeof(Entry));
@@ -1770,19 +1783,17 @@ set_direntr(struct dirent *entry, DIR *dir)
 		     strcmp(entry->d_name, "..") == 0))
 			continue;
 
-		char *full = get_fullpath(cpane->dirn, entry->d_name);
-		strcpy(cpane->direntr[i].name, full);
-		if (lstat(full, &status) == 0) {
-			cpane->direntr[i].size = status.st_size;
-			cpane->direntr[i].mode = status.st_mode;
-			cpane->direntr[i].group = status.st_gid;
-			cpane->direntr[i].user = status.st_uid;
-			cpane->direntr[i].td = status.st_mtime;
+		if (filter != NULL) {
+			if (strstr(entry->d_name, filter) != NULL) {
+				ADD_ENTRY
+			}
 		}
-		i++;
-		free(full);
-// 		}
+
+		if (filter == NULL) {
+			ADD_ENTRY
+		}
 	}
+
 	cpane->dirc = i;
 }
 
@@ -1835,8 +1846,9 @@ listdir(int hi, char *filter)
 	cpane->dircol.fg |= TB_BOLD;
 	printf_tb(cpane->dirx, 0, cpane->dircol, " %.*s ", width, cpane->dirn);
 
-	if (addwatch() < 0)
-		print_error("can't add watch");
+	if (filter == NULL) /* dont't watch when filtering */
+		if (addwatch() < 0)
+			print_error("can't add watch");
 
 	/* empty directory */
 	if (cpane->dirc == 0) {
@@ -1847,7 +1859,7 @@ listdir(int hi, char *filter)
 	}
 
 	rewinddir(dir); /* reset position */
-	set_direntr(entry, dir); /* create array of entries */
+	set_direntr(entry, dir, filter); /* create array of entries */
 	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
 	refresh_pane();
 
