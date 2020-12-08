@@ -95,7 +95,7 @@ static Key skeys[] = {
 static const size_t nkeyslen = LEN(nkeys);
 static const size_t skeyslen = LEN(skeys);
 
-static const mode_t ndir_perm = S_IRWXU | S_IRWXG |S_IROTH | S_IXOTH;
+static const mode_t ndir_perm = S_IRWXU;
 static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
 
 /* scroll */
