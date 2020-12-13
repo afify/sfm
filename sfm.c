@@ -1,5 +1,8 @@
 /* See LICENSE file for copyright and license details. */
 
+#if defined(__linux__)
+#define _GNU_SOURCE
+#endif
 #include <sys/types.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -1784,7 +1787,7 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 			continue;
 
 		if (filter != NULL) {
-			if (strstr(entry->d_name, filter) != NULL) {
+			if (strcasestr(entry->d_name, filter) != NULL) {
 				ADD_ENTRY
 			}
 		}
@@ -1816,7 +1819,7 @@ listdir(int hi, char *filter)
 	/* get content and filter sum */
 	while ((entry = readdir(dir)) != 0) {
 		if (filter != NULL) {
-			if (strstr(entry->d_name, filter) != NULL)
+			if (strcasestr(entry->d_name, filter) != NULL)
 				filtercount++;
 		} else { /* no filter */
 			cpane->dirc++;
