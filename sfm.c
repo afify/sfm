@@ -60,6 +60,7 @@ typedef struct {
 typedef struct {
 	int pane_id;
 	char dirn[MAX_P]; // dir name cwd
+	char *filter;
 	Entry *direntr; // dir entries
 	int dirx; // pane cwd x pos
 	int dirc; // dir entries sum
@@ -172,7 +173,7 @@ static void grabkeys(struct tb_event*, Key*, size_t);
 static void start_ev(void);
 static void refresh_pane(void);
 static void set_direntr(struct dirent *, DIR *, char *);
-static int listdir(int, char *);
+static int listdir(int);
 static void t_resize(void);
 static void set_panes(void);
 static void draw_frame(void);
@@ -850,7 +851,7 @@ mvbk(void)
 	rmwatch(cpane);
 	cpane->firstrow = cpane->parent_firstrow;
 	cpane->hdir = cpane->parent_row;
-	if (listdir(AddHi, NULL) < 0)
+	if (listdir(AddHi) < 0)
 		print_error(strerror(errno));
 	cpane->parent_firstrow = 0;
 	cpane->parent_row = 1;
@@ -924,7 +925,7 @@ mvfor(void)
 		cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
-		if (listdir(AddHi, NULL) < 0)
+		if (listdir(AddHi) < 0)
 			print_error(strerror(errno));
 		break;
 	case 1: /* not a directory open file */
@@ -1358,7 +1359,8 @@ filter(void)
 		free(user_input);
 		return;
 	}
-	if (listdir(AddHi, user_input) < 0)
+	cpane->filter = user_input;
+	if (listdir(AddHi) < 0)
 		print_error("no match");
 	free(user_input);
 }
@@ -1685,7 +1687,7 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 	cpane->firstrow = 0;
 	cpane->parent_row = 1;
 	cpane->hdir = 1;
-	if (listdir(AddHi, NULL) < 0)
+	if (listdir(AddHi) < 0)
 		print_error(strerror(errno));
 }
 
@@ -1709,17 +1711,17 @@ start_ev(void)
 			if (read_events() > 0) { /* TODO need refactoring */
 				if (cpane == &pane_l) {
 					cpane = &pane_r;
-					if (listdir(NoHi, NULL) < 0)
+					if (listdir(NoHi) < 0)
 						print_error(strerror(errno));
 					cpane = &pane_l;
-					if (listdir(AddHi, NULL) < 0)
+					if (listdir(AddHi) < 0)
 						print_error(strerror(errno));
 				} else if (cpane == &pane_r) {
 					cpane = &pane_l;
-					if (listdir(NoHi, NULL) < 0)
+					if (listdir(NoHi) < 0)
 						print_error(strerror(errno));
 					cpane = &pane_r;
-					if (listdir(AddHi, NULL) < 0)
+					if (listdir(AddHi) < 0)
 						print_error(strerror(errno));
 				}
 			}
@@ -1801,7 +1803,7 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 }
 
 static int
-listdir(int hi, char *filter)
+listdir(int hi)
 {
 	DIR *dir;
 	struct dirent *entry;
@@ -1818,20 +1820,20 @@ listdir(int hi, char *filter)
 
 	/* get content and filter sum */
 	while ((entry = readdir(dir)) != 0) {
-		if (filter != NULL) {
-			if (strcasestr(entry->d_name, filter) != NULL)
+		if (cpane->filter != NULL) {
+			if (strcasestr(entry->d_name, cpane->filter) != NULL)
 				filtercount++;
 		} else { /* no filter */
 			cpane->dirc++;
 		}
 	}
 
-	if (filter == NULL) {
+	if (cpane->filter == NULL) {
 		clear_pane();
 		cpane->dirc -= 2;
 	}
 
-	if (filter != NULL) {
+	if (cpane->filter != NULL) {
 		if (filtercount > 0) {
 			cpane->dirc -= 2;
 			cpane->dirc = filtercount;
@@ -1849,7 +1851,7 @@ listdir(int hi, char *filter)
 	cpane->dircol.fg |= TB_BOLD;
 	printf_tb(cpane->dirx, 0, cpane->dircol, " %.*s ", width, cpane->dirn);
 
-	if (filter == NULL) /* dont't watch when filtering */
+	if (cpane->filter == NULL) /* dont't watch when filtering */
 		if (addwatch() < 0)
 			print_error("can't add watch");
 
@@ -1862,7 +1864,7 @@ listdir(int hi, char *filter)
 	}
 
 	rewinddir(dir); /* reset position */
-	set_direntr(entry, dir, filter); /* create array of entries */
+	set_direntr(entry, dir, cpane->filter); /* create array of entries */
 	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
 	refresh_pane();
 
@@ -1994,10 +1996,10 @@ start(void)
 	if (fsev_init() < 0)
 		print_error(strerror(errno));
 	cpane = &pane_r;
-	if (listdir(NoHi, NULL) < 0)
+	if (listdir(NoHi) < 0)
 		print_error(strerror(errno));
 	cpane = &pane_l;
-	if (listdir(AddHi, NULL) < 0)
+	if (listdir(AddHi) < 0)
 		print_error(strerror(errno));
 	tb_present();
 	start_ev();
