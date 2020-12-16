@@ -11,6 +11,7 @@ all: options sfm
 options:
 	@echo sfm build options:
 	@echo "CFLAGS   = ${CFLAGS}"
+	@echo "LDFLAGS  = ${LDFLAGS}"
 	@echo "CC       = ${CC}"
 
 .c.o:
@@ -22,7 +23,7 @@ config.h:
 	cp config.def.h $@
 
 sfm: ${OBJ}
-	${CC} -o $@ ${OBJ}
+	${CC} ${LDFLAGS} -o $@ ${OBJ}
 
 clean:
 	rm -f sfm ${OBJ} sfm-${VERSION}.tar.gz

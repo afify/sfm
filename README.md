@@ -54,6 +54,7 @@ $ man sfm
 | `j`      | select down         |
 | `k`      | select up           |
 | `d`      | delete selection    |
+| `y`      | yank selection      |
 | `v`      | exit visual mode    |
 | `q`      | exit visual mode    |
 | `ESC`    | exit visual mode    |
