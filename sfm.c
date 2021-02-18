@@ -33,7 +33,7 @@
 #include "util.h"
 
 /* macros */
-#define MAX_P 4095
+#define MAX_P 4096
 #define MAX_N 255
 #define MAX_USRI 32
 #define MAX_EXT 4
