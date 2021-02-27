@@ -151,7 +151,7 @@ static int read_events(void);
 static void rmwatch(Pane *);
 static void fsev_shdn(void);
 static ssize_t findbm(uint32_t);
-static void filter(void);
+static void start_filter(void);
 static void start_vmode(void);
 static void exit_vmode(void);
 static void selup(void);
@@ -1349,7 +1349,7 @@ findbm(uint32_t event)
 }
 
 static void
-filter(void)
+start_filter(void)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -1362,6 +1362,7 @@ filter(void)
 	cpane->filter = user_input;
 	if (listdir(AddHi) < 0)
 		print_error("no match");
+	cpane->filter = NULL;
 	free(user_input);
 }
 
