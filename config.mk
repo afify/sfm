@@ -6,9 +6,9 @@ PREFIX    = /usr/local
 MANPREFIX = ${PREFIX}/share/man
 
 # flags
-CPPFLAGS = -D_DEFAULT_SOURCE -D_BSD_SOURCE -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -DVERSION=\"${VERSION}\"
-CFLAGS   = -std=c99 -pedantic -Wextra -Wall -Os ${CPPFLAGS}
-LDFLAGS  = -s -pthread
+CPPFLAGS = -DVERSION=\"$(VERSION)\" -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=700 -D_BSD_SOURCE
+CFLAGS   = -std=c99 -pedantic -Wall -Wextra -Os ${CPPFLAGS}
+LDFLAGS  = -lpthread -s
 
 # compiler and linker
 CC = cc
