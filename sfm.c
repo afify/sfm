@@ -1721,7 +1721,7 @@ read_th(void *arg)
 			tb_present();
 		}
 	}
-	return NULL;
+	return arg;
 }
 
 static void
