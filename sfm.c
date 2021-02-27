@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <pthread.h>
 #include <pwd.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -170,6 +171,7 @@ static void rname(void);
 static void switch_pane(void);
 static void quit(void);
 static void grabkeys(struct tb_event*, Key*, size_t);
+static void *read_th(void *arg);
 static void start_ev(void);
 static void refresh_pane(void);
 static void set_direntr(struct dirent *, DIR *, char *);
@@ -180,6 +182,7 @@ static void draw_frame(void);
 static void start(void);
 
 /* global variables */
+static pthread_t fsev_thread;
 static Pane pane_r, pane_l, *cpane;
 static char *editor[2];
 static char fed[] = "vi";
@@ -449,7 +452,6 @@ sort_name(const void *const A, const void *const B)
 		return 1;
 	}
 }
-
 
 static void
 get_dirp(char *cdir)
@@ -1243,7 +1245,7 @@ static int
 fsev_init(void)
 {
 #if defined _SYS_INOTIFY_H
-	inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	inotify_fd = inotify_init();
 	if (inotify_fd < 0)
 		return -1;
 #elif defined _SYS_EVENT_H_
@@ -1322,6 +1324,8 @@ rmwatch(Pane *pane)
 static void
 fsev_shdn(void)
 {
+	pthread_cancel(fsev_thread);
+	pthread_join(fsev_thread, NULL);
 	rmwatch(&pane_l);
 	rmwatch(&pane_r);
 #if defined _SYS_INOTIFY_H
@@ -1497,9 +1501,7 @@ init_files(void)
 
 	for (i = 0; i < selection_size; i++) {
 		selected_files[i] = ecalloc(MAX_P, sizeof(char));
-// 		strcpy(selected_files[i], "\"");
 		strcpy(selected_files[i], cpane->direntr[selection[i] -1].name);
-// 		strcat(selected_files[i], "\"");
 	}
 }
 
@@ -1692,43 +1694,54 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 		print_error(strerror(errno));
 }
 
+void *
+read_th(void *arg)
+{
+	int i;
+	while(1){
+
+		i = read_events();
+		if (i > 16) { /* TODO need refactoring */
+			listdir(AddHi);
+			if (cpane == &pane_l) {
+				cpane = &pane_r;
+				if (listdir(NoHi) < 0)
+					print_error(strerror(errno));
+				cpane = &pane_l;
+				if (listdir(AddHi) < 0)
+					print_error(strerror(errno));
+			} else if (cpane == &pane_r) {
+				cpane = &pane_l;
+				if (listdir(NoHi) < 0)
+					print_error(strerror(errno));
+				cpane = &pane_r;
+				if (listdir(AddHi) < 0)
+					print_error(strerror(errno));
+			}
+			tb_present();
+		}
+	}
+	return NULL;
+}
+
 static void
 start_ev(void)
 {
 	struct tb_event ev;
 
-	for (;;) {
-		int t = tb_peek_event(&ev, 2000);
-		if (t < 0) {
-			tb_shutdown();
-			return;
-		}
 
-		if (t == 1) /* keyboard event */
+	while (tb_poll_event(&ev) != 0) {
+		switch (ev.type) {
+		case TB_EVENT_KEY:
 			grabkeys(&ev, nkeys, nkeyslen);
-		else if (t == 2) /* resize event */
+			tb_present();
+			break;
+		case TB_EVENT_RESIZE:
 			t_resize();
-		else if (t == 0) /* filesystem event */
-			if (read_events() > 0) { /* TODO need refactoring */
-				if (cpane == &pane_l) {
-					cpane = &pane_r;
-					if (listdir(NoHi) < 0)
-						print_error(strerror(errno));
-					cpane = &pane_l;
-					if (listdir(AddHi) < 0)
-						print_error(strerror(errno));
-				} else if (cpane == &pane_r) {
-					cpane = &pane_l;
-					if (listdir(NoHi) < 0)
-						print_error(strerror(errno));
-					cpane = &pane_r;
-					if (listdir(AddHi) < 0)
-						print_error(strerror(errno));
-				}
-			}
-
-		tb_present();
-		continue;
+			break;
+		default:
+			break;
+		}
 	}
 	tb_shutdown();
 }
@@ -1769,7 +1782,6 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 	int i;
 	char *tmpfull;
 	struct stat status;
-
 
 #define ADD_ENTRY						\
 	tmpfull = get_fullpath(cpane->dirn, entry->d_name);	\
@@ -2003,6 +2015,8 @@ start(void)
 	if (listdir(AddHi) < 0)
 		print_error(strerror(errno));
 	tb_present();
+
+	pthread_create(&fsev_thread, NULL, read_th, NULL);
 	start_ev();
 }
 
