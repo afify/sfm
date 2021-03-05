@@ -25,7 +25,8 @@ sfm is a simple file manager for unix-like systems based on [termbox](https://gi
 * Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
 * Follows the suckless [philosophy](https://suckless.org/philosophy/).
 
-**Performance**
+Performance
+------------
 ```sh
 $ perf stat -r 100 $filemanager
 ```
