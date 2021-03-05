@@ -133,7 +133,7 @@ static void mvbk(void);
 static void mvbtm(void);
 static void mvdwn(void);
 static void mvdwns(void);
-static void mvfor(void);
+static void mvfwd(void);
 static void mvmid(void);
 static void mvtop(void);
 static void mvup(void);
@@ -913,7 +913,7 @@ mvdwns(void)
 }
 
 static void
-mvfor(void)
+mvfwd(void)
 {
 	rmwatch(cpane);
 	if (cpane->dirc < 1)
@@ -1328,6 +1328,7 @@ fsev_shdn(void)
 	pthread_join(fsev_thread, NULL);
 	rmwatch(&pane_l);
 	rmwatch(&pane_r);
+// 	pthread_exit(NULL);
 #if defined _SYS_INOTIFY_H
 	close(inotify_fd);
 #elif defined _SYS_EVENT_H_
@@ -1387,7 +1388,7 @@ start_vmode(void)
 	while (tb_poll_event(&fev) != 0) {
 		switch (fev.type) {
 		case TB_EVENT_KEY:
-			grabkeys(&fev, skeys, skeyslen);
+			grabkeys(&fev, vkeys, vkeyslen);
 			if (cont_vmode == -1)
 				return;
 			tb_present();

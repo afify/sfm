@@ -4,6 +4,8 @@
 
 [![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/afify/sfm.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/afify/sfm/context:cpp)
 [![Build status](https://ci.appveyor.com/api/projects/status/goq88ahjyvtjrui2?svg=true)](https://ci.appveyor.com/project/afify/sfm)
+[![code-inspector](https://www.code-inspector.com/project/19656/score/svg)](https://frontend.code-inspector.com/public/project/19656/sfm/dashboard)
+[![code-inspector](https://www.code-inspector.com/project/19656/status/svg)](https://frontend.code-inspector.com/public/project/19656/sfm/dashboard)
 
 Description
 ------------
@@ -14,7 +16,7 @@ sfm is a simple file manager for unix-like systems based on [termbox](https://gi
 * Linux inotify(7) - monitoring filesystem events.
 * dual pane.
 * bookmarks.
-* open files by extention.
+* open files by extension.
 * bottom statusbar.
 * vim-like key bindings.
 * filter.
