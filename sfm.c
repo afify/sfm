@@ -108,7 +108,6 @@ static void clear_status(void);
 static void clear_pane(void);
 static void add_hi(Pane *, size_t);
 static void rm_hi(Pane *, size_t);
-static void float_to_string(float, char *);
 static int check_dir(char *);
 static mode_t chech_execf(mode_t);
 static int sort_name(const void *const, const void *const);
@@ -349,62 +348,6 @@ rm_hi(Pane *pane, size_t entpos)
 	print_row(pane, entpos, col);
 }
 
-static void
-float_to_string(float f, char *r)
-{
-	int length, length2, i, number, position,
-	    tenth; /* length is size of decimal part, length2 is size of tenth part */
-	float number2;
-
-	f = (float)(int)(f * 10) / 10;
-
-	number2 = f;
-	number = (int)f;
-	length2 = 0;
-	tenth = 1;
-
-	/* Calculate length2 tenth part */
-	while ((number2 - (float)number) != 0.0 &&
-	       !((number2 - (float)number) < 0.0)) {
-		tenth *= 10.0;
-		number2 = f * (float)tenth;
-		number = (int)number2;
-
-		length2++;
-	}
-
-	/* Calculate length decimal part */
-	for (length = (f > 1.0) ? 0 : 1; f > 1.0; length++)
-		f /= 10.0;
-
-	position = length;
-	length = length + 1 + length2;
-	number = (int)number2;
-
-	if (length2 > 0) {
-		for (i = length; i >= 0; i--) {
-			if (i == (length))
-				r[i] = '\0';
-			else if (i == (position))
-				r[i] = '.';
-			else {
-				r[i] = (char)(number % 10) + '0';
-				number /= 10;
-			}
-		}
-	} else {
-		length--;
-		for (i = length; i >= 0; i--) {
-			if (i == (length))
-				r[i] = '\0';
-			else {
-				r[i] = (char)(number % 10) + '0';
-				number /= 10;
-			}
-		}
-	}
-}
-
 static int
 check_dir(char *path)
 {
@@ -604,41 +547,45 @@ get_fperm(mode_t mode)
 static char *
 get_fsize(off_t size)
 {
-	/* need to be freed */
-	char *Rsize;
-	float lsize;
+	char *result; /* need to be freed */
+	char hsize;
+	int result_len;
+	int lsize;
 	int counter;
+
 	counter = 0;
+	result_len = 6; /* 9999X/0 */
+	result = ecalloc(result_len, sizeof(char));
+	lsize = (int)size;
 
-	Rsize = ecalloc(10, sizeof(char));
-	lsize = (float)size;
-
-	while (lsize >= 1000.0) {
-		lsize /= 1024.0;
+	while (lsize >= 1000) {
+		lsize /= 1024;
 		++counter;
 	}
 
-	float_to_string(lsize, Rsize);
-
 	switch (counter) {
 	case 0:
-		strcat(Rsize, "B");
+		hsize = 'B';
 		break;
 	case 1:
-		strcat(Rsize, "K");
+		hsize = 'K';
 		break;
 	case 2:
-		strcat(Rsize, "M");
+		hsize = 'M';
 		break;
 	case 3:
-		strcat(Rsize, "G");
+		hsize = 'G';
 		break;
 	case 4:
-		strcat(Rsize, "T");
+		hsize = 'T';
 		break;
+	default:
+		hsize =  '?';
 	}
 
-	return Rsize;
+	(void)snprintf(result, result_len, "%d%c", lsize, hsize);
+
+	return result;
 }
 
 static char *
