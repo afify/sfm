@@ -279,10 +279,9 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	y = entpos - cpane->firstrow + 1;
 
 	if (S_ISLNK(pane->direntr[entpos].mode) &&
-	    realpath(pane->direntr[entpos].name, buf) != NULL) {
-		strncpy(lnk_full, pane->direntr[entpos].name, MAX_N);
-		strcat(lnk_full, " -> ");
-		strncat(lnk_full, buf, MAX_N);
+			realpath(pane->direntr[entpos].name, buf) != NULL) {
+		(void)snprintf(lnk_full, MAX_N, "%s -> %s",
+				result, buf);
 		result = lnk_full;
 	}
 
