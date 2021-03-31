@@ -865,7 +865,7 @@ mvfor(void)
 
 	switch (check_dir(CURSOR_NAME)) {
 	case 0:
-		strcpy(cpane->dirn, CURSOR_NAME);
+		strncpy(cpane->dirn, CURSOR_NAME, MAX_P);
 		cpane->parent_row = cpane->hdir;
 		cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 1;
@@ -1442,9 +1442,7 @@ init_files(void)
 
 	for (i = 0; i < selection_size; i++) {
 		selected_files[i] = ecalloc(MAX_P, sizeof(char));
-// 		strcpy(selected_files[i], "\"");
-		strcpy(selected_files[i], cpane->direntr[selection[i] -1].name);
-// 		strcat(selected_files[i], "\"");
+		strncpy(selected_files[i], cpane->direntr[selection[i] -1].name, MAX_P); /* TODO use pointer */
 	}
 }
 
@@ -1553,9 +1551,11 @@ rname(void)
 		return;
 	}
 
-	strcpy(new_name, cpane->dirn);
-	strcat(new_name, "/");
-	strcat(new_name, input_name);
+	if (snprintf(new_name, MAX_P, "%s/%s", cpane->dirn, input_name) < 0) {
+		free(input_name);
+		print_error(strerror(errno));
+		return;
+	}
 
 	char *rename_cmd[] = { "mv", CURSOR_NAME, new_name, NULL };
 	if (spawn(rename_cmd, NULL) < 0)
@@ -1629,7 +1629,7 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 	if (b < 0)
 		return;
 	rmwatch(cpane);
-	strcpy(cpane->dirn, bmarks[b].path);
+	strncpy(cpane->dirn, bmarks[b].path, MAX_P);
 	cpane->firstrow = 0;
 	cpane->parent_row = 1;
 	cpane->hdir = 1;
@@ -1718,7 +1718,7 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 
 #define ADD_ENTRY						\
 	tmpfull = get_fullpath(cpane->dirn, entry->d_name);	\
-	strcpy(cpane->direntr[i].name, tmpfull);		\
+	strncpy(cpane->direntr[i].name, tmpfull, MAX_N);	\
 	if (lstat(tmpfull, &status) == 0) {			\
 		cpane->direntr[i].size = status.st_size;	\
 		cpane->direntr[i].mode = status.st_mode;	\
@@ -1876,7 +1876,7 @@ set_panes(void)
 	pane_l.dircol = cpanell;
 	pane_l.firstrow = 0;
 	pane_l.direntr = ecalloc(0, sizeof(Entry));
-	strcpy(pane_l.dirn, cwd);
+	strncpy(pane_l.dirn, cwd, MAX_P);
 	pane_l.hdir = 1;
 	pane_l.inotify_wd = -1;
 	pane_l.parent_row = 1;
@@ -1886,7 +1886,7 @@ set_panes(void)
 	pane_r.dircol = cpanelr;
 	pane_r.firstrow = 0;
 	pane_r.direntr = ecalloc(0, sizeof(Entry));
-	strcpy(pane_r.dirn, home);
+	strncpy(pane_r.dirn, home, MAX_P);
 	pane_r.hdir = 1;
 	pane_r.inotify_wd = -1;
 	pane_r.parent_row = 1;
