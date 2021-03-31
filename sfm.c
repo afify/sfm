@@ -1781,7 +1781,6 @@ listdir(int hi)
 
 	if (cpane->filter != NULL) {
 		if (filtercount > 0) {
-			cpane->dirc -= 2;
 			cpane->dirc = filtercount;
 			clear_pane();
 			cpane->hdir = 1;
