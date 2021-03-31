@@ -547,42 +547,41 @@ static char *
 get_fsize(off_t size)
 {
 	char *result; /* need to be freed */
-	char hsize;
+	char unit;
 	int result_len;
-	int lsize;
 	int counter;
 
 	counter = 0;
 	result_len = 6; /* 9999X/0 */
 	result = ecalloc(result_len, sizeof(char));
-	lsize = (int)size;
 
-	while (lsize >= 1000) {
-		lsize /= 1024;
+	while (size >= 1000) {
+		size /= 1024;
 		++counter;
 	}
 
 	switch (counter) {
 	case 0:
-		hsize = 'B';
+		unit = 'B';
 		break;
 	case 1:
-		hsize = 'K';
+		unit = 'K';
 		break;
 	case 2:
-		hsize = 'M';
+		unit = 'M';
 		break;
 	case 3:
-		hsize = 'G';
+		unit = 'G';
 		break;
 	case 4:
-		hsize = 'T';
+		unit = 'T';
 		break;
 	default:
-		hsize =  '?';
+		unit =  '?';
 	}
 
-	(void)snprintf(result, result_len, "%d%c", lsize, hsize);
+	if (snprintf(result, result_len, "%ld%c", size, unit) < 0)
+		strncat(result, "???", result_len);
 
 	return result;
 }
