@@ -691,23 +691,24 @@ delent(char *fullpath)
 static void
 calcdir(void)
 {
+	if (!S_ISDIR(cpane->direntr[cpane->hdir - 1].mode))
+		return;
+
 	off_t *fullsize;
 	char *csize;
 	char *result;
 
-	if (S_ISDIR(cpane->direntr[cpane->hdir - 1].mode)) {
-		fullsize = ecalloc(50, sizeof(off_t));
-		get_dirsize(CURSOR_NAME, fullsize);
-		csize = get_fsize(*fullsize);
-		result = get_finfo(&cpane->direntr[cpane->hdir - 1]);
+	fullsize = ecalloc(50, sizeof(off_t));
+	get_dirsize(CURSOR_NAME, fullsize);
+	csize = get_fsize(*fullsize);
+	result = get_finfo(&cpane->direntr[cpane->hdir - 1]);
 
-		clear_status();
-		print_status(cstatus, "%d/%d %s%s", cpane->hdir, cpane->dirc,
-			     result, csize);
-		free(csize);
-		free(fullsize);
-		free(result);
-	}
+	clear_status();
+	print_status(cstatus, "%d/%d %s%s",
+			cpane->hdir, cpane->dirc, result, csize);
+	free(csize);
+	free(fullsize);
+	free(result);
 }
 
 static void
