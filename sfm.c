@@ -385,7 +385,7 @@ sort_name(const void *const A, const void *const B)
 	if (data1 < data2) {
 		return -1;
 	} else if (data1 == data2) {
-		result = strcmp((*(Entry *)A).name, (*(Entry *)B).name);
+		result = strncmp((*(Entry *)A).name, (*(Entry *)B).name, MAX_N);
 		return result;
 	} else {
 		return 1;
@@ -591,18 +591,13 @@ static char *
 get_fullpath(char *first, char *second)
 {
 	char *full_path;
-	size_t full_path_len;
 
-	full_path_len = strlen(first) + strlen(second) + 2;
-	full_path = ecalloc(full_path_len, sizeof(char));
+	full_path = ecalloc(MAX_P, sizeof(char));
 
-	if (strcmp(first, "/") == 0) {
-		(void)snprintf(full_path, full_path_len, "/%s", second);
-
-	} else {
-		(void)snprintf(full_path, full_path_len, "%s/%s", first,
-			       second);
-	}
+	if (strncmp(first, "/", MAX_P) == 0)
+		(void)snprintf(full_path, MAX_P, "/%s", second);
+	else
+		(void)snprintf(full_path, MAX_P, "%s/%s", first, second);
 
 	return full_path;
 }
@@ -638,8 +633,8 @@ get_dirsize(char *fullpath, off_t *fullsize)
 	}
 
 	while ((entry = readdir(dir)) != 0) {
-		if ((strcmp(entry->d_name, ".") == 0 ||
-		     strcmp(entry->d_name, "..") == 0))
+		if ((strncmp(entry->d_name, ".", 2) == 0 ||
+		     strncmp(entry->d_name, "..", 3) == 0))
 			continue;
 
 		ent_full = get_fullpath(fullpath, entry->d_name);
@@ -1732,19 +1727,18 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 	i = 0;
 	cpane->direntr = erealloc(cpane->direntr, cpane->dirc * sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
-		if ((strcmp(entry->d_name, ".") == 0 ||
-		     strcmp(entry->d_name, "..") == 0))
+		if ((strncmp(entry->d_name, ".", 2) == 0 ||
+		     strncmp(entry->d_name, "..", 3) == 0))
 			continue;
 
-		if (filter != NULL) {
+		if (filter == NULL) {
+			ADD_ENTRY
+		} else if (filter != NULL) {
 			if (strcasestr(entry->d_name, filter) != NULL) {
 				ADD_ENTRY
 			}
 		}
 
-		if (filter == NULL) {
-			ADD_ENTRY
-		}
 	}
 
 	cpane->dirc = i;
