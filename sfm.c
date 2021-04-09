@@ -711,7 +711,6 @@ static void
 crnd(void)
 {
 	char *user_input, *path;
-	size_t pathlen;
 
 	user_input = ecalloc(MAX_USRI, sizeof(char));
 	if (get_usrinput(user_input, MAX_USRI, "new dir") < 0) {
@@ -719,9 +718,8 @@ crnd(void)
 		return;
 	}
 
-	pathlen = strlen(cpane->dirn) + 1 + MAX_USRI + 1;
-	path = ecalloc(pathlen, sizeof(char));
-	if (snprintf(path, pathlen, "%s/%s", cpane->dirn, user_input) < 0) {
+	path = ecalloc(MAX_P, sizeof(char));
+	if (snprintf(path, MAX_P, "%s/%s", cpane->dirn, user_input) < 0) {
 		free(user_input);
 		free(path);
 		return;
@@ -738,7 +736,6 @@ static void
 crnf(void)
 {
 	char *user_input, *path;
-	size_t pathlen;
 	int rf;
 
 	user_input = ecalloc(MAX_USRI, sizeof(char));
@@ -747,9 +744,8 @@ crnf(void)
 		return;
 	}
 
-	pathlen = strlen(cpane->dirn) + 1 + MAX_USRI + 1;
-	path = ecalloc(pathlen, sizeof(char));
-	if (snprintf(path, pathlen, "%s/%s", cpane->dirn, user_input) < 0) {
+	path = ecalloc(MAX_P, sizeof(char));
+	if (snprintf(path, MAX_P, "%s/%s", cpane->dirn, user_input) < 0) {
 		free(user_input);
 		free(path);
 		return;
@@ -1484,7 +1480,7 @@ static void
 paste(void)
 {
 	size_t i;
-	if (strlen(yank_file) != 0) {
+	if (strnlen(yank_file, MAX_P) != 0) {
 		print_status(cprompt, "coping");
 		if (spawn(cp_cmd, cpane->dirn) != 0)
 			print_error("coping failed");
@@ -1512,7 +1508,7 @@ selmv(void)
 {
 	size_t i;
 
-	if (strlen(yank_file) != 0) {
+	if (strnlen(yank_file, MAX_P) != 0) {
 		print_status(cprompt, "moving");
 		if (spawn(mv_cmd, cpane->dirn) != 0)
 			print_error("moving failed");
