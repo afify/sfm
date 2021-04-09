@@ -392,15 +392,14 @@ sort_name(const void *const A, const void *const B)
 	}
 }
 
-
 static void
 get_dirp(char *cdir)
 {
 	int counter, len, i;
 
 	counter = 0;
-	len = strlen(cdir);
-	if (len ==1)
+	len = strnlen(cdir, MAX_P);
+	if (len == 1)
 		return;
 
 	for (i = len - 1; i > 1; i--) {
@@ -780,6 +779,10 @@ delfd(void)
 static void
 mvbk(void)
 {
+	if (cpane->dirn[0] == '/' && cpane->dirn[1] == '\0') { /* cwd = / */
+		return;
+	}
+
 	get_dirp(cpane->dirn);
 	if (check_dir(cpane->dirn) < 0) {
 		print_error(strerror(errno));
