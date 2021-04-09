@@ -422,7 +422,7 @@ get_ext(char *str)
 
 	dot = '.';
 	counter = 0;
-	len = strlen(str);
+	len = strnlen(str, MAX_N);
 
 	for (i = len - 1; i > 0; i--) {
 		if (str[i] == dot) {
@@ -432,8 +432,9 @@ get_ext(char *str)
 		}
 	}
 
-	ext = ecalloc(counter + 1, sizeof(char));
-	strncpy(ext, &str[len - counter], counter);
+	ext = ecalloc(MAX_EXT + 1, sizeof(char));
+	strncpy(ext, &str[len - counter], MAX_EXT);
+	ext[MAX_EXT] = '\0';
 	return ext;
 }
 
