@@ -278,11 +278,12 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	x = pane->dirx;
 	y = entpos - cpane->firstrow + 1;
 
-	if (S_ISLNK(pane->direntr[entpos].mode) &&
-			realpath(pane->direntr[entpos].name, buf) != NULL) {
-		(void)snprintf(lnk_full, MAX_N, "%s -> %s",
-				result, buf);
-		result = lnk_full;
+	if (S_ISLNK(pane->direntr[entpos].mode) != 0) {
+		if (realpath(pane->direntr[entpos].name, buf) != NULL) {
+			(void)snprintf(lnk_full, MAX_N,
+				"%s -> %s", result, buf);
+			result = lnk_full;
+		}
 	}
 
 	printf_tb(x, y, col, "%*.*s", ~width, width, result);
