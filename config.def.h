@@ -35,7 +35,7 @@ static const char *libreoffice[]  = { "libreoffice", NULL };
 static const char *gimp[]         = { "gimp", NULL };
 static const char *r2[]           = { "r2", "-c", "vv", NULL };
 
-/* extension */
+/* extensions*/
 static const char *images[]    = { "bmp", "jpg", "jpeg", "png", "gif", "xpm" };
 static const char *web[]       = { "htm", "html" };
 static const char *pdf[]       = { "epub", "pdf" };
@@ -57,10 +57,11 @@ static Rule rules[] = {
 	{obj,       LEN(obj),       r2},
 };
 
+/* normal keys */
 static Key nkeys[] = {
 	{ {.ch = 'j'},               mvdwn },
 	{ {.ch = 'k'},               mvup },
-	{ {.ch = 'l'},               mvfor },
+	{ {.ch = 'l'},               mvfwd },
 	{ {.ch = 'h'},               mvbk },
 	{ {.ch = 'g'},               mvtop },
 	{ {.ch = 'G'},               mvbtm },
@@ -81,7 +82,8 @@ static Key nkeys[] = {
 	{ {.key = TB_KEY_SPACE},     switch_pane },
 };
 
-static Key skeys[] = {
+/* visual keys */
+static Key vkeys[] = {
 	{ {.ch = 'j'},               seldwn },
 	{ {.ch = 'k'},               selup },
 	{ {.ch = 'a'},               selall },
@@ -93,7 +95,7 @@ static Key skeys[] = {
 };
 
 static const size_t nkeyslen = LEN(nkeys);
-static const size_t skeyslen = LEN(skeys);
+static const size_t vkeyslen = LEN(vkeys);
 
 static const mode_t ndir_perm = S_IRWXU;
 static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
