@@ -37,7 +37,12 @@
 #define MAX_N 255
 #define MAX_USRI 32
 #define MAX_EXT 4
-#define CURSOR_NAME cpane->direntr[cpane->hdir - 1].name
+#define MAX_STATUS 255
+#define MAX_LINE 4096
+#define MAX_USRN 32
+#define MAX_GRPN 32
+#define MAX_DTF 32
+#define CURSOR cpane->direntr[cpane->hdir - 1]
 
 /* enums */
 enum { AddHi, NoHi }; /* add highlight in listdir */
@@ -48,7 +53,7 @@ typedef struct {
 	gid_t group;
 	mode_t mode;
 	off_t size;
-	time_t td;
+	time_t dt;
 	uid_t user;
 } Entry;
 
@@ -101,7 +106,7 @@ static void print_status(Cpair, const char *, ...);
 static void print_xstatus(char, int);
 static void print_error(char *);
 static void print_prompt(char *);
-static void print_info(void);
+static void print_info(char *);
 static void print_row(Pane *, size_t, Cpair);
 static void clear(int, int, int, uint16_t);
 static void clear_status(void);
@@ -113,13 +118,12 @@ static mode_t chech_execf(mode_t);
 static int sort_name(const void *const, const void *const);
 static void get_dirp(char *);
 static char *get_ext(char *);
-static int get_fdt(char *, size_t, time_t);
-static char *get_fgrp(gid_t, size_t);
-static char *get_finfo(Entry *);
+static int get_fdt(char *, time_t);
+static char *get_fgrp(gid_t);
 static char *get_fperm(mode_t);
 static char *get_fsize(off_t);
 static char *get_fullpath(char *, char *);
-static char *get_fusr(uid_t, size_t);
+static char *get_fusr(uid_t);
 static void get_dirsize(char *, off_t *);
 static void get_hicol(Cpair *, mode_t);
 static int delent(char *);
@@ -215,10 +219,10 @@ print_tb(const char *str, int x, int y, uint16_t fg, uint16_t bg)
 static void
 printf_tb(int x, int y, Cpair col, const char *fmt, ...)
 {
-	char buf[4096];
+	char buf[MAX_LINE];
 	va_list vl;
 	va_start(vl, fmt);
-	(void)vsnprintf(buf, sizeof(buf), fmt, vl);
+	(void)vsnprintf(buf, MAX_LINE, fmt, vl);
 	va_end(vl);
 	print_tb(buf, x, y, col.fg, col.bg);
 }
@@ -226,10 +230,10 @@ printf_tb(int x, int y, Cpair col, const char *fmt, ...)
 static void
 print_status(Cpair col, const char *fmt, ...)
 {
-	char buf[256];
+	char buf[MAX_STATUS];
 	va_list vl;
 	va_start(vl, fmt);
-	(void)vsnprintf(buf, sizeof(buf), fmt, vl);
+	(void)vsnprintf(buf, MAX_STATUS, fmt, vl);
 	va_end(vl);
 	clear_status();
 	print_tb(buf, 1, theight - 1, col.fg, col.bg);
@@ -256,12 +260,38 @@ print_prompt(char *prompt)
 }
 
 static void
-print_info(void)
+print_info(char *dirsize)
 {
-	char *fileinfo;
-	fileinfo = get_finfo(&cpane->direntr[cpane->hdir - 1]);
-	print_status(cstatus, "%d/%d %s", cpane->hdir, cpane->dirc, fileinfo);
-	free(fileinfo);
+	char *sz, *ur, *gr, *dt, *prm;
+
+	dt = ecalloc(MAX_DTF, sizeof(char));
+
+	prm = get_fperm(CURSOR.mode);
+	ur = get_fusr(CURSOR.user);
+	gr = get_fgrp(CURSOR.group);
+
+	if (get_fdt(dt, CURSOR.dt) < 0)
+		*dt = '\0';
+
+	if (S_ISREG(CURSOR.mode)) {
+		sz = get_fsize(CURSOR.size);
+	} else {
+		if (dirsize == NULL) {
+			sz = ecalloc(1, sizeof(char));
+			*sz = '\0';
+		} else {
+			sz = dirsize;
+		}
+	}
+
+	print_status(cstatus, "%02d/%02d %s %s:%s %s %s",
+		cpane->hdir, cpane->dirc, prm, ur, gr, dt, sz);
+
+	free(prm);
+	free(ur);
+	free(gr);
+	free(dt);
+	free(sz);
 }
 
 static void
@@ -439,75 +469,28 @@ get_ext(char *str)
 }
 
 static int
-get_fdt(char *result, size_t reslen, time_t status)
+get_fdt(char *result, time_t status)
 {
 	struct tm lt;
 	localtime_r(&status, &lt);
-	return strftime(result, reslen, dtfmt, &lt);
+	return strftime(result, MAX_DTF, dtfmt, &lt);
 }
 
 static char *
-get_fgrp(gid_t status, size_t len)
+get_fgrp(gid_t status)
 {
 	char *result;
 	struct group *gr;
 
-	result = ecalloc(len, sizeof(char));
+	result = ecalloc(MAX_GRPN, sizeof(char));
 	gr = getgrgid(status);
 	if (gr == NULL)
-		(void)snprintf(result, len - 1, "%u", status);
+		(void)snprintf(result, MAX_GRPN, "%u", status);
 	else
-		strncpy(result, gr->gr_name, len - 1);
+		strncpy(result, gr->gr_name, MAX_GRPN);
 
+	result[MAX_GRPN - 1] = '\0';
 	return result;
-}
-
-static char *
-get_finfo(Entry *cursor)
-{
-	char *sz, *rst, *ur, *gr, *td, *prm;
-	size_t szlen, prmlen, urlen, grlen, tdlen, rstlen;
-
-	szlen = 9;
-	prmlen = 11;
-	urlen = grlen = tdlen = 32;
-	rstlen = szlen + prmlen + urlen + grlen + tdlen;
-	rst = ecalloc(rstlen, sizeof(char));
-
-	if (show_perm == 1) {
-		prm = get_fperm(cursor->mode);
-		strncpy(rst, prm, prmlen);
-		strcat(rst, " ");
-		free(prm);
-	}
-
-	if (show_ug == 1) {
-		ur = get_fusr(cursor->user, urlen);
-		gr = get_fgrp(cursor->group, grlen);
-		strncat(rst, ur, urlen);
-		strcat(rst, ":");
-		strncat(rst, gr, grlen);
-		strcat(rst, " ");
-		free(ur);
-		free(gr);
-	}
-
-	if (show_dt == 1) {
-		td = ecalloc(tdlen, sizeof(char));
-		if (get_fdt(td, tdlen, cursor->td) > 0) {
-			strncat(rst, td, tdlen);
-			strcat(rst, " ");
-		}
-		free(td);
-	}
-
-	if (show_size == 1 && S_ISREG(cursor->mode)) {
-		sz = get_fsize(cursor->size);
-		strncat(rst, sz, szlen);
-		free(sz);
-	}
-
-	return rst;
 }
 
 static char *
@@ -603,18 +586,19 @@ get_fullpath(char *first, char *second)
 }
 
 static char *
-get_fusr(uid_t status, size_t len)
+get_fusr(uid_t status)
 {
 	char *result;
 	struct passwd *pw;
 
-	result = ecalloc(len, sizeof(char));
+	result = ecalloc(MAX_USRN, sizeof(char));
 	pw = getpwuid(status);
 	if (pw == NULL)
-		(void)snprintf(result, len - 1, "%u", status);
+		(void)snprintf(result, MAX_USRN, "%u", status);
 	else
-		strncpy(result, pw->pw_name, len - 1);
+		strncpy(result, pw->pw_name, MAX_USRN);
 
+	result[MAX_USRN - 1] = '\0';
 	return result;
 }
 
@@ -687,24 +671,19 @@ delent(char *fullpath)
 static void
 calcdir(void)
 {
-	if (!S_ISDIR(cpane->direntr[cpane->hdir - 1].mode))
+	if (!S_ISDIR(CURSOR.mode))
 		return;
 
 	off_t *fullsize;
 	char *csize;
-	char *result;
 
-	fullsize = ecalloc(50, sizeof(off_t));
-	get_dirsize(CURSOR_NAME, fullsize);
+	fullsize = ecalloc(1, sizeof(off_t));
+	get_dirsize(CURSOR.name, fullsize);
 	csize = get_fsize(*fullsize);
-	result = get_finfo(&cpane->direntr[cpane->hdir - 1]);
 
-	clear_status();
-	print_status(cstatus, "%d/%d %s%s",
-			cpane->hdir, cpane->dirc, result, csize);
-	free(csize);
+	CURSOR.size = *fullsize;
+	print_info(csize);
 	free(fullsize);
-	free(result);
 }
 
 static void
@@ -766,7 +745,7 @@ crnf(void)
 static void
 delfd(void)
 {
-	switch (delent(CURSOR_NAME)) {
+	switch (delent(CURSOR.name)) {
 	case -1:
 		print_error(strerror(errno));
 		break;
@@ -815,7 +794,7 @@ mvbtm(void)
 		cpane->hdir = cpane->dirc;
 		add_hi(cpane, cpane->hdir - 1);
 	}
-	print_info();
+	print_info(NULL);
 }
 
 static void
@@ -830,7 +809,7 @@ mvdwn(void)
 	} else {
 		mvdwns(); /* scroll */
 	}
-	print_info();
+	print_info(NULL);
 }
 
 static void
@@ -860,9 +839,9 @@ mvfwd(void)
 		return;
 	int s;
 
-	switch (check_dir(CURSOR_NAME)) {
+	switch (check_dir(CURSOR.name)) {
 	case 0:
-		strncpy(cpane->dirn, CURSOR_NAME, MAX_P);
+		strncpy(cpane->dirn, CURSOR.name, MAX_P);
 		cpane->parent_row = cpane->hdir;
 		cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 1;
@@ -872,7 +851,7 @@ mvfwd(void)
 		break;
 	case 1: /* not a directory open file */
 		tb_shutdown();
-		s = opnf(CURSOR_NAME);
+		s = opnf(CURSOR.name);
 		if (tb_init() != 0)
 			die("tb_init");
 		t_resize();
@@ -895,7 +874,7 @@ mvmid(void)
 	else
 		cpane->hdir = (scrheight / 2) + cpane->firstrow;
 	add_hi(cpane, cpane->hdir - 1);
-	print_info();
+	print_info(NULL);
 }
 
 static void
@@ -913,7 +892,7 @@ mvtop(void)
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = 1;
 		add_hi(cpane, cpane->hdir - 1);
-		print_info();
+		print_info(NULL);
 	}
 }
 
@@ -929,7 +908,7 @@ mvup(void)
 	} else {
 		mvups(); /* scroll */
 	}
-	print_info();
+	print_info(NULL);
 }
 
 static void
@@ -967,7 +946,7 @@ scrdwn(void)
 	} else {
 		scrdwns();
 	}
-	print_info();
+	print_info(NULL);
 }
 
 static void
@@ -1006,7 +985,7 @@ scrup(void)
 			rm_hi(cpane, cpane->hdir - 1);
 			cpane->hdir = cpane->hdir - scrmv;
 			add_hi(cpane, cpane->hdir - 1);
-			print_info();
+			print_info(NULL);
 		} else {
 			mvtop();
 		}
@@ -1543,7 +1522,7 @@ rname(void)
 
 	input_name = ecalloc(MAX_N, sizeof(char));
 
-	if (get_usrinput(input_name, MAX_N, "rename: %s", basename(CURSOR_NAME)) < 0) {
+	if (get_usrinput(input_name, MAX_N, "rename: %s", basename(CURSOR.name)) < 0) {
 		free(input_name);
 		return;
 	}
@@ -1554,7 +1533,7 @@ rname(void)
 		return;
 	}
 
-	char *rename_cmd[] = { "mv", CURSOR_NAME, new_name, NULL };
+	char *rename_cmd[] = { "mv", CURSOR.name, new_name, NULL };
 	if (spawn(rename_cmd, NULL) < 0)
 		print_error(strerror(errno));
 
@@ -1564,7 +1543,7 @@ rname(void)
 static void
 yank(void)
 {
-	strncpy(yank_file, CURSOR_NAME, MAX_P);
+	strncpy(yank_file, CURSOR.name, MAX_P);
 	print_status(cprompt, "1 file is yanked", selection_size);
 
 }
@@ -1580,7 +1559,7 @@ switch_pane(void)
 		cpane = &pane_l;
 	if (cpane->dirc > 0) {
 		add_hi(cpane, cpane->hdir - 1);
-		print_info();
+		print_info(NULL);
 	} else {
 		clear_status();
 	}
@@ -1696,7 +1675,7 @@ refresh_pane(void)
 	}
 
 	if (cpane->dirc > 0)
-		print_info();
+		print_info(NULL);
 	else
 		clear_status();
 
@@ -1721,7 +1700,7 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 		cpane->direntr[i].mode = status.st_mode;	\
 		cpane->direntr[i].group = status.st_gid;	\
 		cpane->direntr[i].user = status.st_uid;		\
-		cpane->direntr[i].td = status.st_mtime;		\
+		cpane->direntr[i].dt = status.st_mtime;		\
 	}i++;free(tmpfull);
 
 	i = 0;

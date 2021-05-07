@@ -97,6 +97,7 @@ static Key vkeys[] = {
 static const size_t nkeyslen = LEN(nkeys);
 static const size_t vkeyslen = LEN(vkeys);
 
+/* permissions */
 static const mode_t ndir_perm = S_IRWXU;
 static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
 
@@ -105,10 +106,6 @@ static const int scrmv = 10; /* ctrl+u, ctrl+d movement */
 static const int scrsp = 3;  /* space before scroll */
 
 /* statusbar */
-static const int show_ug   = 1;
-static const int show_perm = 1;
-static const int show_dt   = 1;
-static const int show_size = 1;
 static const char dtfmt[] = "%F %R"; /* date time format */
 
 /* unicode chars */
