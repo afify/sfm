@@ -653,6 +653,7 @@ get_hicol(Cpair *col, mode_t mode)
 static int
 delent(char *fullpath)
 {
+	int spawn_status = -1;
 	char *inp_conf;
 	int conf_len = 4;
 	char conf[] = "yes";
@@ -665,7 +666,11 @@ delent(char *fullpath)
 	}
 	free(inp_conf);
 
-	return spawn(rm_cmd, fullpath);
+	spawn_status = spawn(rm_cmd, fullpath);
+	if (listdir(AddHi) < 0)
+		print_error(strerror(errno));
+	mvtop();
+	return spawn_status;
 }
 
 static void
@@ -1454,6 +1459,9 @@ seldel(void)
 	}
 
 	cpane->hdir = cpane->dirc - selection_size;
+	if (listdir(AddHi) < 0)
+		print_error(strerror(errno));
+	mvtop();
 	print_status(cprompt, "%zu files are deleted", selection_size);
 	free_files();
 	cont_vmode = -1;
@@ -1468,11 +1476,14 @@ paste(void)
 		if (spawn(cp_cmd, cpane->dirn) != 0)
 			print_error("coping failed");
 		else
+			if (listdir(AddHi) < 0)
+				print_error(strerror(errno));
 			print_status(cprompt, "file copied");
 		yank_file[0] = '\0'; /* set yank_file len 0 */
 		return;
 	}
 
+	t_resize();
 	print_error("nothing to paste");
 
 	if (selected_files == NULL)
@@ -1482,6 +1493,9 @@ paste(void)
 		char *selcp_cmd[] = { "cp", "-r", selected_files[i], cpane->dirn, NULL };
 		spawn(selcp_cmd,NULL);
 	}
+
+	if (listdir(AddHi) < 0)
+		print_error(strerror(errno));
 	print_status(cprompt, "%zu files are copied", selection_size);
 	free_files();
 }
@@ -1496,6 +1510,8 @@ selmv(void)
 		if (spawn(mv_cmd, cpane->dirn) != 0)
 			print_error("moving failed");
 		else
+			if (listdir(AddHi) < 0)
+				print_error(strerror(errno));
 			print_status(cprompt, "file moved");
 		yank_file[0] = '\0'; /* set yank_file len 0 */
 		return;
@@ -1510,6 +1526,8 @@ selmv(void)
 		char *selmv_cmd[] = { "mv", selected_files[i], cpane->dirn, NULL };
 		spawn(selmv_cmd,NULL);
 	}
+	if (listdir(AddHi) < 0)
+		print_error(strerror(errno));
 	print_status(cprompt, "%zu files are moved", selection_size);
 	free_files();
 }
