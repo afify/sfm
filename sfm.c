@@ -2,6 +2,8 @@
 
 #if defined(__linux__)
 #define _GNU_SOURCE
+#elif defined(__APPLE__)
+#define _DARWIN_C_SOURCE
 #endif
 #include <sys/types.h>
 #include <sys/resource.h>
