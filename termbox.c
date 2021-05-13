@@ -1,3 +1,8 @@
+#if defined (__linux__)
+#define _GNU_SOURCE
+#elif defined (__APPLE__)
+#define _DARWIN_C_SOURCE
+#endif
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
