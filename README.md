@@ -9,8 +9,22 @@
 
 Description
 ------------
-sfm is a simple file manager for unix-like systems based on [termbox](https://github.com/nsf/termbox).
-dual pane, bottom statusbar, bookmarks, open files by extention, vim-like key bindings as default configuration. cwd is left pane dir. No dependencies, static linking, c99.
+sfm is a simple file manager for unix-like systems.
+
+* Use pthread to read events, no timers.
+* BSD kqueue(2) - kernel event notification mechanism.
+* Linux inotify(7) - monitoring filesystem events.
+* dual pane.
+* bookmarks.
+* open files by extension.
+* bottom statusbar.
+* vim-like key bindings.
+* filter.
+* no dependencies.
+* c99 static linking.
+* based on [termbox](https://github.com/nsf/termbox).
+* Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
+* Follows the suckless [philosophy](https://suckless.org/philosophy/).
 
 Performance
 ------------
@@ -25,9 +39,6 @@ $ perf stat -r 100 $filemanager
 | `lf`        | `18,874,802`  | `33,281,073`  |
 | `vifm`      | `38,792,656`  | `93,301,255`  |
 | `ranger`    | `536,225,530` | `956,977,175` |
-
-* Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
-* Follows the suckless [philosophy](https://suckless.org/philosophy/) and [code style](https://suckless.org/coding_style/).
 
 <img src="https://github.com/afify/afify.github.io/raw/main/img/sfm_sc.png" alt="drawing" width="800"/>
 
@@ -100,4 +111,4 @@ $ sfm
 Configuration
 -------------
 The configuration of sfm is done by creating a custom config.h
-and (re)compiling the source code.
+and (re)compiling the source code. This keeps it fast, secure and simple.
