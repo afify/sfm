@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <pthread.h>
 #include <pwd.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -175,6 +176,7 @@ static void rname(void);
 static void switch_pane(void);
 static void quit(void);
 static void grabkeys(struct tb_event*, Key*, size_t);
+static void *read_th(void *arg);
 static void start_ev(void);
 static void refresh_pane(void);
 static void set_direntr(struct dirent *, DIR *, char *);
@@ -185,6 +187,7 @@ static void draw_frame(void);
 static void start(void);
 
 /* global variables */
+static pthread_t fsev_thread;
 static Pane pane_r, pane_l, *cpane;
 static char *editor[2];
 static char fed[] = "vi";
@@ -195,12 +198,15 @@ static int *selection;
 static int cont_vmode = 0;
 static char **selected_files;
 #if defined _SYS_INOTIFY_H
+#define READEVSZ 16
+#define OFF_T "%ld"
 static int inotify_fd;
 #elif defined _SYS_EVENT_H_
+#define READEVSZ 0
+#define OFF_T "%lld"
 static int kq;
 struct kevent evlist[2];    /* events we want to monitor */
 struct kevent chlist[2];    /* events that were triggered */
-static struct timespec gtimeout;
 #endif
 
 /* configuration, allows nested code to access above variables */
@@ -566,7 +572,7 @@ get_fsize(off_t size)
 		unit =  '?';
 	}
 
-	if (snprintf(result, result_len, "%ld%c", size, unit) < 0)
+	if (snprintf(result, result_len, OFF_T"%c", size, unit) < 0)
 		strncat(result, "???", result_len);
 
 	return result;
@@ -1166,7 +1172,7 @@ static int
 fsev_init(void)
 {
 #if defined _SYS_INOTIFY_H
-	inotify_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+	inotify_fd = inotify_init();
 	if (inotify_fd < 0)
 		return -1;
 #elif defined _SYS_EVENT_H_
@@ -1225,7 +1231,7 @@ read_events(void)
 		p += sizeof(struct inotify_event) + event->len;
 	}
 #elif defined _SYS_EVENT_H_
-	return kevent(kq, evlist, 2, chlist, 2, &gtimeout);
+	return kevent(kq, evlist, 2, chlist, 2, NULL);
 #endif
 	return -1;
 }
@@ -1245,6 +1251,10 @@ rmwatch(Pane *pane)
 static void
 fsev_shdn(void)
 {
+	pthread_cancel(fsev_thread);
+#ifndef __APPLE__
+	pthread_join(fsev_thread, NULL);
+#endif
 	rmwatch(&pane_l);
 	rmwatch(&pane_r);
 #if defined _SYS_INOTIFY_H
@@ -1615,43 +1625,55 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 		print_error(strerror(errno));
 }
 
+void *
+read_th(void *arg)
+{
+	int i;
+	while(1){
+
+		i = read_events();
+
+		if (i > READEVSZ) {
+			listdir(AddHi);
+			if (cpane == &pane_l) {
+				cpane = &pane_r;
+				if (listdir(NoHi) < 0)
+					print_error(strerror(errno));
+				cpane = &pane_l;
+				if (listdir(AddHi) < 0)
+					print_error(strerror(errno));
+			} else if (cpane == &pane_r) {
+				cpane = &pane_l;
+				if (listdir(NoHi) < 0)
+					print_error(strerror(errno));
+				cpane = &pane_r;
+				if (listdir(AddHi) < 0)
+					print_error(strerror(errno));
+			}
+		}
+		tb_present();
+	}
+	return arg;
+}
+
 static void
 start_ev(void)
 {
 	struct tb_event ev;
 
-	for (;;) {
-		int t = tb_peek_event(&ev, 2000);
-		if (t < 0) {
-			tb_shutdown();
-			return;
-		}
 
-		if (t == 1) /* keyboard event */
+	while (tb_poll_event(&ev) != 0) {
+		switch (ev.type) {
+		case TB_EVENT_KEY:
 			grabkeys(&ev, nkeys, nkeyslen);
-		else if (t == 2) /* resize event */
+			tb_present();
+			break;
+		case TB_EVENT_RESIZE:
 			t_resize();
-		else if (t == 0) /* filesystem event */
-			if (read_events() > 0) { /* TODO need refactoring */
-				if (cpane == &pane_l) {
-					cpane = &pane_r;
-					if (listdir(NoHi) < 0)
-						print_error(strerror(errno));
-					cpane = &pane_l;
-					if (listdir(AddHi) < 0)
-						print_error(strerror(errno));
-				} else if (cpane == &pane_r) {
-					cpane = &pane_l;
-					if (listdir(NoHi) < 0)
-						print_error(strerror(errno));
-					cpane = &pane_r;
-					if (listdir(AddHi) < 0)
-						print_error(strerror(errno));
-				}
-			}
-
-		tb_present();
-		continue;
+			break;
+		default:
+			break;
+		}
 	}
 	tb_shutdown();
 }
@@ -1692,7 +1714,6 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 	int i;
 	char *tmpfull;
 	struct stat status;
-
 
 #define ADD_ENTRY						\
 	tmpfull = get_fullpath(cpane->dirn, entry->d_name);	\
@@ -1924,6 +1945,8 @@ start(void)
 	if (listdir(AddHi) < 0)
 		print_error(strerror(errno));
 	tb_present();
+
+	pthread_create(&fsev_thread, NULL, read_th, NULL);
 	start_ev();
 }
 
