@@ -12,8 +12,8 @@
 #include <sys/wait.h>
 #if defined(__linux__)
 #include <sys/inotify.h>
-#elif defined(__FreeBSD__) || defined(__NetBSD__) ||\
-      defined(__OpenBSD__) || defined(__APPLE__)
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
+	defined(__APPLE__)
 #include <sys/event.h>
 #endif
 
@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <libgen.h>
 #include <pthread.h>
 #include <pwd.h>
 #include <stdarg.h>
@@ -30,7 +31,6 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <libgen.h>
 
 #include "termbox.h"
 #include "util.h"
@@ -147,7 +147,7 @@ static void scrdwn(void);
 static void scrdwns(void);
 static void scrup(void);
 static void scrups(void);
-static int get_usrinput(char*, size_t, const char*, ...);
+static int get_usrinput(char *, size_t, const char *, ...);
 static int frules(char *);
 static int spawn(const void *, char *);
 static int opnf(char *);
@@ -175,7 +175,7 @@ static void yank(void);
 static void rname(void);
 static void switch_pane(void);
 static void quit(void);
-static void grabkeys(struct tb_event*, Key*, size_t);
+static void grabkeys(struct tb_event *, Key *, size_t);
 static void *read_th(void *arg);
 static void start_ev(void);
 static void refresh_pane(void);
@@ -205,8 +205,8 @@ static int inotify_fd;
 #define READEVSZ 0
 #define OFF_T "%lld"
 static int kq;
-struct kevent evlist[2];    /* events we want to monitor */
-struct kevent chlist[2];    /* events that were triggered */
+struct kevent evlist[2]; /* events we want to monitor */
+struct kevent chlist[2]; /* events that were triggered */
 #endif
 
 /* configuration, allows nested code to access above variables */
@@ -292,8 +292,8 @@ print_info(char *dirsize)
 		}
 	}
 
-	print_status(cstatus, "%02d/%02d %s %s:%s %s %s",
-		cpane->hdir, cpane->dirc, prm, ur, gr, dt, sz);
+	print_status(cstatus, "%02d/%02d %s %s:%s %s %s", cpane->hdir,
+		cpane->dirc, prm, ur, gr, dt, sz);
 
 	free(prm);
 	free(ur);
@@ -318,8 +318,8 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 
 	if (S_ISLNK(pane->direntr[entpos].mode) != 0) {
 		if (realpath(pane->direntr[entpos].name, buf) != NULL) {
-			(void)snprintf(lnk_full, MAX_N,
-				"%s -> %s", result, buf);
+			(void)snprintf(
+				lnk_full, MAX_N, "%s -> %s", result, buf);
 			result = lnk_full;
 		}
 	}
@@ -331,7 +331,7 @@ static void
 clear(int sx, int ex, int y, uint16_t bg)
 {
 	/* clear line from to */
-	/* x = line number  vertical */
+	/* x = line number vertical */
 	/* y = column number horizontal */
 	int i;
 	for (i = sx; i < ex; i++) {
@@ -448,7 +448,7 @@ get_dirp(char *cdir)
 			counter++;
 	}
 
-	cdir[len-counter-1] = '\0';
+	cdir[len - counter - 1] = '\0';
 }
 
 static char *
@@ -569,10 +569,10 @@ get_fsize(off_t size)
 		unit = 'T';
 		break;
 	default:
-		unit =  '?';
+		unit = '?';
 	}
 
-	if (snprintf(result, result_len, OFF_T"%c", size, unit) < 0)
+	if (snprintf(result, result_len, OFF_T "%c", size, unit) < 0)
 		strncat(result, "???", result_len);
 
 	return result;
@@ -626,7 +626,7 @@ get_dirsize(char *fullpath, off_t *fullsize)
 
 	while ((entry = readdir(dir)) != 0) {
 		if ((strncmp(entry->d_name, ".", 2) == 0 ||
-		     strncmp(entry->d_name, "..", 3) == 0))
+			    strncmp(entry->d_name, "..", 3) == 0))
 			continue;
 
 		ent_full = get_fullpath(fullpath, entry->d_name);
@@ -667,7 +667,7 @@ delent(char *fullpath)
 
 	inp_conf = ecalloc(conf_len, sizeof(char));
 	if ((get_usrinput(inp_conf, conf_len, "delete file (yes) ?") < 0) ||
-	    (strncmp(inp_conf, conf, conf_len) != 0)) {
+		(strncmp(inp_conf, conf, conf_len) != 0)) {
 		free(inp_conf);
 		return 1; /* canceled by user or wrong inp_conf */
 	}
@@ -742,9 +742,8 @@ crnf(void)
 
 	if (rf < 0)
 		print_error(strerror(errno));
-	else
-		if (close(rf) < 0)
-			print_error(strerror(errno));
+	else if (close(rf) < 0)
+		print_error(strerror(errno));
 
 	free(user_input);
 	free(path);
@@ -966,7 +965,7 @@ scrdwns(void)
 	dynmv = MIN(cpane->dirc - cpane->hdir - cpane->firstrow, scrmv);
 
 	if (real + scrmv + 1 > scrheight &&
-	    cpane->hdir + scrsp + scrmv < cpane->dirc) { /* scroll */
+		cpane->hdir + scrsp + scrmv < cpane->dirc) { /* scroll */
 		cpane->firstrow += dynmv;
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir += scrmv;
@@ -1046,9 +1045,9 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 	va_start(vl, fmt);
 	name_size = vsnprintf(buf, sizeof(buf), fmt, vl);
 	va_end(vl);
-	print_tb(buf, 1, height-1, col.fg, col.bg);
+	print_tb(buf, 1, height - 1, col.fg, col.bg);
 	startat = name_size + 1;
-	tb_set_cursor((int)(startat + 1), height-1);
+	tb_set_cursor((int)(startat + 1), height - 1);
 	tb_present();
 
 	while (tb_poll_event(&fev) != 0) {
@@ -1061,14 +1060,14 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 			}
 
 			if (fev.key == TB_KEY_BACKSPACE ||
-			    fev.key == TB_KEY_BACKSPACE2) {
+				fev.key == TB_KEY_BACKSPACE2) {
 				if (BETWEEN(counter, 2, sout)) {
 					out[x - 1] = '\0';
 					counter--;
 					x--;
 					print_xstatus(empty, startat + counter);
-					tb_set_cursor(startat + counter,
-						      theight - 1);
+					tb_set_cursor(
+						startat + counter, theight - 1);
 				}
 
 			} else if (fev.key == TB_KEY_ENTER) {
@@ -1079,10 +1078,10 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 			} else {
 				if (counter < sout) {
 					print_xstatus((char)fev.ch,
-						      (startat + counter));
+						(startat + counter));
 					out[x] = (char)fev.ch;
 					tb_set_cursor((startat + counter + 1),
-						      theight - 1);
+						theight - 1);
 					counter++;
 					x++;
 				}
@@ -1125,7 +1124,7 @@ spawn(const void *v, char *fn)
 		argc++;
 
 	char *argv[argc + 2];
-	for ( x = 0; x < argc; x++)
+	for (x = 0; x < argc; x++)
 		argv[x] = ((char **)v)[x];
 
 	argv[argc] = fn;
@@ -1136,7 +1135,7 @@ spawn(const void *v, char *fn)
 	case -1:
 		return -1;
 	case 0:
-		fd = open("/dev/null",O_WRONLY);
+		fd = open("/dev/null", O_WRONLY);
 		dup2(fd, STDERR_FILENO);
 		execvp(argv[0], argv);
 		exit(EXIT_SUCCESS);
@@ -1188,16 +1187,17 @@ addwatch(void)
 {
 #if defined _SYS_INOTIFY_H
 	return cpane->inotify_wd = inotify_add_watch(inotify_fd, cpane->dirn,
-		IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
-		IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
+		       IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
+			       IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
 #elif defined _SYS_EVENT_H_
 	cpane->event_fd = open(cpane->dirn, O_RDONLY);
 	if (cpane->event_fd < 0)
 		return cpane->event_fd;
-	EV_SET(&evlist[cpane->pane_id], cpane->event_fd,
-		EVFILT_VNODE, EV_ADD | EV_CLEAR,
-		NOTE_DELETE | NOTE_EXTEND | NOTE_LINK |
-		NOTE_RENAME | NOTE_REVOKE | NOTE_WRITE, 0, NULL);
+	EV_SET(&evlist[cpane->pane_id], cpane->event_fd, EVFILT_VNODE,
+		EV_ADD | EV_CLEAR,
+		NOTE_DELETE | NOTE_EXTEND | NOTE_LINK | NOTE_RENAME |
+			NOTE_REVOKE | NOTE_WRITE,
+		0, NULL);
 	return 0;
 #endif
 }
@@ -1211,7 +1211,7 @@ read_events(void)
 	struct inotify_event *event;
 	const size_t events = 32;
 	const size_t evbuflen =
-	    events * (sizeof(struct inotify_event) + MAX_N + 1);
+		events * (sizeof(struct inotify_event) + MAX_N + 1);
 	char buf[evbuflen];
 
 	if (cpane->inotify_wd < 0)
@@ -1346,7 +1346,8 @@ selup(void)
 	} else if (index < cpane->dirc) {
 		selection[index + 1] = 0;
 	}
-	if (cpane->dirc >= scrheight || cpane->hdir <= 1) { /* rehighlight all if scrolling */
+	if (cpane->dirc >= scrheight ||
+		cpane->hdir <= 1) { /* rehighlight all if scrolling */
 		selref();
 	}
 }
@@ -1364,7 +1365,8 @@ seldwn(void)
 	} else {
 		selection[index + 1] = 0;
 	}
-	if (cpane->dirc >= scrheight || cpane->hdir >= cpane->dirc) { /* rehighlight all if scrolling */
+	if (cpane->dirc >= scrheight ||
+		cpane->hdir >= cpane->dirc) { /* rehighlight all if scrolling */
 		selref();
 	}
 }
@@ -1384,7 +1386,9 @@ selref(void)
 {
 	int i;
 	for (i = 0; i < cpane->dirc; i++) {
-		if (selection[i] < (scrheight + cpane->firstrow) && selection[i] > cpane->firstrow) { /* checks if in the frame of the directories */
+		if (selection[i] < (scrheight + cpane->firstrow) &&
+			selection[i] >
+				cpane->firstrow) { /* checks if in the frame of the directories */
 			add_hi(cpane, selection[i] - 1);
 		}
 	}
@@ -1426,11 +1430,13 @@ init_files(void)
 	free_files();
 
 	selcalc();
-	selected_files = ecalloc(selection_size, sizeof(char*));
+	selected_files = ecalloc(selection_size, sizeof(char *));
 
 	for (i = 0; i < selection_size; i++) {
 		selected_files[i] = ecalloc(MAX_P, sizeof(char));
-		strncpy(selected_files[i], cpane->direntr[selection[i] -1].name, MAX_P); /* TODO use pointer */
+		strncpy(selected_files[i],
+			cpane->direntr[selection[i] - 1].name,
+			MAX_P); /* TODO use pointer */
 	}
 }
 
@@ -1439,7 +1445,7 @@ selynk(void)
 {
 	init_files();
 	refresh_pane();
-	add_hi(cpane, cpane->hdir -1);
+	add_hi(cpane, cpane->hdir - 1);
 	print_status(cprompt, "%zu files are yanked", selection_size);
 	cont_vmode = -1;
 }
@@ -1454,7 +1460,7 @@ seldel(void)
 
 	inp_conf = ecalloc(conf_len, sizeof(char));
 	if ((get_usrinput(inp_conf, conf_len, "delete file (yes) ?") < 0) ||
-	    (strncmp(inp_conf, conf, conf_len) != 0)) {
+		(strncmp(inp_conf, conf, conf_len) != 0)) {
 		free(inp_conf);
 		return; /* canceled by user or wrong inp_conf */
 	}
@@ -1491,8 +1497,9 @@ paste(void)
 		return;
 
 	for (i = 0; i < selection_size; i++) {
-		char *selcp_cmd[] = { "cp", "-r", selected_files[i], cpane->dirn, NULL };
-		spawn(selcp_cmd,NULL);
+		char *selcp_cmd[] = { "cp", "-r", selected_files[i],
+			cpane->dirn, NULL };
+		spawn(selcp_cmd, NULL);
 	}
 	print_status(cprompt, "%zu files are copied", selection_size);
 	free_files();
@@ -1519,8 +1526,9 @@ selmv(void)
 		return;
 
 	for (i = 0; i < selection_size; i++) {
-		char *selmv_cmd[] = { "mv", selected_files[i], cpane->dirn, NULL };
-		spawn(selmv_cmd,NULL);
+		char *selmv_cmd[] = { "mv", selected_files[i], cpane->dirn,
+			NULL };
+		spawn(selmv_cmd, NULL);
 	}
 	print_status(cprompt, "%zu files are moved", selection_size);
 	free_files();
@@ -1534,7 +1542,8 @@ rname(void)
 
 	input_name = ecalloc(MAX_N, sizeof(char));
 
-	if (get_usrinput(input_name, MAX_N, "rename: %s", basename(CURSOR.name)) < 0) {
+	if (get_usrinput(input_name, MAX_N, "rename: %s",
+		    basename(CURSOR.name)) < 0) {
 		free(input_name);
 		return;
 	}
@@ -1557,7 +1566,6 @@ yank(void)
 {
 	strncpy(yank_file, CURSOR.name, MAX_P);
 	print_status(cprompt, "1 file is yanked", selection_size);
-
 }
 
 static void
@@ -1629,7 +1637,7 @@ void *
 read_th(void *arg)
 {
 	int i;
-	while(1){
+	while (1) {
 
 		i = read_events();
 
@@ -1660,7 +1668,6 @@ static void
 start_ev(void)
 {
 	struct tb_event ev;
-
 
 	while (tb_poll_event(&ev) != 0) {
 		switch (ev.type) {
@@ -1715,22 +1722,24 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 	char *tmpfull;
 	struct stat status;
 
-#define ADD_ENTRY						\
-	tmpfull = get_fullpath(cpane->dirn, entry->d_name);	\
-	strncpy(cpane->direntr[i].name, tmpfull, MAX_N);	\
-	if (lstat(tmpfull, &status) == 0) {			\
-		cpane->direntr[i].size = status.st_size;	\
-		cpane->direntr[i].mode = status.st_mode;	\
-		cpane->direntr[i].group = status.st_gid;	\
-		cpane->direntr[i].user = status.st_uid;		\
-		cpane->direntr[i].dt = status.st_mtime;		\
-	}i++;free(tmpfull);
+#define ADD_ENTRY                                           \
+	tmpfull = get_fullpath(cpane->dirn, entry->d_name); \
+	strncpy(cpane->direntr[i].name, tmpfull, MAX_N);    \
+	if (lstat(tmpfull, &status) == 0) {                 \
+		cpane->direntr[i].size = status.st_size;    \
+		cpane->direntr[i].mode = status.st_mode;    \
+		cpane->direntr[i].group = status.st_gid;    \
+		cpane->direntr[i].user = status.st_uid;     \
+		cpane->direntr[i].dt = status.st_mtime;     \
+	}                                                   \
+	i++;                                                \
+	free(tmpfull);
 
 	i = 0;
 	cpane->direntr = erealloc(cpane->direntr, cpane->dirc * sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
 		if ((strncmp(entry->d_name, ".", 2) == 0 ||
-		     strncmp(entry->d_name, "..", 3) == 0))
+			    strncmp(entry->d_name, "..", 3) == 0))
 			continue;
 
 		if (filter == NULL) {
@@ -1740,7 +1749,6 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 				ADD_ENTRY
 			}
 		}
-
 	}
 
 	cpane->dirc = i;
@@ -1906,10 +1914,10 @@ draw_frame(void)
 	/* 4 vertical lines */
 	for (i = 1; i < theight - 1; ++i) {
 		tb_change_cell(0, i, u_vl, cframe.fg, cframe.bg);
-		tb_change_cell((twidth - 1) / 2, i - 1, u_vl, cframe.fg,
-			       cframe.bg);
+		tb_change_cell(
+			(twidth - 1) / 2, i - 1, u_vl, cframe.fg, cframe.bg);
 		tb_change_cell(((twidth - 1) / 2) + 1, i - 1, u_vl, cframe.fg,
-			       cframe.bg);
+			cframe.bg);
 		tb_change_cell(twidth - 1, i, u_vl, cframe.fg, cframe.bg);
 	}
 
@@ -1921,7 +1929,8 @@ draw_frame(void)
 
 	/* 2 middel top and bottom */
 	tb_change_cell((twidth - 1) / 2, 0, u_mn, cframe.fg, cframe.bg);
-	tb_change_cell((twidth - 1) / 2, theight - 2, u_ms, cframe.fg, cframe.bg);
+	tb_change_cell(
+		(twidth - 1) / 2, theight - 2, u_ms, cframe.fg, cframe.bg);
 }
 
 static void
@@ -1955,7 +1964,7 @@ main(int argc, char *argv[])
 {
 #ifdef __OpenBSD__
 	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath",
-		   NULL) == -1)
+		    NULL) == -1)
 		die("pledge");
 #endif /* __OpenBSD__ */
 	if (argc == 1)
