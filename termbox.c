@@ -1,27 +1,28 @@
-#if defined (__linux__)
+#if defined(__linux__)
 #define _GNU_SOURCE
-#elif defined (__APPLE__)
+#elif defined(__APPLE__)
 #define _DARWIN_C_SOURCE
 #elif defined(__FreeBSD__)
 #define __BSD_VISIBLE 1
 #endif
+#include "termbox.h"
+
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+
 #include <assert.h>
-#include <stdlib.h>
-#include <string.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <stdio.h>
 #include <stdbool.h>
-#include <sys/select.h>
-#include <sys/ioctl.h>
-#include <sys/time.h>
-#include <sys/stat.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <termios.h>
 #include <unistd.h>
 #include <wchar.h>
-
-#include "termbox.h"
 
 static int inputmode = TB_INPUT_ESC;
 
@@ -33,7 +34,9 @@ struct bytebuffer {
 	int cap;
 };
 
-static void bytebuffer_reserve(struct bytebuffer *b, int cap) {
+static void
+bytebuffer_reserve(struct bytebuffer *b, int cap)
+{
 	if (b->cap >= cap) {
 		return;
 	}
@@ -48,7 +51,9 @@ static void bytebuffer_reserve(struct bytebuffer *b, int cap) {
 	b->cap = cap;
 }
 
-static void bytebuffer_init(struct bytebuffer *b, int cap) {
+static void
+bytebuffer_init(struct bytebuffer *b, int cap)
+{
 	b->cap = 0;
 	b->len = 0;
 	b->buf = 0;
@@ -59,42 +64,56 @@ static void bytebuffer_init(struct bytebuffer *b, int cap) {
 	}
 }
 
-static void bytebuffer_free(struct bytebuffer *b) {
+static void
+bytebuffer_free(struct bytebuffer *b)
+{
 	if (b->buf)
 		free(b->buf);
 }
 
-static void bytebuffer_clear(struct bytebuffer *b) {
+static void
+bytebuffer_clear(struct bytebuffer *b)
+{
 	b->len = 0;
 }
 
-static void bytebuffer_append(struct bytebuffer *b, const char *data, int len) {
+static void
+bytebuffer_append(struct bytebuffer *b, const char *data, int len)
+{
 	bytebuffer_reserve(b, b->len + len);
 	memcpy(b->buf + b->len, data, len);
 	b->len += len;
 }
 
-static void bytebuffer_puts(struct bytebuffer *b, const char *str) {
+static void
+bytebuffer_puts(struct bytebuffer *b, const char *str)
+{
 	bytebuffer_append(b, str, strlen(str));
 }
 
-static void bytebuffer_resize(struct bytebuffer *b, int len) {
+static void
+bytebuffer_resize(struct bytebuffer *b, int len)
+{
 	bytebuffer_reserve(b, len);
 	b->len = len;
 }
 
-static void bytebuffer_flush(struct bytebuffer *b, int fd) {
+static void
+bytebuffer_flush(struct bytebuffer *b, int fd)
+{
 	(void)write(fd, b->buf, b->len);
 	bytebuffer_clear(b);
 }
 
-static void bytebuffer_truncate(struct bytebuffer *b, int n) {
+static void
+bytebuffer_truncate(struct bytebuffer *b, int n)
+{
 	if (n <= 0)
 		return;
 	if (n > b->len)
 		n = b->len;
 	const int nmove = b->len - n;
-	memmove(b->buf, b->buf+n, nmove);
+	memmove(b->buf, b->buf + n, nmove);
 	b->len -= n;
 }
 
@@ -123,51 +142,138 @@ enum {
 #define EUNSUPPORTED_TERM -1
 
 // rxvt-256color
-static const char *rxvt_256color_keys[] = {
-	"\033[11~","\033[12~","\033[13~","\033[14~","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[7~","\033[8~","\033[5~","\033[6~","\033[A","\033[B","\033[D","\033[C", 0
-};
+static const char *rxvt_256color_keys[] = { "\033[11~", "\033[12~", "\033[13~",
+	"\033[14~", "\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~",
+	"\033[21~", "\033[23~", "\033[24~", "\033[2~", "\033[3~", "\033[7~",
+	"\033[8~", "\033[5~", "\033[6~", "\033[A", "\033[B", "\033[D", "\033[C",
+	0 };
 static const char *rxvt_256color_funcs[] = {
-	"\0337\033[?47h", "\033[2J\033[?47l\0338", "\033[?25h", "\033[?25l", "\033[H\033[2J", "\033[m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "\033=", "\033>", ENTER_MOUSE_SEQ, EXIT_MOUSE_SEQ,
+	"\0337\033[?47h",
+	"\033[2J\033[?47l\0338",
+	"\033[?25h",
+	"\033[?25l",
+	"\033[H\033[2J",
+	"\033[m",
+	"\033[4m",
+	"\033[1m",
+	"\033[5m",
+	"\033[7m",
+	"\033=",
+	"\033>",
+	ENTER_MOUSE_SEQ,
+	EXIT_MOUSE_SEQ,
 };
 
 // Eterm
-static const char *eterm_keys[] = {
-	"\033[11~","\033[12~","\033[13~","\033[14~","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[7~","\033[8~","\033[5~","\033[6~","\033[A","\033[B","\033[D","\033[C", 0
-};
+static const char *eterm_keys[] = { "\033[11~", "\033[12~", "\033[13~",
+	"\033[14~", "\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~",
+	"\033[21~", "\033[23~", "\033[24~", "\033[2~", "\033[3~", "\033[7~",
+	"\033[8~", "\033[5~", "\033[6~", "\033[A", "\033[B", "\033[D", "\033[C",
+	0 };
 static const char *eterm_funcs[] = {
-	"\0337\033[?47h", "\033[2J\033[?47l\0338", "\033[?25h", "\033[?25l", "\033[H\033[2J", "\033[m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "", "", "", "",
+	"\0337\033[?47h",
+	"\033[2J\033[?47l\0338",
+	"\033[?25h",
+	"\033[?25l",
+	"\033[H\033[2J",
+	"\033[m",
+	"\033[4m",
+	"\033[1m",
+	"\033[5m",
+	"\033[7m",
+	"",
+	"",
+	"",
+	"",
 };
 
 // screen
-static const char *screen_keys[] = {
-	"\033OP","\033OQ","\033OR","\033OS","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[1~","\033[4~","\033[5~","\033[6~","\033OA","\033OB","\033OD","\033OC", 0
-};
+static const char *screen_keys[] = { "\033OP", "\033OQ", "\033OR", "\033OS",
+	"\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~", "\033[21~",
+	"\033[23~", "\033[24~", "\033[2~", "\033[3~", "\033[1~", "\033[4~",
+	"\033[5~", "\033[6~", "\033OA", "\033OB", "\033OD", "\033OC", 0 };
 static const char *screen_funcs[] = {
-	"\033[?1049h", "\033[?1049l", "\033[34h\033[?25h", "\033[?25l", "\033[H\033[J", "\033[m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "\033[?1h\033=", "\033[?1l\033>", ENTER_MOUSE_SEQ, EXIT_MOUSE_SEQ,
+	"\033[?1049h",
+	"\033[?1049l",
+	"\033[34h\033[?25h",
+	"\033[?25l",
+	"\033[H\033[J",
+	"\033[m",
+	"\033[4m",
+	"\033[1m",
+	"\033[5m",
+	"\033[7m",
+	"\033[?1h\033=",
+	"\033[?1l\033>",
+	ENTER_MOUSE_SEQ,
+	EXIT_MOUSE_SEQ,
 };
 
 // rxvt-unicode
-static const char *rxvt_unicode_keys[] = {
-	"\033[11~","\033[12~","\033[13~","\033[14~","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[7~","\033[8~","\033[5~","\033[6~","\033[A","\033[B","\033[D","\033[C", 0
-};
+static const char *rxvt_unicode_keys[] = { "\033[11~", "\033[12~", "\033[13~",
+	"\033[14~", "\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~",
+	"\033[21~", "\033[23~", "\033[24~", "\033[2~", "\033[3~", "\033[7~",
+	"\033[8~", "\033[5~", "\033[6~", "\033[A", "\033[B", "\033[D", "\033[C",
+	0 };
 static const char *rxvt_unicode_funcs[] = {
-	"\033[?1049h", "\033[r\033[?1049l", "\033[?25h", "\033[?25l", "\033[H\033[2J", "\033[m\033(B", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "\033=", "\033>", ENTER_MOUSE_SEQ, EXIT_MOUSE_SEQ,
+	"\033[?1049h",
+	"\033[r\033[?1049l",
+	"\033[?25h",
+	"\033[?25l",
+	"\033[H\033[2J",
+	"\033[m\033(B",
+	"\033[4m",
+	"\033[1m",
+	"\033[5m",
+	"\033[7m",
+	"\033=",
+	"\033>",
+	ENTER_MOUSE_SEQ,
+	EXIT_MOUSE_SEQ,
 };
 
 // linux
-static const char *linux_keys[] = {
-	"\033[[A","\033[[B","\033[[C","\033[[D","\033[[E","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033[1~","\033[4~","\033[5~","\033[6~","\033[A","\033[B","\033[D","\033[C", 0
-};
+static const char *linux_keys[] = { "\033[[A", "\033[[B", "\033[[C", "\033[[D",
+	"\033[[E", "\033[17~", "\033[18~", "\033[19~", "\033[20~", "\033[21~",
+	"\033[23~", "\033[24~", "\033[2~", "\033[3~", "\033[1~", "\033[4~",
+	"\033[5~", "\033[6~", "\033[A", "\033[B", "\033[D", "\033[C", 0 };
 static const char *linux_funcs[] = {
-	"", "", "\033[?25h\033[?0c", "\033[?25l\033[?1c", "\033[H\033[J", "\033[0;10m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "", "", "", "",
+	"",
+	"",
+	"\033[?25h\033[?0c",
+	"\033[?25l\033[?1c",
+	"\033[H\033[J",
+	"\033[0;10m",
+	"\033[4m",
+	"\033[1m",
+	"\033[5m",
+	"\033[7m",
+	"",
+	"",
+	"",
+	"",
 };
 
 // xterm
-static const char *xterm_keys[] = {
-	"\033OP","\033OQ","\033OR","\033OS","\033[15~","\033[17~","\033[18~","\033[19~","\033[20~","\033[21~","\033[23~","\033[24~","\033[2~","\033[3~","\033OH","\033OF","\033[5~","\033[6~","\033OA","\033OB","\033OD","\033OC", 0
-};
+static const char *xterm_keys[] = { "\033OP", "\033OQ", "\033OR", "\033OS",
+	"\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~", "\033[21~",
+	"\033[23~", "\033[24~", "\033[2~", "\033[3~", "\033OH", "\033OF",
+	"\033[5~", "\033[6~", "\033OA", "\033OB", "\033OD", "\033OC", 0 };
 static const char *xterm_funcs[] = {
-	"\033[?1049h", "\033[?1049l", "\033[?12l\033[?25h", "\033[?25l", "\033[H\033[2J", "\033(B\033[m", "\033[4m", "\033[1m", "\033[5m", "\033[7m", "\033[?1h\033=", "\033[?1l\033>", ENTER_MOUSE_SEQ, EXIT_MOUSE_SEQ,
+	"\033[?1049h",
+	"\033[?1049l",
+	"\033[?12l\033[?25h",
+	"\033[?25l",
+	"\033[H\033[2J",
+	"\033(B\033[m",
+	"\033[4m",
+	"\033[1m",
+	"\033[5m",
+	"\033[7m",
+	"\033[?1h\033=",
+	"\033[?1l\033>",
+	ENTER_MOUSE_SEQ,
+	EXIT_MOUSE_SEQ,
 };
 
 static struct term {
@@ -175,21 +281,22 @@ static struct term {
 	const char **keys;
 	const char **funcs;
 } terms[] = {
-	{"rxvt-256color", rxvt_256color_keys, rxvt_256color_funcs},
-	{"Eterm", eterm_keys, eterm_funcs},
-	{"screen", screen_keys, screen_funcs},
-	{"rxvt-unicode", rxvt_unicode_keys, rxvt_unicode_funcs},
-	{"linux", linux_keys, linux_funcs},
-	{"xterm", xterm_keys, xterm_funcs},
-	{0, 0, 0},
+	{ "rxvt-256color", rxvt_256color_keys, rxvt_256color_funcs },
+	{ "Eterm", eterm_keys, eterm_funcs },
+	{ "screen", screen_keys, screen_funcs },
+	{ "rxvt-unicode", rxvt_unicode_keys, rxvt_unicode_funcs },
+	{ "linux", linux_keys, linux_funcs },
+	{ "xterm", xterm_keys, xterm_funcs },
+	{ 0, 0, 0 },
 };
 
 static bool init_from_terminfo = false;
 static const char **keys;
 static const char **funcs;
 
-static int try_compatible(const char *term, const char *name,
-			  const char **tkeys, const char **tfuncs)
+static int
+try_compatible(const char *term, const char *name, const char **tkeys,
+	const char **tfuncs)
 {
 	if (strstr(term, name)) {
 		keys = tkeys;
@@ -200,7 +307,8 @@ static int try_compatible(const char *term, const char *name,
 	return EUNSUPPORTED_TERM;
 }
 
-static int init_term_builtin(void)
+static int
+init_term_builtin(void)
 {
 	int i;
 	const char *term = getenv("TERM");
@@ -217,18 +325,22 @@ static int init_term_builtin(void)
 		/* let's do some heuristic, maybe it's a compatible terminal */
 		if (try_compatible(term, "xterm", xterm_keys, xterm_funcs) == 0)
 			return 0;
-		if (try_compatible(term, "rxvt", rxvt_unicode_keys, rxvt_unicode_funcs) == 0)
+		if (try_compatible(term, "rxvt", rxvt_unicode_keys,
+			    rxvt_unicode_funcs) == 0)
 			return 0;
 		if (try_compatible(term, "linux", linux_keys, linux_funcs) == 0)
 			return 0;
 		if (try_compatible(term, "Eterm", eterm_keys, eterm_funcs) == 0)
 			return 0;
-		if (try_compatible(term, "screen", screen_keys, screen_funcs) == 0)
+		if (try_compatible(term, "screen", screen_keys, screen_funcs) ==
+			0)
 			return 0;
-		if (try_compatible(term, "tmux", screen_keys, screen_funcs) == 0)
+		if (try_compatible(term, "tmux", screen_keys, screen_funcs) ==
+			0)
 			return 0;
 		/* let's assume that 'cygwin' is xterm compatible */
-		if (try_compatible(term, "cygwin", xterm_keys, xterm_funcs) == 0)
+		if (try_compatible(term, "cygwin", xterm_keys, xterm_funcs) ==
+			0)
 			return 0;
 	}
 
@@ -239,7 +351,9 @@ static int init_term_builtin(void)
 // terminfo
 //----------------------------------------------------------------------
 
-static char *read_file(const char *file) {
+static char *
+read_file(const char *file)
+{
 	FILE *f = fopen(file, "rb");
 	if (!f)
 		return 0;
@@ -266,10 +380,12 @@ static char *read_file(const char *file) {
 	return data;
 }
 
-static char *terminfo_try_path(const char *path, const char *term) {
+static char *
+terminfo_try_path(const char *path, const char *term)
+{
 	char tmp[4096];
 	snprintf(tmp, sizeof(tmp), "%s/%c/%s", path, term[0], term);
-	tmp[sizeof(tmp)-1] = '\0';
+	tmp[sizeof(tmp) - 1] = '\0';
 	char *data = read_file(tmp);
 	if (data) {
 		return data;
@@ -277,11 +393,13 @@ static char *terminfo_try_path(const char *path, const char *term) {
 
 	// fallback to darwin specific dirs structure
 	snprintf(tmp, sizeof(tmp), "%s/%x/%s", path, term[0], term);
-	tmp[sizeof(tmp)-1] = '\0';
+	tmp[sizeof(tmp) - 1] = '\0';
 	return read_file(tmp);
 }
 
-static char *load_terminfo(void) {
+static char *
+load_terminfo(void)
+{
 	char tmp[4096];
 	const char *term = getenv("TERM");
 	if (!term) {
@@ -298,7 +416,7 @@ static char *load_terminfo(void) {
 	const char *home = getenv("HOME");
 	if (home) {
 		snprintf(tmp, sizeof(tmp), "%s/.terminfo", home);
-		tmp[sizeof(tmp)-1] = '\0';
+		tmp[sizeof(tmp) - 1] = '\0';
 		char *data = terminfo_try_path(tmp, term);
 		if (data)
 			return data;
@@ -308,7 +426,7 @@ static char *load_terminfo(void) {
 	const char *dirs = getenv("TERMINFO_DIRS");
 	if (dirs) {
 		snprintf(tmp, sizeof(tmp), "%s", dirs);
-		tmp[sizeof(tmp)-1] = '\0';
+		tmp[sizeof(tmp) - 1] = '\0';
 		char *dir = strtok(tmp, ":");
 		while (dir) {
 			const char *cdir = dir;
@@ -331,26 +449,60 @@ static char *load_terminfo(void) {
 #define TI_HEADER_LENGTH 12
 #define TB_KEYS_NUM 22
 
-static const char *terminfo_copy_string(char *data, int str, int table) {
-	const int16_t off = *(int16_t*)(data + str);
+static const char *
+terminfo_copy_string(char *data, int str, int table)
+{
+	const int16_t off = *(int16_t *)(data + str);
 	const char *src = data + table + off;
 	int len = strlen(src);
-	char *dst = malloc(len+1);
+	char *dst = malloc(len + 1);
 	strcpy(dst, src);
 	return dst;
 }
 
 static const int16_t ti_funcs[] = {
-	28, 40, 16, 13, 5, 39, 36, 27, 26, 34, 89, 88,
+	28,
+	40,
+	16,
+	13,
+	5,
+	39,
+	36,
+	27,
+	26,
+	34,
+	89,
+	88,
 };
 
 static const int16_t ti_keys[] = {
-	66, 68 /* apparently not a typo; 67 is F10 for whatever reason */, 69,
-	70, 71, 72, 73, 74, 75, 67, 216, 217, 77, 59, 76, 164, 82, 81, 87, 61,
-	79, 83,
+	66,
+	68 /* apparently not a typo; 67 is F10 for whatever reason */,
+	69,
+	70,
+	71,
+	72,
+	73,
+	74,
+	75,
+	67,
+	216,
+	217,
+	77,
+	59,
+	76,
+	164,
+	82,
+	81,
+	87,
+	61,
+	79,
+	83,
 };
 
-static int init_term(void) {
+static int
+init_term(void)
+{
 	int i;
 	char *data = load_terminfo();
 	if (!data) {
@@ -358,7 +510,7 @@ static int init_term(void) {
 		return init_term_builtin();
 	}
 
-	int16_t *header = (int16_t*)data;
+	int16_t *header = (int16_t *)data;
 
 	const int number_sec_len = header[0] == TI_ALT_MAGIC ? 4 : 2;
 
@@ -367,44 +519,46 @@ static int init_term(void) {
 		header[2] += 1;
 	}
 
-	const int str_offset = TI_HEADER_LENGTH +
-		header[1] + header[2] +	number_sec_len * header[3];
+	const int str_offset = TI_HEADER_LENGTH + header[1] + header[2] +
+		number_sec_len * header[3];
 	const int table_offset = str_offset + 2 * header[4];
 
-	keys = malloc(sizeof(const char*) * (TB_KEYS_NUM+1));
+	keys = malloc(sizeof(const char *) * (TB_KEYS_NUM + 1));
 	for (i = 0; i < TB_KEYS_NUM; i++) {
-		keys[i] = terminfo_copy_string(data,
-			str_offset + 2 * ti_keys[i], table_offset);
+		keys[i] = terminfo_copy_string(
+			data, str_offset + 2 * ti_keys[i], table_offset);
 	}
 	keys[TB_KEYS_NUM] = 0;
 
-	funcs = malloc(sizeof(const char*) * T_FUNCS_NUM);
+	funcs = malloc(sizeof(const char *) * T_FUNCS_NUM);
 	// the last two entries are reserved for mouse. because the table offset is
 	// not there, the two entries have to fill in manually
-	for (i = 0; i < T_FUNCS_NUM-2; i++) {
-		funcs[i] = terminfo_copy_string(data,
-			str_offset + 2 * ti_funcs[i], table_offset);
+	for (i = 0; i < T_FUNCS_NUM - 2; i++) {
+		funcs[i] = terminfo_copy_string(
+			data, str_offset + 2 * ti_funcs[i], table_offset);
 	}
 
-	funcs[T_FUNCS_NUM-2] = ENTER_MOUSE_SEQ;
-	funcs[T_FUNCS_NUM-1] = EXIT_MOUSE_SEQ;
+	funcs[T_FUNCS_NUM - 2] = ENTER_MOUSE_SEQ;
+	funcs[T_FUNCS_NUM - 1] = EXIT_MOUSE_SEQ;
 
 	init_from_terminfo = true;
 	free(data);
 	return 0;
 }
 
-static void shutdown_term(void) {
+static void
+shutdown_term(void)
+{
 	if (init_from_terminfo) {
 		int i;
 		for (i = 0; i < TB_KEYS_NUM; i++) {
-			free((void*)keys[i]);
+			free((void *)keys[i]);
 		}
 		// the last two entries are reserved for mouse. because the table offset
 		// is not there, the two entries have to fill in manually and do not
 		// need to be freed.
-		for (i = 0; i < T_FUNCS_NUM-2; i++) {
-			free((void*)funcs[i]);
+		for (i = 0; i < T_FUNCS_NUM - 2; i++) {
+			free((void *)funcs[i]);
 		}
 		free(keys);
 		free(funcs);
@@ -416,7 +570,8 @@ static void shutdown_term(void) {
 // if s1 starts with s2 returns true, else false
 // len is the length of s1
 // s2 should be null-terminated
-static bool starts_with(const char *s1, int len, const char *s2)
+static bool
+starts_with(const char *s1, int len, const char *s2)
 {
 	int n = 0;
 	while (*s2 && n < len) {
@@ -428,7 +583,8 @@ static bool starts_with(const char *s1, int len, const char *s2)
 }
 
 // convert escape sequence to event, and return consumed bytes on success (failure == 0)
-static int parse_escape_seq(struct tb_event *event, const char *buf, int len)
+static int
+parse_escape_seq(struct tb_event *event, const char *buf, int len)
 {
 	// it's pretty simple here, find 'starts_with' match and return
 	// success, else return failure
@@ -436,14 +592,15 @@ static int parse_escape_seq(struct tb_event *event, const char *buf, int len)
 	for (i = 0; keys[i]; i++) {
 		if (starts_with(buf, len, keys[i])) {
 			event->ch = 0;
-			event->key = 0xFFFF-i;
+			event->key = 0xFFFF - i;
 			return strlen(keys[i]);
 		}
 	}
 	return 0;
 }
 
-static bool extract_event(struct tb_event *event, struct bytebuffer *inbuf)
+static bool
+extract_event(struct tb_event *event, struct bytebuffer *inbuf)
 {
 	const char *buf = inbuf->buf;
 	const int len = inbuf->len;
@@ -463,7 +620,7 @@ static bool extract_event(struct tb_event *event, struct bytebuffer *inbuf)
 		} else {
 			// it's not escape sequence, then it's ALT or ESC,
 			// check inputmode
-			if (inputmode&TB_INPUT_ESC) {
+			if (inputmode & TB_INPUT_ESC) {
 				// if we're in escape mode, fill ESC event, pop
 				// buffer, return success
 				event->ch = 0;
@@ -471,7 +628,7 @@ static bool extract_event(struct tb_event *event, struct bytebuffer *inbuf)
 				event->mod = 0;
 				bytebuffer_truncate(inbuf, 1);
 				return true;
-			} else if (inputmode&TB_INPUT_ALT) {
+			} else if (inputmode & TB_INPUT_ALT) {
 				// if we're in alt mode, set ALT modifier to
 				// event and redo parsing
 				event->mod = TB_MOD_ALT;
@@ -487,8 +644,7 @@ static bool extract_event(struct tb_event *event, struct bytebuffer *inbuf)
 
 	// first of all check if it's a functional key
 	if ((unsigned char)buf[0] <= TB_KEY_SPACE ||
-	    (unsigned char)buf[0] == TB_KEY_BACKSPACE2)
-	{
+		(unsigned char)buf[0] == TB_KEY_BACKSPACE2) {
 		// fill event, pop buffer, return success */
 		event->ch = 0;
 		event->key = (uint16_t)buf[0];
@@ -568,7 +724,8 @@ static volatile int buffer_size_change_request;
 
 /* -------------------------------------------------------- */
 
-int tb_init_fd(int inout_)
+int
+tb_init_fd(int inout_)
 {
 	inout = inout_;
 	if (inout == -1) {
@@ -596,8 +753,8 @@ int tb_init_fd(int inout_)
 	struct termios tios;
 	memcpy(&tios, &orig_tios, sizeof(tios));
 
-	tios.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP
-                           | INLCR | IGNCR | ICRNL | IXON);
+	tios.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR |
+		ICRNL | IXON);
 	tios.c_oflag &= ~OPOST;
 	tios.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
 	tios.c_cflag &= ~(CSIZE | PARENB);
@@ -623,16 +780,20 @@ int tb_init_fd(int inout_)
 	return 0;
 }
 
-int tb_init_file(const char* name){
+int
+tb_init_file(const char *name)
+{
 	return tb_init_fd(open(name, O_RDWR));
 }
 
-int tb_init(void)
+int
+tb_init(void)
 {
 	return tb_init_file("/dev/tty");
 }
 
-void tb_shutdown(void)
+void
+tb_shutdown(void)
 {
 	if (termw == -1) {
 		fputs("tb_shutdown() should not be called twice.", stderr);
@@ -660,9 +821,10 @@ void tb_shutdown(void)
 	termw = termh = -1;
 }
 
-void tb_present(void)
+void
+tb_present(void)
 {
-	int x,y,w,i;
+	int x, y, w, i;
 	struct tb_cell *back, *front;
 
 	/* invalidate cursor position */
@@ -675,11 +837,12 @@ void tb_present(void)
 	}
 
 	for (y = 0; y < front_buffer.height; ++y) {
-		for (x = 0; x < front_buffer.width; ) {
+		for (x = 0; x < front_buffer.width;) {
 			back = &CELL(&back_buffer, x, y);
 			front = &CELL(&front_buffer, x, y);
 			w = wcwidth(back->ch);
-			if (w < 1) w = 1;
+			if (w < 1)
+				w = 1;
 			if (memcmp(back, front, sizeof(struct tb_cell)) == 0) {
 				x += w;
 				continue;
@@ -708,7 +871,8 @@ void tb_present(void)
 	bytebuffer_flush(&output_buffer, inout);
 }
 
-void tb_set_cursor(int cx, int cy)
+void
+tb_set_cursor(int cx, int cy)
 {
 	if (IS_CURSOR_HIDDEN(cursor_x, cursor_y) && !IS_CURSOR_HIDDEN(cx, cy))
 		bytebuffer_puts(&output_buffer, funcs[T_SHOW_CURSOR]);
@@ -722,7 +886,8 @@ void tb_set_cursor(int cx, int cy)
 		write_cursor(cursor_x, cursor_y);
 }
 
-void tb_put_cell(int x, int y, const struct tb_cell *cell)
+void
+tb_put_cell(int x, int y, const struct tb_cell *cell)
 {
 	if ((unsigned)x >= (unsigned)back_buffer.width)
 		return;
@@ -731,13 +896,15 @@ void tb_put_cell(int x, int y, const struct tb_cell *cell)
 	CELL(&back_buffer, x, y) = *cell;
 }
 
-void tb_change_cell(int x, int y, uint32_t ch, uint16_t fg, uint16_t bg)
+void
+tb_change_cell(int x, int y, uint32_t ch, uint16_t fg, uint16_t bg)
 {
-	struct tb_cell c = {ch, fg, bg};
+	struct tb_cell c = { ch, fg, bg };
 	tb_put_cell(x, y, &c);
 }
 
-void tb_blit(int x, int y, int w, int h, const struct tb_cell *cells)
+void
+tb_blit(int x, int y, int w, int h, const struct tb_cell *cells)
 {
 	if (x + w < 0 || x >= back_buffer.width)
 		return;
@@ -771,17 +938,20 @@ void tb_blit(int x, int y, int w, int h, const struct tb_cell *cells)
 	}
 }
 
-struct tb_cell *tb_cell_buffer(void)
+struct tb_cell *
+tb_cell_buffer(void)
 {
 	return back_buffer.cells;
 }
 
-int tb_poll_event(struct tb_event *event)
+int
+tb_poll_event(struct tb_event *event)
 {
 	return wait_fill_event(event, 0);
 }
 
-int tb_peek_event(struct tb_event *event, int timeout)
+int
+tb_peek_event(struct tb_event *event, int timeout)
 {
 	struct timeval tv;
 	tv.tv_sec = timeout / 1000;
@@ -789,17 +959,20 @@ int tb_peek_event(struct tb_event *event, int timeout)
 	return wait_fill_event(event, &tv);
 }
 
-int tb_width(void)
+int
+tb_width(void)
 {
 	return termw;
 }
 
-int tb_height(void)
+int
+tb_height(void)
 {
 	return termh;
 }
 
-void tb_clear(void)
+void
+tb_clear(void)
 {
 	if (buffer_size_change_request) {
 		update_size();
@@ -808,7 +981,8 @@ void tb_clear(void)
 	cellbuf_clear(&back_buffer);
 }
 
-int tb_select_input_mode(int mode)
+int
+tb_select_input_mode(int mode)
 {
 	if (mode) {
 		if ((mode & (TB_INPUT_ESC | TB_INPUT_ALT)) == 0)
@@ -816,11 +990,12 @@ int tb_select_input_mode(int mode)
 
 		/* technically termbox can handle that, but let's be nice and show here
 		   what mode is actually used */
-		if ((mode & (TB_INPUT_ESC | TB_INPUT_ALT)) == (TB_INPUT_ESC | TB_INPUT_ALT))
+		if ((mode & (TB_INPUT_ESC | TB_INPUT_ALT)) ==
+			(TB_INPUT_ESC | TB_INPUT_ALT))
 			mode &= ~TB_INPUT_ALT;
 
 		inputmode = mode;
-		if (mode&TB_INPUT_MOUSE) {
+		if (mode & TB_INPUT_MOUSE) {
 			bytebuffer_puts(&output_buffer, funcs[T_ENTER_MOUSE]);
 			bytebuffer_flush(&output_buffer, inout);
 		} else {
@@ -831,14 +1006,16 @@ int tb_select_input_mode(int mode)
 	return inputmode;
 }
 
-int tb_select_output_mode(int mode)
+int
+tb_select_output_mode(int mode)
 {
 	if (mode)
 		outputmode = mode;
 	return outputmode;
 }
 
-void tb_set_clear_attributes(uint16_t fg, uint16_t bg)
+void
+tb_set_clear_attributes(uint16_t fg, uint16_t bg)
 {
 	foreground = fg;
 	background = bg;
@@ -846,14 +1023,16 @@ void tb_set_clear_attributes(uint16_t fg, uint16_t bg)
 
 /* -------------------------------------------------------- */
 
-static int convertnum(uint32_t num, char* buf) {
+static int
+convertnum(uint32_t num, char *buf)
+{
 	int i, l = 0;
 	int ch;
 	do {
 		buf[l++] = '0' + (num % 10);
 		num /= 10;
 	} while (num);
-	for(i = 0; i < l / 2; i++) {
+	for (i = 0; i < l / 2; i++) {
 		ch = buf[i];
 		buf[i] = buf[l - 1 - i];
 		buf[l - 1 - i] = ch;
@@ -861,19 +1040,24 @@ static int convertnum(uint32_t num, char* buf) {
 	return l;
 }
 
-#define WRITE_LITERAL(X) bytebuffer_append(&output_buffer, (X), sizeof(X)-1)
-#define WRITE_INT(X) bytebuffer_append(&output_buffer, buf, convertnum((X), buf))
+#define WRITE_LITERAL(X) bytebuffer_append(&output_buffer, (X), sizeof(X) - 1)
+#define WRITE_INT(X) \
+	bytebuffer_append(&output_buffer, buf, convertnum((X), buf))
 
-static void write_cursor(int x, int y) {
+static void
+write_cursor(int x, int y)
+{
 	char buf[32];
 	WRITE_LITERAL("\033[");
-	WRITE_INT(y+1);
+	WRITE_INT(y + 1);
 	WRITE_LITERAL(";");
-	WRITE_INT(x+1);
+	WRITE_INT(x + 1);
 	WRITE_LITERAL("H");
 }
 
-static void write_sgr(uint16_t fg, uint16_t bg) {
+static void
+write_sgr(uint16_t fg, uint16_t bg)
+{
 	char buf[32];
 
 	if (fg == TB_DEFAULT && bg == TB_DEFAULT)
@@ -916,15 +1100,18 @@ static void write_sgr(uint16_t fg, uint16_t bg) {
 	}
 }
 
-static void cellbuf_init(struct cellbuf *buf, int width, int height)
+static void
+cellbuf_init(struct cellbuf *buf, int width, int height)
 {
-	buf->cells = (struct tb_cell*)malloc(sizeof(struct tb_cell) * width * height);
+	buf->cells = (struct tb_cell *)malloc(
+		sizeof(struct tb_cell) * width * height);
 	assert(buf->cells);
 	buf->width = width;
 	buf->height = height;
 }
 
-static void cellbuf_resize(struct cellbuf *buf, int width, int height)
+static void
+cellbuf_resize(struct cellbuf *buf, int width, int height)
 {
 	if (buf->width == width && buf->height == height)
 		return;
@@ -949,7 +1136,8 @@ static void cellbuf_resize(struct cellbuf *buf, int width, int height)
 	free(oldcells);
 }
 
-static void cellbuf_clear(struct cellbuf *buf)
+static void
+cellbuf_clear(struct cellbuf *buf)
 {
 	int i;
 	int ncells = buf->width * buf->height;
@@ -961,23 +1149,28 @@ static void cellbuf_clear(struct cellbuf *buf)
 	}
 }
 
-static void cellbuf_free(struct cellbuf *buf)
+static void
+cellbuf_free(struct cellbuf *buf)
 {
 	free(buf->cells);
 }
 
-static void get_term_size(int *w, int *h)
+static void
+get_term_size(int *w, int *h)
 {
 	struct winsize sz;
 	memset(&sz, 0, sizeof(sz));
 
 	ioctl(inout, TIOCGWINSZ, &sz);
 
-	if (w) *w = sz.ws_col;
-	if (h) *h = sz.ws_row;
+	if (w)
+		*w = sz.ws_col;
+	if (h)
+		*h = sz.ws_row;
 }
 
-static void update_term_size(void)
+static void
+update_term_size(void)
 {
 	struct winsize sz;
 	memset(&sz, 0, sizeof(sz));
@@ -988,7 +1181,8 @@ static void update_term_size(void)
 	termh = sz.ws_row;
 }
 
-static void send_attr(uint16_t fg, uint16_t bg)
+static void
+send_attr(uint16_t fg, uint16_t bg)
 {
 #define LAST_ATTR_INIT 0xFFFF
 	static uint16_t lastfg = LAST_ATTR_INIT, lastbg = LAST_ATTR_INIT;
@@ -1005,15 +1199,23 @@ static void send_attr(uint16_t fg, uint16_t bg)
 			break;
 
 		case TB_OUTPUT_216:
-			fgcol = fg & 0xFF; if (fgcol > 215) fgcol = 7;
-			bgcol = bg & 0xFF; if (bgcol > 215) bgcol = 0;
+			fgcol = fg & 0xFF;
+			if (fgcol > 215)
+				fgcol = 7;
+			bgcol = bg & 0xFF;
+			if (bgcol > 215)
+				bgcol = 0;
 			fgcol += 0x10;
 			bgcol += 0x10;
 			break;
 
 		case TB_OUTPUT_GRAYSCALE:
-			fgcol = fg & 0xFF; if (fgcol > 23) fgcol = 23;
-			bgcol = bg & 0xFF; if (bgcol > 23) bgcol = 0;
+			fgcol = fg & 0xFF;
+			if (fgcol > 23)
+				fgcol = 23;
+			bgcol = bg & 0xFF;
+			if (bgcol > 23)
+				bgcol = 0;
 			fgcol += 0xe8;
 			bgcol += 0xe8;
 			break;
@@ -1040,18 +1242,22 @@ static void send_attr(uint16_t fg, uint16_t bg)
 	}
 }
 
-static void send_char(int x, int y, uint32_t c)
+static void
+send_char(int x, int y, uint32_t c)
 {
 	char buf[7];
 	int bw = tb_utf8_unicode_to_char(buf, c);
-	if (x-1 != lastx || y != lasty)
+	if (x - 1 != lastx || y != lasty)
 		write_cursor(x, y);
-	lastx = x; lasty = y;
-	if(!c) buf[0] = ' '; // replace 0 with whitespace
+	lastx = x;
+	lasty = y;
+	if (!c)
+		buf[0] = ' '; // replace 0 with whitespace
 	bytebuffer_append(&output_buffer, buf, bw);
 }
 
-static void send_clear(void)
+static void
+send_clear(void)
 {
 	send_attr(foreground, background);
 	bytebuffer_puts(&output_buffer, funcs[T_CLEAR_SCREEN]);
@@ -1068,14 +1274,16 @@ static void send_clear(void)
 	lasty = LAST_COORD_INIT;
 }
 
-static void sigwinch_handler(int xxx)
+static void
+sigwinch_handler(int xxx)
 {
-	(void) xxx;
+	(void)xxx;
 	const int zzz = 1;
 	(void)write(winch_fds[1], &zzz, sizeof(int));
 }
 
-static void update_size(void)
+static void
+update_size(void)
 {
 	update_term_size();
 	cellbuf_resize(&back_buffer, termw, termh);
@@ -1084,7 +1292,9 @@ static void update_size(void)
 	send_clear();
 }
 
-static int read_up_to(int n) {
+static int
+read_up_to(int n)
+{
 	assert(n > 0);
 	const int prevlen = input_buffer.len;
 	bytebuffer_resize(&input_buffer, prevlen + n);
@@ -1093,14 +1303,16 @@ static int read_up_to(int n) {
 	while (read_n <= n) {
 		ssize_t r = 0;
 		if (read_n < n) {
-			r = read(inout, input_buffer.buf + prevlen + read_n, n - read_n);
+			r = read(inout, input_buffer.buf + prevlen + read_n,
+				n - read_n);
 		}
 #ifdef __CYGWIN__
 		// While linux man for tty says when VMIN == 0 && VTIME == 0, read
 		// should return 0 when there is nothing to read, cygwin's read returns
 		// -1. Not sure why and if it's correct to ignore it, but let's pretend
 		// it's zero.
-		if (r < 0) r = 0;
+		if (r < 0)
+			r = 0;
 #endif
 		if (r < 0) {
 			// EAGAIN / EWOULDBLOCK shouldn't occur here
@@ -1117,7 +1329,8 @@ static int read_up_to(int n) {
 	return 0;
 }
 
-static int wait_fill_event(struct tb_event *event, struct timeval *timeout)
+static int
+wait_fill_event(struct tb_event *event, struct timeval *timeout)
 {
 	// ;-)
 #define ENOUGH_DATA_FOR_PARSING 64
@@ -1143,7 +1356,7 @@ static int wait_fill_event(struct tb_event *event, struct timeval *timeout)
 		FD_SET(inout, &events);
 		FD_SET(winch_fds[0], &events);
 		int maxfd = (winch_fds[0] > inout) ? winch_fds[0] : inout;
-		int result = select(maxfd+1, &events, 0, 0, timeout);
+		int result = select(maxfd + 1, &events, 0, 0, timeout);
 		if (!result)
 			return 0;
 
