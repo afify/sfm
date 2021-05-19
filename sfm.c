@@ -4,6 +4,8 @@
 #define _GNU_SOURCE
 #elif defined(__APPLE__)
 #define _DARWIN_C_SOURCE
+#elif defined(__FreeBSD__)
+#define __BSD_VISIBLE 1
 #endif
 #include <sys/types.h>
 #include <sys/resource.h>
@@ -199,14 +201,18 @@ static int cont_vmode = 0;
 static char **selected_files;
 #if defined _SYS_INOTIFY_H
 #define READEVSZ 16
-#define OFF_T "%ld"
 static int inotify_fd;
 #elif defined _SYS_EVENT_H_
 #define READEVSZ 0
-#define OFF_T "%lld"
 static int kq;
 struct kevent evlist[2]; /* events we want to monitor */
 struct kevent chlist[2]; /* events that were triggered */
+static struct timespec gtimeout;
+#endif
+#if defined(__linux__) || defined (__FreeBSD__)
+#define OFF_T "%ld"
+#elif defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+#define OFF_T "%lld"
 #endif
 
 /* configuration, allows nested code to access above variables */
@@ -1175,6 +1181,7 @@ fsev_init(void)
 	if (inotify_fd < 0)
 		return -1;
 #elif defined _SYS_EVENT_H_
+	gtimeout.tv_sec = 1;
 	kq = kqueue();
 	if (kq < 0)
 		return -1;
@@ -1231,7 +1238,7 @@ read_events(void)
 		p += sizeof(struct inotify_event) + event->len;
 	}
 #elif defined _SYS_EVENT_H_
-	return kevent(kq, evlist, 2, chlist, 2, NULL);
+	return kevent(kq, evlist, 2, chlist, 2, &gtimeout);
 #endif
 	return -1;
 }
@@ -1239,12 +1246,10 @@ read_events(void)
 static void
 rmwatch(Pane *pane)
 {
-#if defined _SYS_INOTIFY_H
-	if (pane->inotify_wd >= 0)
-		inotify_rm_watch(inotify_fd, pane->inotify_wd);
-#elif defined _SYS_EVENT_H_
+// 	if (pane->inotify_wd >= 0)
+// 		inotify_rm_watch(inotify_fd, pane->inotify_wd);
+#if defined _SYS_EVENT_H_
 	close(pane->event_fd);
-	return;
 #endif
 }
 

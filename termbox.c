@@ -2,6 +2,8 @@
 #define _GNU_SOURCE
 #elif defined (__APPLE__)
 #define _DARWIN_C_SOURCE
+#elif defined(__FreeBSD__)
+#define __BSD_VISIBLE 1
 #endif
 #include <assert.h>
 #include <stdlib.h>
