@@ -26,6 +26,7 @@
 #include <libgen.h>
 #include <pthread.h>
 #include <pwd.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -199,6 +200,7 @@ static char yank_file[MAX_P];
 static int *selection;
 static int cont_vmode = 0;
 static char **selected_files;
+pid_t main_pid;
 #if defined _SYS_INOTIFY_H
 #define READEVSZ 16
 static int inotify_fd;
@@ -1663,32 +1665,9 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 void *
 read_th(void *arg)
 {
-	int i;
-	while (1) {
-
-		i = read_events();
-
-		if (i > READEVSZ) {
-			listdir(AddHi);
-			if (cpane == &pane_l) {
-				cpane = &pane_r;
-				if (listdir(NoHi) < 0)
-					print_error(strerror(errno));
-				cpane = &pane_l;
-				if (listdir(AddHi) < 0)
-					print_error(strerror(errno));
-			} else if (cpane == &pane_r) {
-				cpane = &pane_l;
-				if (listdir(NoHi) < 0)
-					print_error(strerror(errno));
-				cpane = &pane_r;
-				if (listdir(AddHi) < 0)
-					print_error(strerror(errno));
-			}
-		}
-		tb_present();
-	}
-	return arg;
+	while (1)
+		if (read_events() > READEVSZ)
+			kill(main_pid, SIGUSR1);
 }
 
 static void
@@ -1960,6 +1939,40 @@ draw_frame(void)
 		(twidth - 1) / 2, theight - 2, u_ms, cframe.fg, cframe.bg);
 }
 
+void
+th_handler(int num)
+{
+	listdir(AddHi);
+	if (cpane == &pane_l) {
+		cpane = &pane_r;
+		if (listdir(NoHi) < 0)
+			print_error(strerror(errno));
+		cpane = &pane_l;
+		if (listdir(AddHi) < 0)
+			print_error(strerror(errno));
+	} else if (cpane == &pane_r) {
+		cpane = &pane_l;
+		if (listdir(NoHi) < 0)
+			print_error(strerror(errno));
+		cpane = &pane_r;
+		if (listdir(AddHi) < 0)
+			print_error(strerror(errno));
+	}
+	tb_present();
+}
+
+static int
+start_signal(void)
+{
+	struct sigaction sa;
+
+	main_pid = getpid();
+	sa.sa_handler = th_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
+	return sigaction(SIGUSR1, &sa, NULL);
+}
+
 static void
 start(void)
 {
@@ -1972,6 +1985,8 @@ start(void)
 	draw_frame();
 	set_panes();
 	get_editor();
+	if (start_signal() < 0)
+		print_error(strerror(errno));
 	if (fsev_init() < 0)
 		print_error(strerror(errno));
 	cpane = &pane_r;
