@@ -1119,7 +1119,7 @@ frules(char *ex)
 static int
 spawn(const void *v, char *fn)
 {
-	int ws, x, argc, fd;
+	int ws, x, argc;
 	pid_t pid, r;
 
 	x = 0;
@@ -1141,11 +1141,8 @@ spawn(const void *v, char *fn)
 	case -1:
 		return -1;
 	case 0:
-		fd = open("/dev/null", O_WRONLY);
-		dup2(fd, STDERR_FILENO);
 		execvp(argv[0], argv);
 		exit(EXIT_SUCCESS);
-		close(fd);
 	default:
 		while ((r = waitpid(pid, &ws, 0)) == -1 && errno == EINTR)
 			continue;
