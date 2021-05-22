@@ -209,7 +209,7 @@ struct kevent evlist[2]; /* events we want to monitor */
 struct kevent chlist[2]; /* events that were triggered */
 static struct timespec gtimeout;
 #endif
-#if defined(__linux__) || defined (__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__)
 #define OFF_T "%ld"
 #elif defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
 #define OFF_T "%lld"
@@ -1413,16 +1413,10 @@ selcalc(void)
 static void
 free_files(void)
 {
-	size_t i;
-
-	if (selected_files != NULL) {
-		for (i = 0; i < selection_size; i++) {
-			free(selected_files[i]);
-			selected_files[i] = NULL;
-		}
-		free(selected_files);
-		selected_files = NULL;
-	}
+	if (selected_files == NULL)
+		return;
+	free(selected_files);
+	selected_files = NULL;
 }
 
 static void
@@ -1435,10 +1429,7 @@ init_files(void)
 	selected_files = ecalloc(selection_size, sizeof(char *));
 
 	for (i = 0; i < selection_size; i++) {
-		selected_files[i] = ecalloc(MAX_P, sizeof(char));
-		strncpy(selected_files[i],
-			cpane->direntr[selection[i] - 1].name,
-			MAX_P); /* TODO use pointer */
+		selected_files[i] = cpane->direntr[selection[i] - 1].name;
 	}
 }
 
@@ -1469,12 +1460,26 @@ seldel(void)
 	free(inp_conf);
 
 	init_files();
-	for (i = 0; i < selection_size; i++) {
-		spawn(rm_cmd, selected_files[i]);
+
+	/* selected_files */
+	char *seldel_cmd[selection_size + 3];
+	seldel_cmd[0] = "rm";
+	seldel_cmd[1] = "-rf";
+	seldel_cmd[selection_size + 2] = NULL;
+
+	/* add files to array */
+	for (i = 2; i < selection_size + 2; i++) {
+		seldel_cmd[i] = selected_files[i - 2];
 	}
 
-	cpane->hdir = cpane->dirc - selection_size;
-	print_status(cprompt, "%zu files are deleted", selection_size);
+	if (spawn(seldel_cmd, NULL) < 0)
+		print_error(strerror(errno));
+	else
+		print_status(cprompt, "%zu files are deleted", selection_size);
+
+	if (cpane->dirc > 0)
+		cpane->hdir = cpane->dirc - selection_size;
+
 	free_files();
 	cont_vmode = -1;
 }
@@ -1486,7 +1491,7 @@ paste(void)
 	if (strnlen(yank_file, MAX_P) != 0) {
 		print_status(cprompt, "coping");
 		if (spawn(cp_cmd, cpane->dirn) != 0)
-			print_error("coping failed");
+			print_error(strerror(errno));
 		else
 			print_status(cprompt, "file copied");
 		yank_file[0] = '\0'; /* set yank_file len 0 */
@@ -1498,12 +1503,22 @@ paste(void)
 	if (selected_files == NULL)
 		return;
 
-	for (i = 0; i < selection_size; i++) {
-		char *selcp_cmd[] = { "cp", "-r", selected_files[i],
-			cpane->dirn, NULL };
-		spawn(selcp_cmd, NULL);
+	/* selected_files */
+	char *selcp_cmd[selection_size + 3];
+	selcp_cmd[0] = "cp";
+	selcp_cmd[1] = "-r";
+	selcp_cmd[selection_size + 2] = NULL;
+
+	/* add files to array */
+	for (i = 2; i < selection_size + 2; i++) {
+		selcp_cmd[i] = selected_files[i - 2];
 	}
-	print_status(cprompt, "%zu files are copied", selection_size);
+
+	if (spawn(selcp_cmd, cpane->dirn) < 0)
+		print_error(strerror(errno));
+	else
+		print_status(cprompt, "%zu files are copied", selection_size);
+
 	free_files();
 }
 
@@ -1515,7 +1530,7 @@ selmv(void)
 	if (strnlen(yank_file, MAX_P) != 0) {
 		print_status(cprompt, "moving");
 		if (spawn(mv_cmd, cpane->dirn) != 0)
-			print_error("moving failed");
+			print_error(strerror(errno));
 		else
 			print_status(cprompt, "file moved");
 		yank_file[0] = '\0'; /* set yank_file len 0 */
@@ -1527,12 +1542,22 @@ selmv(void)
 	if (selected_files == NULL)
 		return;
 
-	for (i = 0; i < selection_size; i++) {
-		char *selmv_cmd[] = { "mv", selected_files[i], cpane->dirn,
-			NULL };
-		spawn(selmv_cmd, NULL);
+	/* selected_files */
+	char *selmv_cmd[selection_size + 3];
+	selmv_cmd[0] = "mv";
+	selmv_cmd[1] = "-r";
+	selmv_cmd[selection_size + 2] = NULL;
+
+	/* add files to array */
+	for (i = 2; i < selection_size + 2; i++) {
+		selmv_cmd[i] = selected_files[i - 2];
 	}
-	print_status(cprompt, "%zu files are moved", selection_size);
+
+	if (spawn(selmv_cmd, cpane->dirn) < 0)
+		print_error(strerror(errno));
+	else
+		print_status(cprompt, "%zu files are moved", selection_size);
+
 	free_files();
 }
 
@@ -1821,7 +1846,7 @@ listdir(int hi)
 	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
 	refresh_pane();
 
-	if (hi == AddHi)
+	if (hi == AddHi && cpane->dirc > 0)
 		add_hi(cpane, cpane->hdir - 1);
 
 	if (closedir(dir) < 0)
