@@ -93,6 +93,7 @@ typedef struct {
 	const char **ext;
 	size_t exlen;
 	const void *v;
+	size_t vlen;
 } Rule;
 
 typedef union {
@@ -152,7 +153,7 @@ static void scrup(void);
 static void scrups(void);
 static int get_usrinput(char *, size_t, const char *, ...);
 static int frules(char *);
-static int spawn(const void *, char *);
+static int spawn(const void *, size_t, const void *, size_t, char *);
 static int opnf(char *);
 static int fsev_init(void);
 static int addwatch(void);
@@ -196,7 +197,7 @@ static char *editor[2];
 static char fed[] = "vi";
 static int theight, twidth, scrheight;
 static size_t selection_size = 0;
-static char yank_file[MAX_P];
+static char *yank_file[MAX_P];
 static int *selection;
 static int cont_vmode = 0;
 static char **selected_files;
@@ -681,7 +682,7 @@ delent(char *fullpath)
 	}
 	free(inp_conf);
 
-	return spawn(rm_cmd, fullpath);
+	return spawn(rm_cmd, rm_cmd_len, yank_file, 1, fullpath);
 }
 
 static void
@@ -1119,24 +1120,27 @@ frules(char *ex)
 }
 
 static int
-spawn(const void *v, char *fn)
+spawn(const void *com_argv, size_t com_argc, const void *f_argv, size_t f_argc,
+	char *fn)
 {
-	int ws, x, argc;
+	int ws;
+	size_t i, argc, x;
 	pid_t pid, r;
 
-	x = 0;
-	argc = 0;
+	argc = com_argc + f_argc + 2;
+	x = com_argc;
+	char *argv[argc];
 
-	/* count args */
-	while (((char **)v)[x++] != NULL)
-		argc++;
+	for (i = 0; i < com_argc; i++) /* get command */
+		argv[i] = ((char **)com_argv)[i];
 
-	char *argv[argc + 2];
-	for (x = 0; x < argc; x++)
-		argv[x] = ((char **)v)[x];
+	for (i = 0; i < f_argc; i++) { /* get files */
+		argv[x] = ((char **)f_argv)[i];
+		x++;
+	}
 
-	argv[argc] = fn;
-	argv[argc + 1] = NULL;
+	argv[argc - 2] = fn;
+	argv[argc - 1] = NULL;
 
 	pid = fork();
 	switch (pid) {
@@ -1167,9 +1171,9 @@ opnf(char *fn)
 	free(ex);
 
 	if (c < 0) /* extension not found open in editor */
-		return spawn(editor, fn);
+		return spawn(editor, 1, NULL, 0, fn);
 	else
-		return spawn((char **)rules[c].v, fn);
+		return spawn((char **)rules[c].v, rules[c].vlen, NULL, 0, fn);
 }
 
 static int
@@ -1452,7 +1456,6 @@ seldel(void)
 	char *inp_conf;
 	int conf_len = 4;
 	char conf[] = "yes";
-	size_t i;
 
 	inp_conf = ecalloc(conf_len, sizeof(char));
 	if ((get_usrinput(inp_conf, conf_len, "delete file (yes) ?") < 0) ||
@@ -1464,24 +1467,13 @@ seldel(void)
 
 	init_files();
 
-	/* selected_files */
-	char *seldel_cmd[selection_size + 3];
-	seldel_cmd[0] = "rm";
-	seldel_cmd[1] = "-rf";
-	seldel_cmd[selection_size + 2] = NULL;
-
-	/* add files to array */
-	for (i = 2; i < selection_size + 2; i++) {
-		seldel_cmd[i] = selected_files[i - 2];
-	}
-
-	if (spawn(seldel_cmd, NULL) < 0)
+	if (spawn(rm_cmd, rm_cmd_len, selected_files, selection_size, NULL) < 0)
 		print_error(strerror(errno));
 	else
 		print_status(cprompt, "%zu files are deleted", selection_size);
 
 	if (cpane->dirc > 0)
-		cpane->hdir = cpane->dirc - selection_size;
+		cpane->hdir = 1;
 
 	free_files();
 	cont_vmode = -1;
@@ -1490,14 +1482,13 @@ seldel(void)
 static void
 paste(void)
 {
-	size_t i;
-	if (strnlen(yank_file, MAX_P) != 0) {
+	if (yank_file[0] != NULL) {
 		print_status(cprompt, "coping");
-		if (spawn(cp_cmd, cpane->dirn) != 0)
+		if (spawn(cp_cmd, cp_cmd_len, &yank_file, 1, cpane->dirn) != 0)
 			print_error(strerror(errno));
 		else
 			print_status(cprompt, "file copied");
-		yank_file[0] = '\0'; /* set yank_file len 0 */
+		yank_file[0] = NULL; /* set yank_file len 0 */
 		return;
 	}
 
@@ -1506,18 +1497,8 @@ paste(void)
 	if (selected_files == NULL)
 		return;
 
-	/* selected_files */
-	char *selcp_cmd[selection_size + 3];
-	selcp_cmd[0] = "cp";
-	selcp_cmd[1] = "-r";
-	selcp_cmd[selection_size + 2] = NULL;
-
-	/* add files to array */
-	for (i = 2; i < selection_size + 2; i++) {
-		selcp_cmd[i] = selected_files[i - 2];
-	}
-
-	if (spawn(selcp_cmd, cpane->dirn) < 0)
+	if (spawn(cp_cmd, cp_cmd_len, selected_files, selection_size,
+		    cpane->dirn) < 0)
 		print_error(strerror(errno));
 	else
 		print_status(cprompt, "%zu files are copied", selection_size);
@@ -1528,15 +1509,13 @@ paste(void)
 static void
 selmv(void)
 {
-	size_t i;
-
-	if (strnlen(yank_file, MAX_P) != 0) {
+	if (yank_file[0] != NULL) {
 		print_status(cprompt, "moving");
-		if (spawn(mv_cmd, cpane->dirn) != 0)
+		if (spawn(mv_cmd, mv_cmd_len, yank_file, 1, cpane->dirn) != 0)
 			print_error(strerror(errno));
 		else
 			print_status(cprompt, "file moved");
-		yank_file[0] = '\0'; /* set yank_file len 0 */
+		yank_file[0] = NULL; /* set yank_file len 0 */
 		return;
 	}
 
@@ -1545,18 +1524,8 @@ selmv(void)
 	if (selected_files == NULL)
 		return;
 
-	/* selected_files */
-	char *selmv_cmd[selection_size + 3];
-	selmv_cmd[0] = "mv";
-	selmv_cmd[1] = "-r";
-	selmv_cmd[selection_size + 2] = NULL;
-
-	/* add files to array */
-	for (i = 2; i < selection_size + 2; i++) {
-		selmv_cmd[i] = selected_files[i - 2];
-	}
-
-	if (spawn(selmv_cmd, cpane->dirn) < 0)
+	if (spawn(mv_cmd, mv_cmd_len, selected_files, selection_size,
+		    cpane->dirn) < 0)
 		print_error(strerror(errno));
 	else
 		print_status(cprompt, "%zu files are moved", selection_size);
@@ -1584,8 +1553,8 @@ rname(void)
 		return;
 	}
 
-	char *rename_cmd[] = { "mv", CURSOR.name, new_name, NULL };
-	if (spawn(rename_cmd, NULL) < 0)
+	char *rename_cmd[] = { "mv", CURSOR.name, new_name };
+	if (spawn(rename_cmd, 3, NULL, 0, NULL) < 0)
 		print_error(strerror(errno));
 
 	free(input_name);
@@ -1594,7 +1563,7 @@ rname(void)
 static void
 yank(void)
 {
-	strncpy(yank_file, CURSOR.name, MAX_P);
+	yank_file[0] = CURSOR.name;
 	print_status(cprompt, "1 file is yanked", selection_size);
 }
 
@@ -1750,7 +1719,8 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 	free(tmpfull);
 
 	i = 0;
-	cpane->direntr = erealloc(cpane->direntr, (10 + cpane->dirc) * sizeof(Entry));
+	cpane->direntr =
+		erealloc(cpane->direntr, (10 + cpane->dirc) * sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
 		if ((strncmp(entry->d_name, ".", 2) == 0 ||
 			    strncmp(entry->d_name, "..", 3) == 0))

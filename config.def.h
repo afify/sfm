@@ -17,9 +17,13 @@ static const Cpair csearch = { 255, 0 };
 static const Cpair cstatus = { 243, 0 };
 
 /* commands */
-static const char *rm_cmd[] = { "rm", "-rf", NULL }; /* delete */
-static const char *cp_cmd[] = { "cp", "-r", yank_file, NULL }; /* copy */
-static const char *mv_cmd[] = { "mv", yank_file, NULL }; /* move */
+static const char *rm_cmd[] = { "rm", "-rf" }; /* delete */
+static const char *cp_cmd[] = { "cp", "-r" }; /* copy */
+static const char *mv_cmd[] = { "mv" }; /* move */
+
+static const size_t rm_cmd_len = LEN(rm_cmd);
+static const size_t cp_cmd_len = LEN(cp_cmd);
+static const size_t mv_cmd_len = LEN(mv_cmd);
 
 /* bookmarks */
 static Bookmark bmarks[] = {
@@ -27,13 +31,13 @@ static Bookmark bmarks[] = {
 };
 
 /* software */
-static const char *mpv[]          = { "mpv", "--fullscreen", NULL };
-static const char *sxiv[]         = { "sxiv", NULL };
-static const char *surf[]         = { "surf", NULL };
-static const char *mupdf[]        = { "mupdf", "-I", NULL };
-static const char *libreoffice[]  = { "libreoffice", NULL };
-static const char *gimp[]         = { "gimp", NULL };
-static const char *r2[]           = { "r2", "-c", "vv", NULL };
+static const char *mpv[]          = { "mpv", "--fullscreen" };
+static const char *sxiv[]         = { "sxiv" };
+static const char *surf[]         = { "surf" };
+static const char *mupdf[]        = { "mupdf", "-I" };
+static const char *libreoffice[]  = { "libreoffice" };
+static const char *gimp[]         = { "gimp" };
+static const char *r2[]           = { "r2", "-c", "vv" };
 
 /* extensions*/
 static const char *images[]    = { "bmp", "jpg", "jpeg", "png", "gif", "xpm" };
@@ -48,13 +52,13 @@ static const char *documents[] = { "odt", "doc", "docx", "xls", "xlsx", "odp",
 				   "ods", "pptx", "odg" };
 
 static Rule rules[] = {
-	{videos,    LEN(videos),    mpv},
-	{images,    LEN(images),    sxiv},
-	{web,       LEN(web),       surf},
-	{pdf,       LEN(pdf),       mupdf},
-	{documents, LEN(documents), libreoffice},
-	{arts,      LEN(arts),      gimp},
-	{obj,       LEN(obj),       r2},
+	{videos,    LEN(videos),    mpv,         LEN(mpv)         },
+	{images,    LEN(images),    sxiv,        LEN(sxiv)        },
+	{web,       LEN(web),       surf,        LEN(surf)        },
+	{pdf,       LEN(pdf),       mupdf,       LEN(mupdf)       },
+	{documents, LEN(documents), libreoffice, LEN(libreoffice) },
+	{arts,      LEN(arts),      gimp,        LEN(gimp)        },
+	{obj,       LEN(obj),       r2,          LEN(r2)          },
 };
 
 /* normal keys */
