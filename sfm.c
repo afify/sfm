@@ -1245,9 +1245,10 @@ read_events(void)
 static void
 rmwatch(Pane *pane)
 {
-// 	if (pane->inotify_wd >= 0)
-// 		inotify_rm_watch(inotify_fd, pane->inotify_wd);
-#if defined _SYS_EVENT_H_
+#if defined _SYS_INOTIFY_H
+	if (pane->inotify_wd >= 0)
+		inotify_rm_watch(inotify_fd, pane->inotify_wd);
+#elif defined _SYS_EVENT_H_
 	close(pane->event_fd);
 #endif
 }
@@ -1665,9 +1666,16 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 void *
 read_th(void *arg)
 {
+	struct timespec tim;
+	tim.tv_sec = 0;
+	tim.tv_nsec = 5000000L; /* 0.005 sec */
+
 	while (1)
-		if (read_events() > READEVSZ)
+		if (read_events() > READEVSZ) {
 			kill(main_pid, SIGUSR1);
+			nanosleep(&tim, NULL);
+		}
+	return arg;
 }
 
 static void
@@ -1742,7 +1750,7 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 	free(tmpfull);
 
 	i = 0;
-	cpane->direntr = erealloc(cpane->direntr, cpane->dirc * sizeof(Entry));
+	cpane->direntr = erealloc(cpane->direntr, (10 + cpane->dirc) * sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
 		if ((strncmp(entry->d_name, ".", 2) == 0 ||
 			    strncmp(entry->d_name, "..", 3) == 0))
@@ -1942,7 +1950,7 @@ draw_frame(void)
 void
 th_handler(int num)
 {
-	listdir(AddHi);
+	(void)num;
 	if (cpane == &pane_l) {
 		cpane = &pane_r;
 		if (listdir(NoHi) < 0)
