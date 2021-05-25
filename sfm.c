@@ -685,9 +685,6 @@ delent(void)
 		print_error(strerror(errno));
 		return;
 	}
-
-	if (BETWEEN(cpane->hdir - 1, 1, cpane->dirc)) /* last entry */
-		cpane->hdir--;
 }
 
 static void
@@ -1790,12 +1787,11 @@ listdir(Pane *pane)
 	qsort(pane->direntr, pane->dirc, sizeof(Entry), sort_name);
 	refresh_pane(pane);
 
-	if (pane == cpane) {
-		if (pane->hdir >= pane->dirc)
-			add_hi(pane, pane->dirc);
-		else
+	if (pane->hdir > pane->dirc)
+		pane->hdir = pane->dirc;
+
+	if (pane == cpane) 
 			add_hi(pane, pane->hdir - 1);
-	}
 
 	if (closedir(dir) < 0)
 		return -1;
