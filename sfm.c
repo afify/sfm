@@ -130,11 +130,10 @@ static char *get_fullpath(char *, char *);
 static char *get_fusr(uid_t);
 static void get_dirsize(char *, off_t *);
 static void get_hicol(Cpair *, mode_t);
-static int delent(char *);
+static void delent(void);
 static void calcdir(void);
 static void crnd(void);
 static void crnf(void);
-static void delfd(void);
 static void mvbk(void);
 static void mvbtm(void);
 static void mvdwn(void);
@@ -664,9 +663,11 @@ get_hicol(Cpair *col, mode_t mode)
 		*col = cexec;
 }
 
-static int
-delent(char *fullpath)
+static void
+delent(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	char *inp_conf;
 	int conf_len = 4;
 	char conf[] = "yes";
@@ -675,11 +676,19 @@ delent(char *fullpath)
 	if ((get_usrinput(inp_conf, conf_len, "delete file (yes) ?") < 0) ||
 		(strncmp(inp_conf, conf, conf_len) != 0)) {
 		free(inp_conf);
-		return 1; /* canceled by user or wrong inp_conf */
+		return; /* canceled by user or wrong inp_conf */
 	}
 	free(inp_conf);
 
-	return spawn(rm_cmd, rm_cmd_len, yank_file, 1, fullpath);
+	char *tmp[1];
+	tmp[0] = CURSOR(cpane).name;
+	if (spawn(rm_cmd, rm_cmd_len, tmp, 1, NULL) < 0) {
+		print_error(strerror(errno));
+		return;
+	}
+
+	if (BETWEEN(cpane->hdir - 1, 1, cpane->dirc)) /* last entry */
+		cpane->hdir--;
 }
 
 static void
@@ -755,22 +764,6 @@ crnf(void)
 
 	free(user_input);
 	free(path);
-}
-
-static void
-delfd(void)
-{
-	if (cpane->dirc < 1)
-		return;
-	switch (delent(CURSOR(cpane).name)) {
-	case -1:
-		print_error(strerror(errno));
-		break;
-	case 0:
-		if (BETWEEN(cpane->hdir - 1, 1, cpane->dirc)) /* last entry */
-			cpane->hdir--;
-		break;
-	}
 }
 
 static void
