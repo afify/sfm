@@ -197,10 +197,10 @@ static int *selection;
 static int cont_vmode = 0;
 static char **selected_files;
 pid_t main_pid;
-#if defined _SYS_INOTIFY_H
+#if defined(_SYS_INOTIFY_H)
 #define READEVSZ 16
 static int inotify_fd;
-#elif defined _SYS_EVENT_H_
+#elif defined(_SYS_EVENT_H_)
 #define READEVSZ 0
 static int kq;
 struct kevent evlist[2]; /* events we want to monitor */
@@ -1166,11 +1166,11 @@ opnf(char *fn)
 static int
 fsev_init(void)
 {
-#if defined _SYS_INOTIFY_H
+#if defined(_SYS_INOTIFY_H)
 	inotify_fd = inotify_init();
 	if (inotify_fd < 0)
 		return -1;
-#elif defined _SYS_EVENT_H_
+#elif defined(_SYS_EVENT_H_)
 	gtimeout.tv_sec = 1;
 	kq = kqueue();
 	if (kq < 0)
@@ -1182,11 +1182,11 @@ fsev_init(void)
 static int
 addwatch(Pane *pane)
 {
-#if defined _SYS_INOTIFY_H
+#if defined(_SYS_INOTIFY_H)
 	return pane->inotify_wd = inotify_add_watch(inotify_fd, pane->dirn,
 		       IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
 			       IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
-#elif defined _SYS_EVENT_H_
+#elif defined(_SYS_EVENT_H_)
 	pane->event_fd = open(pane->dirn, O_RDONLY);
 	if (pane->event_fd < 0)
 		return pane->event_fd;
@@ -1202,7 +1202,7 @@ addwatch(Pane *pane)
 static int
 read_events(void)
 {
-#if defined _SYS_INOTIFY_H
+#if defined(_SYS_INOTIFY_H)
 	char *p;
 	ssize_t r;
 	struct inotify_event *event;
@@ -1227,7 +1227,7 @@ read_events(void)
 
 		p += sizeof(struct inotify_event) + event->len;
 	}
-#elif defined _SYS_EVENT_H_
+#elif defined(_SYS_EVENT_H_)
 	return kevent(kq, evlist, 2, chlist, 2, &gtimeout);
 #endif
 	return -1;
@@ -1236,10 +1236,10 @@ read_events(void)
 static void
 rmwatch(Pane *pane)
 {
-#if defined _SYS_INOTIFY_H
+#if defined(_SYS_INOTIFY_H)
 	if (pane->inotify_wd >= 0)
 		inotify_rm_watch(inotify_fd, pane->inotify_wd);
-#elif defined _SYS_EVENT_H_
+#elif defined(_SYS_EVENT_H_)
 	close(pane->event_fd);
 #endif
 }
@@ -1248,14 +1248,14 @@ static void
 fsev_shdn(void)
 {
 	pthread_cancel(fsev_thread);
-#ifndef __APPLE__
+#if defined(__linux__)
 	pthread_join(fsev_thread, NULL);
 #endif
 	rmwatch(&pane_l);
 	rmwatch(&pane_r);
-#if defined _SYS_INOTIFY_H
+#if defined(_SYS_INOTIFY_H)
 	close(inotify_fd);
-#elif defined _SYS_EVENT_H_
+#elif defined(_SYS_EVENT_H_)
 	close(kq);
 #endif
 }
@@ -1964,7 +1964,7 @@ start(void)
 int
 main(int argc, char *argv[])
 {
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__)
 	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath",
 		    NULL) == -1)
 		die("pledge");
