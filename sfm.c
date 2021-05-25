@@ -1124,20 +1124,14 @@ spawn(const void *com_argv, size_t com_argc, const void *f_argv, size_t f_argc,
 	char *fn)
 {
 	int ws;
-	size_t i, argc, x;
+	size_t argc;
 	pid_t pid, r;
 
 	argc = com_argc + f_argc + 2;
-	x = com_argc;
 	char *argv[argc];
 
-	for (i = 0; i < com_argc; i++) /* get command */
-		argv[i] = ((char **)com_argv)[i];
-
-	for (i = 0; i < f_argc; i++) { /* get files */
-		argv[x] = ((char **)f_argv)[i];
-		x++;
-	}
+	memcpy(argv, com_argv, com_argc * sizeof(char *)); /* command */
+	memcpy(&argv[com_argc], f_argv, f_argc * sizeof(char *)); /* files */
 
 	argv[argc - 2] = fn;
 	argv[argc - 1] = NULL;
