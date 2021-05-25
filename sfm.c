@@ -840,7 +840,6 @@ mvdwns(void)
 static void
 mvfwd(void)
 {
-	rmwatch(cpane);
 	if (cpane->dirc < 1)
 		return;
 	int s;
@@ -852,6 +851,7 @@ mvfwd(void)
 		cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
+		rmwatch(cpane);
 		if (listdir(cpane) < 0)
 			print_error(strerror(errno));
 		break;
@@ -1466,9 +1466,6 @@ seldel(void)
 	else
 		print_status(cprompt, "%zu files are deleted", selection_size);
 
-	if (cpane->dirc > 0)
-		cpane->hdir = 1;
-
 	free_files();
 	cont_vmode = -1;
 }
@@ -1790,8 +1787,8 @@ listdir(Pane *pane)
 	if (pane->hdir > pane->dirc)
 		pane->hdir = pane->dirc;
 
-	if (pane == cpane) 
-			add_hi(pane, pane->hdir - 1);
+	if (pane == cpane && pane->dirc > 0)
+		add_hi(pane, pane->hdir - 1);
 
 	if (closedir(dir) < 0)
 		return -1;
