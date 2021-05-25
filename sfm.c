@@ -685,6 +685,8 @@ delent(char *fullpath)
 static void
 calcdir(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	if (!S_ISDIR(CURSOR(cpane).mode))
 		return;
 
@@ -758,6 +760,8 @@ crnf(void)
 static void
 delfd(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	switch (delent(CURSOR(cpane).name)) {
 	case -1:
 		print_error(strerror(errno));
@@ -1302,6 +1306,8 @@ start_filter(void)
 static void
 start_vmode(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	struct tb_event fev;
 	if (selection != NULL) {
 		free(selection);
@@ -1527,6 +1533,8 @@ selmv(void)
 static void
 rname(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	char new_name[MAX_P];
 	char *input_name;
 
@@ -1554,6 +1562,8 @@ rname(void)
 static void
 yank(void)
 {
+	if (cpane->dirc < 1)
+		return;
 	yank_file[0] = CURSOR(cpane).name;
 	print_status(cprompt, "1 file is yanked", selection_size);
 }
