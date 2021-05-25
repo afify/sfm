@@ -193,7 +193,6 @@ static char *editor[2];
 static char fed[] = "vi";
 static int theight, twidth, scrheight;
 static size_t selection_size = 0;
-static char *yank_file[MAX_P];
 static int *selection;
 static int cont_vmode = 0;
 static char **selected_files;
@@ -1410,10 +1409,16 @@ selcalc(void)
 static void
 free_files(void)
 {
-	if (selected_files == NULL)
-		return;
-	free(selected_files);
-	selected_files = NULL;
+	size_t i;
+
+	if (selected_files != NULL) {
+		for (i = 0; i < selection_size; i++) {
+			free(selected_files[i]);
+			selected_files[i] = NULL;
+		}
+		free(selected_files);
+		selected_files = NULL;
+	}
 }
 
 static void
@@ -1426,7 +1431,9 @@ init_files(void)
 	selected_files = ecalloc(selection_size, sizeof(char *));
 
 	for (i = 0; i < selection_size; i++) {
-		selected_files[i] = cpane->direntr[selection[i] - 1].name;
+		selected_files[i] = ecalloc(MAX_P, sizeof(char));
+		strncpy(selected_files[i],
+			cpane->direntr[selection[i] - 1].name, MAX_P);
 	}
 }
 
@@ -1472,20 +1479,10 @@ seldel(void)
 static void
 paste(void)
 {
-	if (yank_file[0] != NULL) {
-		print_status(cprompt, "coping");
-		if (spawn(cp_cmd, cp_cmd_len, &yank_file, 1, cpane->dirn) != 0)
-			print_error(strerror(errno));
-		else
-			print_status(cprompt, "file copied");
-		yank_file[0] = NULL; /* set yank_file len 0 */
+	if (selected_files == NULL) {
+		print_error("nothing to paste");
 		return;
 	}
-
-	print_error("nothing to paste");
-
-	if (selected_files == NULL)
-		return;
 
 	if (spawn(cp_cmd, cp_cmd_len, selected_files, selection_size,
 		    cpane->dirn) < 0)
@@ -1499,20 +1496,10 @@ paste(void)
 static void
 selmv(void)
 {
-	if (yank_file[0] != NULL) {
-		print_status(cprompt, "moving");
-		if (spawn(mv_cmd, mv_cmd_len, yank_file, 1, cpane->dirn) != 0)
-			print_error(strerror(errno));
-		else
-			print_status(cprompt, "file moved");
-		yank_file[0] = NULL; /* set yank_file len 0 */
+	if (selected_files == NULL) {
+		print_error("nothing to move");
 		return;
 	}
-
-	print_error("nothing to move");
-
-	if (selected_files == NULL)
-		return;
 
 	if (spawn(mv_cmd, mv_cmd_len, selected_files, selection_size,
 		    cpane->dirn) < 0)
@@ -1557,7 +1544,12 @@ yank(void)
 {
 	if (cpane->dirc < 1)
 		return;
-	yank_file[0] = CURSOR(cpane).name;
+
+	free_files();
+	selection_size = 1;
+	selected_files = ecalloc(selection_size, sizeof(char *));
+	selected_files[0] = ecalloc(MAX_P, sizeof(char));
+	strncpy(selected_files[0], CURSOR(cpane).name, MAX_P);
 	print_status(cprompt, "1 file is yanked", selection_size);
 }
 
