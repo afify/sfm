@@ -48,10 +48,7 @@
 #define MAX_USRN 32
 #define MAX_GRPN 32
 #define MAX_DTF 32
-#define CURSOR cpane->direntr[cpane->hdir - 1]
-
-/* enums */
-enum { AddHi, NoHi }; /* add highlight in listdir */
+#define CURSOR(x) (x)->direntr[(x)->hdir - 1]
 
 /* typedef */
 typedef struct {
@@ -113,11 +110,11 @@ static void print_status(Cpair, const char *, ...);
 static void print_xstatus(char, int);
 static void print_error(char *);
 static void print_prompt(char *);
-static void print_info(char *);
+static void print_info(Pane *, char *);
 static void print_row(Pane *, size_t, Cpair);
 static void clear(int, int, int, uint16_t);
 static void clear_status(void);
-static void clear_pane(void);
+static void clear_pane(Pane *);
 static void add_hi(Pane *, size_t);
 static void rm_hi(Pane *, size_t);
 static int check_dir(char *);
@@ -156,7 +153,7 @@ static int frules(char *);
 static int spawn(const void *, size_t, const void *, size_t, char *);
 static int opnf(char *);
 static int fsev_init(void);
-static int addwatch(void);
+static int addwatch(Pane *);
 static int read_events(void);
 static void rmwatch(Pane *);
 static void fsev_shdn(void);
@@ -182,9 +179,9 @@ static void quit(void);
 static void grabkeys(struct tb_event *, Key *, size_t);
 static void *read_th(void *arg);
 static void start_ev(void);
-static void refresh_pane(void);
-static void set_direntr(struct dirent *, DIR *, char *);
-static int listdir(int);
+static void refresh_pane(Pane *);
+static void set_direntr(Pane *, struct dirent *, DIR *, char *);
+static int listdir(Pane *);
 static void t_resize(void);
 static void set_panes(void);
 static void draw_frame(void);
@@ -277,21 +274,21 @@ print_prompt(char *prompt)
 }
 
 static void
-print_info(char *dirsize)
+print_info(Pane *pane, char *dirsize)
 {
 	char *sz, *ur, *gr, *dt, *prm;
 
 	dt = ecalloc(MAX_DTF, sizeof(char));
 
-	prm = get_fperm(CURSOR.mode);
-	ur = get_fusr(CURSOR.user);
-	gr = get_fgrp(CURSOR.group);
+	prm = get_fperm(CURSOR(pane).mode);
+	ur = get_fusr(CURSOR(pane).user);
+	gr = get_fgrp(CURSOR(pane).group);
 
-	if (get_fdt(dt, CURSOR.dt) < 0)
+	if (get_fdt(dt, CURSOR(pane).dt) < 0)
 		*dt = '\0';
 
-	if (S_ISREG(CURSOR.mode)) {
-		sz = get_fsize(CURSOR.size);
+	if (S_ISREG(CURSOR(pane).mode)) {
+		sz = get_fsize(CURSOR(pane).size);
 	} else {
 		if (dirsize == NULL) {
 			sz = ecalloc(1, sizeof(char));
@@ -301,8 +298,8 @@ print_info(char *dirsize)
 		}
 	}
 
-	print_status(cstatus, "%02d/%02d %s %s:%s %s %s", cpane->hdir,
-		cpane->dirc, prm, ur, gr, dt, sz);
+	print_status(cstatus, "%02d/%02d %s %s:%s %s %s", pane->hdir,
+		pane->dirc, prm, ur, gr, dt, sz);
 
 	free(prm);
 	free(ur);
@@ -323,7 +320,7 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	width = (twidth / 2) - 4;
 	result = basename(pane->direntr[entpos].name);
 	x = pane->dirx;
-	y = entpos - cpane->firstrow + 1;
+	y = entpos - pane->firstrow + 1;
 
 	if (S_ISLNK(pane->direntr[entpos].mode) != 0) {
 		if (realpath(pane->direntr[entpos].name, buf) != NULL) {
@@ -355,24 +352,24 @@ clear_status(void)
 }
 
 static void
-clear_pane(void)
+clear_pane(Pane *pane)
 {
 	int i, ex, y;
 	y = 0, i = 0, ex = 0;
 
-	if (cpane->pane_id == pane_l.pane_id)
+	if (pane == &pane_l)
 		ex = (twidth / 2) - 1;
-	else if (cpane->pane_id == pane_r.pane_id)
+	else if (pane == &pane_r)
 		ex = twidth - 1;
 
 	while (i < scrheight) {
-		clear(cpane->dirx, ex, y, TB_DEFAULT);
+		clear(pane->dirx, ex, y, TB_DEFAULT);
 		i++;
 		y++;
 	}
 
 	/* draw top line */
-	for (y = cpane->dirx; y < ex; ++y) {
+	for (y = pane->dirx; y < ex; ++y) {
 		tb_change_cell(y, 0, u_hl, cframe.fg, cframe.bg);
 	}
 }
@@ -688,18 +685,18 @@ delent(char *fullpath)
 static void
 calcdir(void)
 {
-	if (!S_ISDIR(CURSOR.mode))
+	if (!S_ISDIR(CURSOR(cpane).mode))
 		return;
 
 	off_t *fullsize;
 	char *csize;
 
 	fullsize = ecalloc(1, sizeof(off_t));
-	get_dirsize(CURSOR.name, fullsize);
+	get_dirsize(CURSOR(cpane).name, fullsize);
 	csize = get_fsize(*fullsize);
 
-	CURSOR.size = *fullsize;
-	print_info(csize);
+	CURSOR(cpane).size = *fullsize;
+	print_info(cpane, csize);
 	free(fullsize);
 }
 
@@ -761,7 +758,7 @@ crnf(void)
 static void
 delfd(void)
 {
-	switch (delent(CURSOR.name)) {
+	switch (delent(CURSOR(cpane).name)) {
 	case -1:
 		print_error(strerror(errno));
 		break;
@@ -788,7 +785,7 @@ mvbk(void)
 	rmwatch(cpane);
 	cpane->firstrow = cpane->parent_firstrow;
 	cpane->hdir = cpane->parent_row;
-	if (listdir(AddHi) < 0)
+	if (listdir(cpane) < 0)
 		print_error(strerror(errno));
 	cpane->parent_firstrow = 0;
 	cpane->parent_row = 1;
@@ -803,14 +800,14 @@ mvbtm(void)
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = cpane->dirc;
 		cpane->firstrow = cpane->dirc - scrheight + 1;
-		refresh_pane();
+		refresh_pane(cpane);
 		add_hi(cpane, cpane->hdir - 1);
 	} else {
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = cpane->dirc;
 		add_hi(cpane, cpane->hdir - 1);
 	}
-	print_info(NULL);
+	print_info(cpane, NULL);
 }
 
 static void
@@ -825,7 +822,7 @@ mvdwn(void)
 	} else {
 		mvdwns(); /* scroll */
 	}
-	print_info(NULL);
+	print_info(cpane, NULL);
 }
 
 static void
@@ -838,7 +835,7 @@ mvdwns(void)
 		cpane->firstrow++;
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir++;
-		refresh_pane();
+		refresh_pane(cpane);
 		add_hi(cpane, cpane->hdir - 1);
 	} else if (cpane->hdir < cpane->dirc) {
 		rm_hi(cpane, cpane->hdir - 1);
@@ -855,19 +852,19 @@ mvfwd(void)
 		return;
 	int s;
 
-	switch (check_dir(CURSOR.name)) {
+	switch (check_dir(CURSOR(cpane).name)) {
 	case 0:
-		strncpy(cpane->dirn, CURSOR.name, MAX_P);
+		strncpy(cpane->dirn, CURSOR(cpane).name, MAX_P);
 		cpane->parent_row = cpane->hdir;
 		cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
-		if (listdir(AddHi) < 0)
+		if (listdir(cpane) < 0)
 			print_error(strerror(errno));
 		break;
 	case 1: /* not a directory open file */
 		tb_shutdown();
-		s = opnf(CURSOR.name);
+		s = opnf(CURSOR(cpane).name);
 		if (tb_init() != 0)
 			die("tb_init");
 		t_resize();
@@ -890,7 +887,7 @@ mvmid(void)
 	else
 		cpane->hdir = (scrheight / 2) + cpane->firstrow;
 	add_hi(cpane, cpane->hdir - 1);
-	print_info(NULL);
+	print_info(cpane, NULL);
 }
 
 static void
@@ -902,13 +899,13 @@ mvtop(void)
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
-		refresh_pane();
+		refresh_pane(cpane);
 		add_hi(cpane, cpane->hdir - 1);
 	} else {
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = 1;
 		add_hi(cpane, cpane->hdir - 1);
-		print_info(NULL);
+		print_info(cpane, NULL);
 	}
 }
 
@@ -924,7 +921,7 @@ mvup(void)
 	} else {
 		mvups(); /* scroll */
 	}
-	print_info(NULL);
+	print_info(cpane, NULL);
 }
 
 static void
@@ -937,7 +934,7 @@ mvups(void)
 		cpane->firstrow--;
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir--;
-		refresh_pane();
+		refresh_pane(cpane);
 		add_hi(cpane, cpane->hdir - 1);
 	} else if (cpane->hdir > 1) {
 		rm_hi(cpane, cpane->hdir - 1);
@@ -962,7 +959,7 @@ scrdwn(void)
 	} else {
 		scrdwns();
 	}
-	print_info(NULL);
+	print_info(cpane, NULL);
 }
 
 static void
@@ -978,7 +975,7 @@ scrdwns(void)
 		cpane->firstrow += dynmv;
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir += scrmv;
-		refresh_pane();
+		refresh_pane(cpane);
 		add_hi(cpane, cpane->hdir - 1);
 	} else {
 		if (cpane->hdir < cpane->dirc - scrmv - 1) {
@@ -1001,7 +998,7 @@ scrup(void)
 			rm_hi(cpane, cpane->hdir - 1);
 			cpane->hdir = cpane->hdir - scrmv;
 			add_hi(cpane, cpane->hdir - 1);
-			print_info(NULL);
+			print_info(cpane, NULL);
 		} else {
 			mvtop();
 		}
@@ -1021,7 +1018,7 @@ scrups(void)
 		cpane->firstrow -= dynmv;
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir -= scrmv;
-		refresh_pane();
+		refresh_pane(cpane);
 		add_hi(cpane, cpane->hdir - 1);
 	} else {
 		if (cpane->hdir > scrmv + 1) {
@@ -1187,17 +1184,17 @@ fsev_init(void)
 }
 
 static int
-addwatch(void)
+addwatch(Pane *pane)
 {
 #if defined _SYS_INOTIFY_H
-	return cpane->inotify_wd = inotify_add_watch(inotify_fd, cpane->dirn,
+	return pane->inotify_wd = inotify_add_watch(inotify_fd, pane->dirn,
 		       IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
 			       IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
 #elif defined _SYS_EVENT_H_
-	cpane->event_fd = open(cpane->dirn, O_RDONLY);
-	if (cpane->event_fd < 0)
-		return cpane->event_fd;
-	EV_SET(&evlist[cpane->pane_id], cpane->event_fd, EVFILT_VNODE,
+	pane->event_fd = open(pane->dirn, O_RDONLY);
+	if (pane->event_fd < 0)
+		return pane->event_fd;
+	EV_SET(&evlist[pane->pane_id], pane->event_fd, EVFILT_VNODE,
 		EV_ADD | EV_CLEAR,
 		NOTE_DELETE | NOTE_EXTEND | NOTE_LINK | NOTE_RENAME |
 			NOTE_REVOKE | NOTE_WRITE,
@@ -1296,7 +1293,7 @@ start_filter(void)
 		return;
 	}
 	cpane->filter = user_input;
-	if (listdir(AddHi) < 0)
+	if (listdir(cpane) < 0)
 		print_error("no match");
 	cpane->filter = NULL;
 	free(user_input);
@@ -1331,7 +1328,7 @@ start_vmode(void)
 static void
 exit_vmode(void)
 {
-	refresh_pane();
+	refresh_pane(cpane);
 	add_hi(cpane, cpane->hdir - 1);
 	cont_vmode = -1;
 }
@@ -1438,7 +1435,7 @@ static void
 selynk(void)
 {
 	init_files();
-	refresh_pane();
+	refresh_pane(cpane);
 	add_hi(cpane, cpane->hdir - 1);
 	print_status(cprompt, "%zu files are yanked", selection_size);
 	cont_vmode = -1;
@@ -1536,7 +1533,7 @@ rname(void)
 	input_name = ecalloc(MAX_N, sizeof(char));
 
 	if (get_usrinput(input_name, MAX_N, "rename: %s",
-		    basename(CURSOR.name)) < 0) {
+		    basename(CURSOR(cpane).name)) < 0) {
 		free(input_name);
 		return;
 	}
@@ -1547,7 +1544,7 @@ rname(void)
 		return;
 	}
 
-	char *rename_cmd[] = { "mv", CURSOR.name, new_name };
+	char *rename_cmd[] = { "mv", CURSOR(cpane).name, new_name };
 	if (spawn(rename_cmd, 3, NULL, 0, NULL) < 0)
 		print_error(strerror(errno));
 
@@ -1557,7 +1554,7 @@ rname(void)
 static void
 yank(void)
 {
-	yank_file[0] = CURSOR.name;
+	yank_file[0] = CURSOR(cpane).name;
 	print_status(cprompt, "1 file is yanked", selection_size);
 }
 
@@ -1572,7 +1569,7 @@ switch_pane(void)
 		cpane = &pane_l;
 	if (cpane->dirc > 0) {
 		add_hi(cpane, cpane->hdir - 1);
-		print_info(NULL);
+		print_info(cpane, NULL);
 	} else {
 		clear_status();
 	}
@@ -1622,7 +1619,7 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 	cpane->firstrow = 0;
 	cpane->parent_row = 1;
 	cpane->hdir = 1;
-	if (listdir(AddHi) < 0)
+	if (listdir(cpane) < 0)
 		print_error(strerror(errno));
 }
 
@@ -1663,7 +1660,7 @@ start_ev(void)
 }
 
 static void
-refresh_pane(void)
+refresh_pane(Pane *pane)
 {
 	size_t y, dyn_max, start_from;
 	int width;
@@ -1671,50 +1668,50 @@ refresh_pane(void)
 	Cpair col;
 
 	y = 1;
-	start_from = cpane->firstrow;
-	dyn_max = MIN(cpane->dirc, (scrheight - 1) + cpane->firstrow);
+	start_from = pane->firstrow;
+	dyn_max = MIN(pane->dirc, (scrheight - 1) + pane->firstrow);
 
 	/* print each entry in directory */
 	while (start_from < dyn_max) {
-		get_hicol(&col, cpane->direntr[start_from].mode);
-		print_row(cpane, start_from, col);
+		get_hicol(&col, pane->direntr[start_from].mode);
+		print_row(pane, start_from, col);
 		start_from++;
 		y++;
 	}
 
-	if (cpane->dirc > 0)
-		print_info(NULL);
+	if (pane->dirc > 0)
+		print_info(pane, NULL);
 	else
 		clear_status();
 
 	/* print current directory title */
-	cpane->dircol.fg |= TB_BOLD;
-	printf_tb(cpane->dirx, 0, cpane->dircol, " %.*s ", width, cpane->dirn);
+	pane->dircol.fg |= TB_BOLD;
+	printf_tb(pane->dirx, 0, pane->dircol, " %.*s ", width, pane->dirn);
 }
 
 static void
-set_direntr(struct dirent *entry, DIR *dir, char *filter)
+set_direntr(Pane *pane, struct dirent *entry, DIR *dir, char *filter)
 {
 	int i;
 	char *tmpfull;
 	struct stat status;
 
-#define ADD_ENTRY                                           \
-	tmpfull = get_fullpath(cpane->dirn, entry->d_name); \
-	strncpy(cpane->direntr[i].name, tmpfull, MAX_N);    \
-	if (lstat(tmpfull, &status) == 0) {                 \
-		cpane->direntr[i].size = status.st_size;    \
-		cpane->direntr[i].mode = status.st_mode;    \
-		cpane->direntr[i].group = status.st_gid;    \
-		cpane->direntr[i].user = status.st_uid;     \
-		cpane->direntr[i].dt = status.st_mtime;     \
-	}                                                   \
-	i++;                                                \
+#define ADD_ENTRY                                          \
+	tmpfull = get_fullpath(pane->dirn, entry->d_name); \
+	strncpy(pane->direntr[i].name, tmpfull, MAX_N);    \
+	if (lstat(tmpfull, &status) == 0) {                \
+		pane->direntr[i].size = status.st_size;    \
+		pane->direntr[i].mode = status.st_mode;    \
+		pane->direntr[i].group = status.st_gid;    \
+		pane->direntr[i].user = status.st_uid;     \
+		pane->direntr[i].dt = status.st_mtime;     \
+	}                                                  \
+	i++;                                               \
 	free(tmpfull);
 
 	i = 0;
-	cpane->direntr =
-		erealloc(cpane->direntr, (10 + cpane->dirc) * sizeof(Entry));
+	pane->direntr =
+		erealloc(pane->direntr, (10 + pane->dirc) * sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
 		if ((strncmp(entry->d_name, ".", 2) == 0 ||
 			    strncmp(entry->d_name, "..", 3) == 0))
@@ -1729,63 +1726,63 @@ set_direntr(struct dirent *entry, DIR *dir, char *filter)
 		}
 	}
 
-	cpane->dirc = i;
+	pane->dirc = i;
 }
 
 static int
-listdir(int hi)
+listdir(Pane *pane)
 {
 	DIR *dir;
 	struct dirent *entry;
 	int width;
 	int filtercount = 0;
-	size_t oldc = cpane->dirc;
+	size_t oldc = pane->dirc;
 
 	width = (twidth / 2) - 4;
-	cpane->dirc = 0;
+	pane->dirc = 0;
 
-	dir = opendir(cpane->dirn);
+	dir = opendir(pane->dirn);
 	if (dir == NULL)
 		return -1;
 
 	/* get content and filter sum */
 	while ((entry = readdir(dir)) != 0) {
-		if (cpane->filter != NULL) {
-			if (strcasestr(entry->d_name, cpane->filter) != NULL)
+		if (pane->filter != NULL) {
+			if (strcasestr(entry->d_name, pane->filter) != NULL)
 				filtercount++;
 		} else { /* no filter */
-			cpane->dirc++;
+			pane->dirc++;
 		}
 	}
 
-	if (cpane->filter == NULL) {
-		clear_pane();
-		cpane->dirc -= 2;
+	if (pane->filter == NULL) {
+		clear_pane(pane);
+		pane->dirc -= 2;
 	}
 
-	if (cpane->filter != NULL) {
+	if (pane->filter != NULL) {
 		if (filtercount > 0) {
-			cpane->dirc = filtercount;
-			clear_pane();
-			cpane->hdir = 1;
+			pane->dirc = filtercount;
+			clear_pane(pane);
+			pane->hdir = 1;
 		} else if (filtercount == 0) {
 			if (closedir(dir) < 0)
 				return -1;
-			cpane->dirc = oldc;
+			pane->dirc = oldc;
 			return -1;
 		}
 	}
 
 	/* print current directory title */
-	cpane->dircol.fg |= TB_BOLD;
-	printf_tb(cpane->dirx, 0, cpane->dircol, " %.*s ", width, cpane->dirn);
+	pane->dircol.fg |= TB_BOLD;
+	printf_tb(pane->dirx, 0, pane->dircol, " %.*s ", width, pane->dirn);
 
-	if (cpane->filter == NULL) /* dont't watch when filtering */
-		if (addwatch() < 0)
+	if (pane->filter == NULL) /* dont't watch when filtering */
+		if (addwatch(pane) < 0)
 			print_error("can't add watch");
 
 	/* empty directory */
-	if (cpane->dirc == 0) {
+	if (pane->dirc == 0) {
 		clear_status();
 		if (closedir(dir) < 0)
 			return -1;
@@ -1793,12 +1790,17 @@ listdir(int hi)
 	}
 
 	rewinddir(dir); /* reset position */
-	set_direntr(entry, dir, cpane->filter); /* create array of entries */
-	qsort(cpane->direntr, cpane->dirc, sizeof(Entry), sort_name);
-	refresh_pane();
+	set_direntr(
+		pane, entry, dir, pane->filter); /* create array of entries */
+	qsort(pane->direntr, pane->dirc, sizeof(Entry), sort_name);
+	refresh_pane(pane);
 
-	if (hi == AddHi && cpane->dirc > 0)
-		add_hi(cpane, cpane->hdir - 1);
+	if (pane == cpane) {
+		if (pane->hdir >= pane->dirc)
+			add_hi(pane, pane->dirc);
+		else
+			add_hi(pane, pane->hdir - 1);
+	}
 
 	if (closedir(dir) < 0)
 		return -1;
@@ -1814,17 +1816,13 @@ t_resize(void)
 	pane_r.dirx = (twidth / 2) + 2;
 
 	if (cpane == &pane_l) {
-		cpane = &pane_r;
-		refresh_pane();
-		cpane = &pane_l;
-		refresh_pane();
+		refresh_pane(&pane_r);
+		refresh_pane(&pane_l);
 		if (cpane->dirc > 0)
 			add_hi(&pane_l, pane_l.hdir - 1);
 	} else if (cpane == &pane_r) {
-		cpane = &pane_l;
-		refresh_pane();
-		cpane = &pane_r;
-		refresh_pane();
+		refresh_pane(&pane_l);
+		refresh_pane(&pane_r);
 		if (cpane->dirc > 0)
 			add_hi(&pane_r, pane_r.hdir - 1);
 	}
@@ -1916,18 +1914,14 @@ th_handler(int num)
 {
 	(void)num;
 	if (cpane == &pane_l) {
-		cpane = &pane_r;
-		if (listdir(NoHi) < 0)
+		if (listdir(&pane_r) < 0)
 			print_error(strerror(errno));
-		cpane = &pane_l;
-		if (listdir(AddHi) < 0)
+		if (listdir(&pane_l) < 0)
 			print_error(strerror(errno));
 	} else if (cpane == &pane_r) {
-		cpane = &pane_l;
-		if (listdir(NoHi) < 0)
+		if (listdir(&pane_l) < 0)
 			print_error(strerror(errno));
-		cpane = &pane_r;
-		if (listdir(AddHi) < 0)
+		if (listdir(&pane_r) < 0)
 			print_error(strerror(errno));
 	}
 	tb_present();
@@ -1961,11 +1955,10 @@ start(void)
 		print_error(strerror(errno));
 	if (fsev_init() < 0)
 		print_error(strerror(errno));
-	cpane = &pane_r;
-	if (listdir(NoHi) < 0)
-		print_error(strerror(errno));
 	cpane = &pane_l;
-	if (listdir(AddHi) < 0)
+	if (listdir(&pane_r) < 0)
+		print_error(strerror(errno));
+	if (listdir(&pane_l) < 0)
 		print_error(strerror(errno));
 	tb_present();
 
