@@ -856,6 +856,7 @@ mvfwd(void)
 			print_error(strerror(errno));
 		break;
 	case 1: /* not a directory open file */
+		rmwatch(cpane);
 		tb_shutdown();
 		s = opnf(CURSOR(cpane).name);
 		if (tb_init() != 0)
