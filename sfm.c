@@ -192,10 +192,10 @@ static Pane pane_r, pane_l, *cpane;
 static char *editor[2];
 static char fed[] = "vi";
 static int theight, twidth, scrheight;
-static size_t selection_size = 0;
-static int *selection;
+static int *sel_indexes;
+static size_t sel_len = 0;
+static char **sel_files;
 static int cont_vmode = 0;
-static char **selected_files;
 pid_t main_pid;
 #if defined(_SYS_INOTIFY_H)
 #define READEVSZ 16
@@ -1298,13 +1298,13 @@ start_vmode(void)
 	if (cpane->dirc < 1)
 		return;
 	struct tb_event fev;
-	if (selection != NULL) {
-		free(selection);
-		selection = NULL;
+	if (sel_indexes != NULL) {
+		free(sel_indexes);
+		sel_indexes = NULL;
 	}
 
-	selection = ecalloc(cpane->dirc, sizeof(size_t));
-	selection[0] = cpane->hdir;
+	sel_indexes = ecalloc(cpane->dirc, sizeof(size_t));
+	sel_indexes[0] = cpane->hdir;
 	cont_vmode = 0;
 	print_prompt("-- VISUAL --");
 	tb_present();
@@ -1333,13 +1333,13 @@ selup(void)
 {
 	mvup();
 	print_prompt("-- VISUAL --");
-	int index = abs(cpane->hdir - selection[0]);
+	int index = abs(cpane->hdir - sel_indexes[0]);
 
-	if (cpane->hdir < selection[0]) {
-		selection[index] = cpane->hdir;
-		add_hi(cpane, selection[index]);
+	if (cpane->hdir < sel_indexes[0]) {
+		sel_indexes[index] = cpane->hdir;
+		add_hi(cpane, sel_indexes[index]);
 	} else if (index < cpane->dirc) {
-		selection[index + 1] = 0;
+		sel_indexes[index + 1] = 0;
 	}
 	if (cpane->dirc >= scrheight ||
 		cpane->hdir <= 1) { /* rehighlight all if scrolling */
@@ -1352,13 +1352,13 @@ seldwn(void)
 {
 	mvdwn();
 	print_prompt("-- VISUAL --");
-	int index = abs(cpane->hdir - selection[0]);
+	int index = abs(cpane->hdir - sel_indexes[0]);
 
-	if (cpane->hdir > selection[0]) {
-		selection[index] = cpane->hdir;
-		add_hi(cpane, selection[index] - 2);
+	if (cpane->hdir > sel_indexes[0]) {
+		sel_indexes[index] = cpane->hdir;
+		add_hi(cpane, sel_indexes[index] - 2);
 	} else {
-		selection[index + 1] = 0;
+		sel_indexes[index + 1] = 0;
 	}
 	if (cpane->dirc >= scrheight ||
 		cpane->hdir >= cpane->dirc) { /* rehighlight all if scrolling */
@@ -1371,7 +1371,7 @@ selall(void)
 {
 	int i;
 	for (i = 0; i < cpane->dirc; i++) {
-		selection[i] = i + 1;
+		sel_indexes[i] = i + 1;
 	}
 	selref();
 }
@@ -1381,10 +1381,10 @@ selref(void)
 {
 	int i;
 	for (i = 0; i < cpane->dirc; i++) {
-		if (selection[i] < (scrheight + cpane->firstrow) &&
-			selection[i] >
+		if (sel_indexes[i] < (scrheight + cpane->firstrow) &&
+			sel_indexes[i] >
 				cpane->firstrow) { /* checks if in the frame of the directories */
-			add_hi(cpane, selection[i] - 1);
+			add_hi(cpane, sel_indexes[i] - 1);
 		}
 	}
 }
@@ -1393,11 +1393,11 @@ static void
 selcalc(void)
 {
 	int j;
-	selection_size = 0;
+	sel_len = 0;
 
 	for (j = 0; j < cpane->dirc; j++) { /* calculate used selection size */
-		if (selection[j] != 0)
-			selection_size++;
+		if (sel_indexes[j] != 0)
+			sel_len++;
 		else
 			break;
 	}
@@ -1408,13 +1408,13 @@ free_files(void)
 {
 	size_t i;
 
-	if (selected_files != NULL) {
-		for (i = 0; i < selection_size; i++) {
-			free(selected_files[i]);
-			selected_files[i] = NULL;
+	if (sel_files != NULL) {
+		for (i = 0; i < sel_len; i++) {
+			free(sel_files[i]);
+			sel_files[i] = NULL;
 		}
-		free(selected_files);
-		selected_files = NULL;
+		free(sel_files);
+		sel_files = NULL;
 	}
 }
 
@@ -1425,12 +1425,12 @@ init_files(void)
 	free_files();
 
 	selcalc();
-	selected_files = ecalloc(selection_size, sizeof(char *));
+	sel_files = ecalloc(sel_len, sizeof(char *));
 
-	for (i = 0; i < selection_size; i++) {
-		selected_files[i] = ecalloc(MAX_P, sizeof(char));
-		strncpy(selected_files[i],
-			cpane->direntr[selection[i] - 1].name, MAX_P);
+	for (i = 0; i < sel_len; i++) {
+		sel_files[i] = ecalloc(MAX_P, sizeof(char));
+		strncpy(sel_files[i], cpane->direntr[sel_indexes[i] - 1].name,
+			MAX_P);
 	}
 }
 
@@ -1440,7 +1440,7 @@ selynk(void)
 	init_files();
 	refresh_pane(cpane);
 	add_hi(cpane, cpane->hdir - 1);
-	print_status(cprompt, "%zu files are yanked", selection_size);
+	print_status(cprompt, "%zu files are yanked", sel_len);
 	cont_vmode = -1;
 }
 
@@ -1461,10 +1461,10 @@ seldel(void)
 
 	init_files();
 
-	if (spawn(rm_cmd, rm_cmd_len, selected_files, selection_size, NULL) < 0)
+	if (spawn(rm_cmd, rm_cmd_len, sel_files, sel_len, NULL) < 0)
 		print_error(strerror(errno));
 	else
-		print_status(cprompt, "%zu files are deleted", selection_size);
+		print_status(cprompt, "%zu files are deleted", sel_len);
 
 	free_files();
 	cont_vmode = -1;
@@ -1473,16 +1473,15 @@ seldel(void)
 static void
 paste(void)
 {
-	if (selected_files == NULL) {
+	if (sel_files == NULL) {
 		print_error("nothing to paste");
 		return;
 	}
 
-	if (spawn(cp_cmd, cp_cmd_len, selected_files, selection_size,
-		    cpane->dirn) < 0)
+	if (spawn(cp_cmd, cp_cmd_len, sel_files, sel_len, cpane->dirn) < 0)
 		print_error(strerror(errno));
 	else
-		print_status(cprompt, "%zu files are copied", selection_size);
+		print_status(cprompt, "%zu files are copied", sel_len);
 
 	free_files();
 }
@@ -1490,16 +1489,15 @@ paste(void)
 static void
 selmv(void)
 {
-	if (selected_files == NULL) {
+	if (sel_files == NULL) {
 		print_error("nothing to move");
 		return;
 	}
 
-	if (spawn(mv_cmd, mv_cmd_len, selected_files, selection_size,
-		    cpane->dirn) < 0)
+	if (spawn(mv_cmd, mv_cmd_len, sel_files, sel_len, cpane->dirn) < 0)
 		print_error(strerror(errno));
 	else
-		print_status(cprompt, "%zu files are moved", selection_size);
+		print_status(cprompt, "%zu files are moved", sel_len);
 
 	free_files();
 }
@@ -1540,11 +1538,11 @@ yank(void)
 		return;
 
 	free_files();
-	selection_size = 1;
-	selected_files = ecalloc(selection_size, sizeof(char *));
-	selected_files[0] = ecalloc(MAX_P, sizeof(char));
-	strncpy(selected_files[0], CURSOR(cpane).name, MAX_P);
-	print_status(cprompt, "1 file is yanked", selection_size);
+	sel_len = 1;
+	sel_files = ecalloc(sel_len, sizeof(char *));
+	sel_files[0] = ecalloc(MAX_P, sizeof(char));
+	strncpy(sel_files[0], CURSOR(cpane).name, MAX_P);
+	print_status(cprompt, "1 file is yanked", sel_len);
 }
 
 static void
@@ -1568,8 +1566,8 @@ static void
 quit(void)
 {
 	if (cont_vmode == -1) { /* check if selection was allocated */
-		free(selection);
-		if (selected_files != NULL)
+		free(sel_indexes);
+		if (sel_files != NULL)
 			free_files();
 	}
 	free(pane_l.direntr);
