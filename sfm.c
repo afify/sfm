@@ -98,9 +98,15 @@ typedef union {
 	uint32_t ch; /* unicode character */
 } Evkey;
 
+typedef union {
+	int i;
+	const void *v;
+} Arg;
+
 typedef struct {
 	const Evkey evkey;
-	void (*func)(void);
+	void (*func)(const Arg *);
+	const Arg arg;
 } Key;
 
 /* function declarations */
@@ -130,23 +136,23 @@ static char *get_fullpath(char *, char *);
 static char *get_fusr(uid_t);
 static void get_dirsize(char *, off_t *);
 static void get_hicol(Cpair *, mode_t);
-static void delent(void);
-static void calcdir(void);
-static void crnd(void);
-static void crnf(void);
-static void mvbk(void);
-static void mvbtm(void);
-static void mvdwn(void);
+static void delent(const Arg *arg);
+static void calcdir(const Arg *arg);
+static void crnd(const Arg *arg);
+static void crnf(const Arg *arg);
+static void mvbk(const Arg *arg);
+static void mvbtm(const Arg *arg);
+static void mvdwn(const Arg *arg);
 static void mvdwns(void);
-static void mvfwd(void);
-static void mvmid(void);
-static void mvtop(void);
-static void mvup(void);
+static void mvfwd(const Arg *arg);
+static void mvmid(const Arg *arg);
+static void mvtop(const Arg *arg);
+static void mvup(const Arg *arg);
 static void mvups(void);
-static void scrdwn(void);
-static void scrdwns(void);
-static void scrup(void);
-static void scrups(void);
+static void scrdwn(const Arg *arg);
+static void scrdwns(const Arg *arg);
+static void scrup(const Arg *arg);
+static void scrups(const Arg *arg);
 static int get_usrinput(char *, size_t, const char *, ...);
 static int frules(char *);
 static int spawn(const void *, size_t, const void *, size_t, char *);
@@ -157,24 +163,24 @@ static int read_events(void);
 static void rmwatch(Pane *);
 static void fsev_shdn(void);
 static ssize_t findbm(uint32_t);
-static void start_filter(void);
-static void start_vmode(void);
-static void exit_vmode(void);
-static void selup(void);
-static void seldwn(void);
-static void selall(void);
+static void start_filter(const Arg *arg);
+static void start_vmode(const Arg *arg);
+static void exit_vmode(const Arg *arg);
+static void selup(const Arg *arg);
+static void seldwn(const Arg *arg);
+static void selall(const Arg *arg);
 static void selref(void);
-static void selynk(void);
+static void selynk(const Arg *arg);
 static void selcalc(void);
-static void paste(void);
-static void selmv(void);
-static void seldel(void);
+static void paste(const Arg *arg);
+static void selmv(const Arg *arg);
+static void seldel(const Arg *arg);
 static void init_files(void);
 static void free_files(void);
-static void yank(void);
-static void rname(void);
-static void switch_pane(void);
-static void quit(void);
+static void yank(const Arg *arg);
+static void rname(const Arg *arg);
+static void switch_pane(const Arg *arg);
+static void quit(const Arg *arg);
 static void grabkeys(struct tb_event *, Key *, size_t);
 static void *read_th(void *arg);
 static void start_ev(void);
@@ -663,7 +669,7 @@ get_hicol(Cpair *col, mode_t mode)
 }
 
 static void
-delent(void)
+delent(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -688,7 +694,7 @@ delent(void)
 }
 
 static void
-calcdir(void)
+calcdir(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -708,7 +714,7 @@ calcdir(void)
 }
 
 static void
-crnd(void)
+crnd(const Arg *arg)
 {
 	char *user_input, *path;
 
@@ -733,7 +739,7 @@ crnd(void)
 }
 
 static void
-crnf(void)
+crnf(const Arg *arg)
 {
 	char *user_input, *path;
 	int rf;
@@ -763,7 +769,7 @@ crnf(void)
 }
 
 static void
-mvbk(void)
+mvbk(const Arg *arg)
 {
 	if (cpane->dirn[0] == '/' && cpane->dirn[1] == '\0') { /* cwd = / */
 		return;
@@ -785,7 +791,7 @@ mvbk(void)
 }
 
 static void
-mvbtm(void)
+mvbtm(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -804,7 +810,7 @@ mvbtm(void)
 }
 
 static void
-mvdwn(void)
+mvdwn(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -838,7 +844,7 @@ mvdwns(void)
 }
 
 static void
-mvfwd(void)
+mvfwd(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -871,7 +877,7 @@ mvfwd(void)
 }
 
 static void
-mvmid(void)
+mvmid(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -885,7 +891,7 @@ mvmid(void)
 }
 
 static void
-mvtop(void)
+mvtop(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -904,7 +910,7 @@ mvtop(void)
 }
 
 static void
-mvup(void)
+mvup(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -938,7 +944,7 @@ mvups(void)
 }
 
 static void
-scrdwn(void)
+scrdwn(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -948,16 +954,16 @@ scrdwn(void)
 			cpane->hdir += scrmv;
 			add_hi(cpane, cpane->hdir - 1);
 		} else {
-			mvbtm();
+			mvbtm(arg);
 		}
 	} else {
-		scrdwns();
+		scrdwns(arg);
 	}
 	print_info(cpane, NULL);
 }
 
 static void
-scrdwns(void)
+scrdwns(const Arg *arg)
 {
 	int real, dynmv;
 
@@ -977,13 +983,13 @@ scrdwns(void)
 			cpane->hdir += scrmv;
 			add_hi(cpane, cpane->hdir - 1);
 		} else {
-			mvbtm();
+			mvbtm(arg);
 		}
 	}
 }
 
 static void
-scrup(void)
+scrup(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -994,15 +1000,15 @@ scrup(void)
 			add_hi(cpane, cpane->hdir - 1);
 			print_info(cpane, NULL);
 		} else {
-			mvtop();
+			mvtop(arg);
 		}
 	} else {
-		scrups();
+		scrups(arg);
 	}
 }
 
 static void
-scrups(void)
+scrups(const Arg *arg)
 {
 	int real, dynmv;
 	real = cpane->hdir - cpane->firstrow;
@@ -1020,7 +1026,7 @@ scrups(void)
 			cpane->hdir -= scrmv;
 			add_hi(cpane, cpane->hdir - 1);
 		} else {
-			mvtop();
+			mvtop(arg);
 		}
 	}
 }
@@ -1276,7 +1282,7 @@ findbm(uint32_t event)
 }
 
 static void
-start_filter(void)
+start_filter(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -1294,7 +1300,7 @@ start_filter(void)
 }
 
 static void
-start_vmode(void)
+start_vmode(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -1322,7 +1328,7 @@ start_vmode(void)
 }
 
 static void
-exit_vmode(void)
+exit_vmode(const Arg *arg)
 {
 	refresh_pane(cpane);
 	add_hi(cpane, cpane->hdir - 1);
@@ -1330,9 +1336,9 @@ exit_vmode(void)
 }
 
 static void
-selup(void)
+selup(const Arg *arg)
 {
-	mvup();
+	mvup(arg);
 	print_prompt("-- VISUAL --");
 	int index = abs(cpane->hdir - sel_indexes[0]);
 
@@ -1349,9 +1355,9 @@ selup(void)
 }
 
 static void
-seldwn(void)
+seldwn(const Arg *arg)
 {
-	mvdwn();
+	mvdwn(arg);
 	print_prompt("-- VISUAL --");
 	int index = abs(cpane->hdir - sel_indexes[0]);
 
@@ -1368,7 +1374,7 @@ seldwn(void)
 }
 
 static void
-selall(void)
+selall(const Arg *arg)
 {
 	int i;
 	for (i = 0; i < cpane->dirc; i++) {
@@ -1436,7 +1442,7 @@ init_files(void)
 }
 
 static void
-selynk(void)
+selynk(const Arg *arg)
 {
 	init_files();
 	refresh_pane(cpane);
@@ -1446,7 +1452,7 @@ selynk(void)
 }
 
 static void
-seldel(void)
+seldel(const Arg *arg)
 {
 	char *inp_conf;
 	int conf_len = 4;
@@ -1472,7 +1478,7 @@ seldel(void)
 }
 
 static void
-paste(void)
+paste(const Arg *arg)
 {
 	if (sel_files == NULL) {
 		print_error("nothing to paste");
@@ -1488,7 +1494,7 @@ paste(void)
 }
 
 static void
-selmv(void)
+selmv(const Arg *arg)
 {
 	if (sel_files == NULL) {
 		print_error("nothing to move");
@@ -1504,7 +1510,7 @@ selmv(void)
 }
 
 static void
-rname(void)
+rname(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -1533,7 +1539,7 @@ rname(void)
 }
 
 static void
-yank(void)
+yank(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
@@ -1547,7 +1553,7 @@ yank(void)
 }
 
 static void
-switch_pane(void)
+switch_pane(const Arg *arg)
 {
 	if (cpane->dirc > 0)
 		rm_hi(cpane, cpane->hdir - 1);
@@ -1564,7 +1570,7 @@ switch_pane(void)
 }
 
 static void
-quit(void)
+quit(const Arg *arg)
 {
 	if (cont_vmode == -1) { /* check if selection was allocated */
 		free(sel_indexes);
@@ -1587,12 +1593,12 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 	for (i = 0; i < max_keys; i++) {
 		if (event->ch != 0) {
 			if (event->ch == key[i].evkey.ch) {
-				key[i].func();
+				key[i].func(&key[i].arg);
 				return;
 			}
 		} else if (event->key != 0) {
 			if (event->key == key[i].evkey.key) {
-				key[i].func();
+				key[i].func(&key[i].arg);
 				return;
 			}
 		}
