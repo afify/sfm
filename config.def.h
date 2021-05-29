@@ -20,10 +20,12 @@ static const Cpair cstatus = { 243, 0 };
 static const char *rm_cmd[] = { "rm", "-rf" }; /* delete */
 static const char *cp_cmd[] = { "cp", "-r" }; /* copy */
 static const char *mv_cmd[] = { "mv" }; /* move */
+static const char delconf[] = "yes";
 
-static const size_t rm_cmd_len = LEN(rm_cmd);
-static const size_t cp_cmd_len = LEN(cp_cmd);
-static const size_t mv_cmd_len = LEN(mv_cmd);
+static const size_t rm_cmd_len  = LEN(rm_cmd);
+static const size_t cp_cmd_len  = LEN(cp_cmd);
+static const size_t mv_cmd_len  = LEN(mv_cmd);
+static const size_t delconf_len = LEN(delconf);
 
 /* bookmarks */
 static const char root[]   = "/";
@@ -61,48 +63,48 @@ static Rule rules[] = {
 
 /* normal keys */
 static Key nkeys[] = {
-	/* keyval                      function         arg */
-	{ {.ch = 'j'},                 mvdwn,           {.i = 0}     },
-	{ {.key = TB_KEY_ARROW_DOWN},  mvdwn,           {.i = 0}     },
-	{ {.ch = 'k'},                 mvup,            {.i = 0}     },
-	{ {.key = TB_KEY_ARROW_UP},    mvup,            {.i = 0}     },
-	{ {.ch = 'l'},                 mvfwd,           {.i = 0}     },
-	{ {.key = TB_KEY_ARROW_RIGHT}, mvfwd,           {.i = 0}     },
-	{ {.ch = 'h'},                 mvbk,            {.i = 0}     },
-	{ {.key = TB_KEY_ARROW_LEFT},  mvbk,            {.i = 0}     },
-	{ {.ch = 'g'},                 mvtop,           {.i = 0}     },
-	{ {.ch = 'G'},                 mvbtm,           {.i = 0}     },
-	{ {.ch = 'M'},                 mvmid,           {.i = 0}     },
-	{ {.key = TB_KEY_CTRL_U},      scrup,           {.i = 0}     },
-	{ {.key = TB_KEY_CTRL_D},      scrdwn,          {.i = 0}     },
-	{ {.ch = 'n'},                 crnf,            {0}          },
-	{ {.ch = 'N'},                 crnd,            {0}          },
-	{ {.ch = 'd'},                 delent,          {0}          },
-	{ {.ch = 'x'},                 calcdir,         {0}          },
-	{ {.ch = '/'},                 start_filter,    {0}          },
-	{ {.ch = 'q'},                 quit,            {0}          },
-	{ {.ch = 'v'},                 start_vmode,     {0}          },
-	{ {.ch = 'y'},                 yank,            {0}          },
-	{ {.ch = 'p'},                 paste,           {0}          },
-	{ {.ch = 'P'},                 selmv,           {0}          },
-	{ {.ch = 'c'},                 rname,           {0}          },
-	{ {.key = TB_KEY_SPACE},       switch_pane,     {0}          },
-	{ {.ch = '\\'},                bkmrk,           {.v = root}  },
+	/* keyval                      function      arg */
+	{ {.ch = 'j'},                 mv_ver,       {.i = -1}       },
+	{ {.key = TB_KEY_ARROW_DOWN},  mv_ver,       {.i = -1}       },
+	{ {.ch = 'k'},                 mv_ver,       {.i = +1}       },
+	{ {.key = TB_KEY_ARROW_UP},    mv_ver,       {.i = +1}       },
+	{ {.key = TB_KEY_CTRL_U},      mv_ver,       {.i = +3}       },
+	{ {.key = TB_KEY_CTRL_D},      mv_ver,       {.i = -3}       },
+	{ {.ch = 'l'},                 mvfwd,        {.i = 0}        },
+	{ {.key = TB_KEY_ARROW_RIGHT}, mvfwd,        {.i = 0}        },
+	{ {.ch = 'h'},                 mvbk,         {.i = 0}        },
+	{ {.key = TB_KEY_ARROW_LEFT},  mvbk,         {.i = 0}        },
+	{ {.ch = 'g'},                 mvtop,        {.i = 0}        },
+	{ {.ch = 'G'},                 mvbtm,        {.i = 0}        },
+	{ {.ch = 'M'},                 mvmid,        {.i = 0}        },
+	{ {.ch = 'n'},                 crnf,         {0}             },
+	{ {.ch = 'N'},                 crnd,         {0}             },
+	{ {.ch = 'd'},                 delent,       {0}             },
+	{ {.ch = 'x'},                 calcdir,      {0}             },
+	{ {.ch = '/'},                 start_filter, {0}             },
+	{ {.ch = 'q'},                 quit,         {0}             },
+	{ {.ch = 'v'},                 start_vmode,  {0}             },
+	{ {.ch = 'y'},                 yank,         {0}             },
+	{ {.ch = 'p'},                 paste,        {0}             },
+	{ {.ch = 'P'},                 selmv,        {0}             },
+	{ {.ch = 'c'},                 rname,        {0}             },
+	{ {.key = TB_KEY_SPACE},       switch_pane,  {0}             },
+	{ {.ch = '\\'},                bkmrk,        {.v = root}     },
 };
 
 /* visual keys */
 static Key vkeys[] = {
 	/* keyval                      function         arg */
-	{ {.ch = 'j'},                 seldwn,          {.i = 0}     },
-	{ {.key = TB_KEY_ARROW_DOWN},  seldwn,          {.i = 0}     },
-	{ {.ch = 'k'},                 selup,           {.i = 0}     },
-	{ {.key = TB_KEY_ARROW_UP},    selup,           {.i = 0}     },
-	{ {.ch = 'a'},                 selall,          {.i = 0}     },
-	{ {.ch = 'y'},                 selynk,          {.i = 0}     },
-	{ {.ch = 'd'},                 seldel,          {.i = 0}     },
-	{ {.ch = 'q'},                 exit_vmode,      {0}          },
-	{ {.ch = 'v'},                 exit_vmode,      {0}          },
-	{ {.key = TB_KEY_ESC},         exit_vmode,      {0}          },
+	{ {.ch = 'j'},                 seldwn,          {.i = -1}      },
+	{ {.key = TB_KEY_ARROW_DOWN},  seldwn,          {.i = -1}      },
+	{ {.ch = 'k'},                 selup,           {.i = +1}      },
+	{ {.key = TB_KEY_ARROW_UP},    selup,           {.i = +1}      },
+	{ {.ch = 'a'},                 selall,          {0}            },
+	{ {.ch = 'y'},                 selynk,          {0}            },
+	{ {.ch = 'd'},                 seldel,          {.v = delconf} },
+	{ {.ch = 'q'},                 exit_vmode,      {0}            },
+	{ {.ch = 'v'},                 exit_vmode,      {0}            },
+	{ {.key = TB_KEY_ESC},         exit_vmode,      {0}            },
 };
 
 static const size_t nkeyslen = LEN(nkeys);
@@ -111,10 +113,6 @@ static const size_t vkeyslen = LEN(vkeys);
 /* permissions */
 static const mode_t ndir_perm = S_IRWXU;
 static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
-
-/* scroll */
-static const int scrmv = 10; /* ctrl+u, ctrl+d movement */
-static const int scrsp = 3;  /* space before scroll */
 
 /* statusbar */
 static const char dtfmt[] = "%F %R"; /* date time format */

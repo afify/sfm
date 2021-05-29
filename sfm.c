@@ -135,19 +135,12 @@ static void delent(const Arg *arg);
 static void calcdir(const Arg *arg);
 static void crnd(const Arg *arg);
 static void crnf(const Arg *arg);
+static void mv_ver(const Arg *arg);
 static void mvbk(const Arg *arg);
 static void mvbtm(const Arg *arg);
-static void mvdwn(const Arg *arg);
-static void mvdwns(void);
 static void mvfwd(const Arg *arg);
 static void mvmid(const Arg *arg);
 static void mvtop(const Arg *arg);
-static void mvup(const Arg *arg);
-static void mvups(void);
-static void scrdwn(const Arg *arg);
-static void scrdwns(const Arg *arg);
-static void scrup(const Arg *arg);
-static void scrups(const Arg *arg);
 static void bkmrk(const Arg *arg);
 static int get_usrinput(char *, size_t, const char *, ...);
 static int frules(char *);
@@ -762,6 +755,49 @@ crnf(const Arg *arg)
 	free(user_input);
 	free(path);
 }
+static void
+mv_ver(const Arg *arg)
+{
+
+	if (cpane->dirc < 1)
+		return;
+	if (cpane->hdir - cpane->firstrow - arg->i < 1) { /* move to the top */
+		if (arg->i > 1)
+			mvtop(arg);
+		return;
+	}
+	if (cpane->hdir - arg->i > cpane->dirc || /* move to the bottom */
+		cpane->hdir - cpane->firstrow - arg->i > scrheight - 1) {
+		if (arg->i < 1)
+			mvbtm(arg);
+		return;
+	}
+
+	if (cpane->firstrow > 1 && arg->i > 0 &&
+		cpane->hdir < (cpane->firstrow + arg->i)) { /* scroll up */
+		cpane->firstrow = cpane->firstrow - arg->i;
+		rm_hi(cpane, cpane->hdir - 1);
+		cpane->hdir = cpane->hdir - arg->i;
+		refresh_pane(cpane);
+		add_hi(cpane, cpane->hdir - 1);
+		return;
+	}
+
+	if (cpane->hdir - cpane->firstrow >= scrheight - 1 &&
+		arg->i < 0) { /* scroll down */
+		cpane->firstrow = cpane->firstrow - arg->i;
+		rm_hi(cpane, cpane->hdir - 1);
+		cpane->hdir = cpane->hdir - arg->i;
+		refresh_pane(cpane);
+		add_hi(cpane, cpane->hdir - 1);
+		return;
+	}
+
+	rm_hi(cpane, cpane->hdir - 1);
+	cpane->hdir = cpane->hdir - arg->i;
+	add_hi(cpane, cpane->hdir - 1);
+	print_info(cpane, NULL);
+}
 
 static void
 mvbk(const Arg *arg)
@@ -802,40 +838,6 @@ mvbtm(const Arg *arg)
 		add_hi(cpane, cpane->hdir - 1);
 	}
 	print_info(cpane, NULL);
-}
-
-static void
-mvdwn(const Arg *arg)
-{
-	if (cpane->dirc < 1)
-		return;
-	if (cpane->dirc < scrheight && cpane->hdir < cpane->dirc) {
-		rm_hi(cpane, cpane->hdir - 1);
-		cpane->hdir++;
-		add_hi(cpane, cpane->hdir - 1);
-	} else {
-		mvdwns(); /* scroll */
-	}
-	print_info(cpane, NULL);
-}
-
-static void
-mvdwns(void)
-{
-	int real;
-	real = cpane->hdir - 1 - cpane->firstrow;
-
-	if (real > scrheight - 3 - scrsp && cpane->hdir + scrsp < cpane->dirc) {
-		cpane->firstrow++;
-		rm_hi(cpane, cpane->hdir - 1);
-		cpane->hdir++;
-		refresh_pane(cpane);
-		add_hi(cpane, cpane->hdir - 1);
-	} else if (cpane->hdir < cpane->dirc) {
-		rm_hi(cpane, cpane->hdir - 1);
-		cpane->hdir++;
-		add_hi(cpane, cpane->hdir - 1);
-	}
 }
 
 static void
@@ -901,128 +903,6 @@ mvtop(const Arg *arg)
 		cpane->hdir = 1;
 		add_hi(cpane, cpane->hdir - 1);
 		print_info(cpane, NULL);
-	}
-}
-
-static void
-mvup(const Arg *arg)
-{
-	if (cpane->dirc < 1)
-		return;
-	if (cpane->dirc < scrheight && cpane->hdir > 1) {
-		rm_hi(cpane, cpane->hdir - 1);
-		cpane->hdir--;
-		add_hi(cpane, cpane->hdir - 1);
-	} else {
-		mvups(); /* scroll */
-	}
-	print_info(cpane, NULL);
-}
-
-static void
-mvups(void)
-{
-	size_t real;
-	real = cpane->hdir - 1 - cpane->firstrow;
-
-	if (cpane->firstrow > 0 && real < 1 + scrsp) {
-		cpane->firstrow--;
-		rm_hi(cpane, cpane->hdir - 1);
-		cpane->hdir--;
-		refresh_pane(cpane);
-		add_hi(cpane, cpane->hdir - 1);
-	} else if (cpane->hdir > 1) {
-		rm_hi(cpane, cpane->hdir - 1);
-		cpane->hdir--;
-		add_hi(cpane, cpane->hdir - 1);
-	}
-}
-
-static void
-scrdwn(const Arg *arg)
-{
-	if (cpane->dirc < 1)
-		return;
-	if (cpane->dirc < scrheight && cpane->hdir < cpane->dirc) {
-		if (cpane->hdir < cpane->dirc - scrmv) {
-			rm_hi(cpane, cpane->hdir - 1);
-			cpane->hdir += scrmv;
-			add_hi(cpane, cpane->hdir - 1);
-		} else {
-			mvbtm(arg);
-		}
-	} else {
-		scrdwns(arg);
-	}
-	print_info(cpane, NULL);
-}
-
-static void
-scrdwns(const Arg *arg)
-{
-	int real, dynmv;
-
-	real = cpane->hdir - cpane->firstrow;
-	dynmv = MIN(cpane->dirc - cpane->hdir - cpane->firstrow, scrmv);
-
-	if (real + scrmv + 1 > scrheight &&
-		cpane->hdir + scrsp + scrmv < cpane->dirc) { /* scroll */
-		cpane->firstrow += dynmv;
-		rm_hi(cpane, cpane->hdir - 1);
-		cpane->hdir += scrmv;
-		refresh_pane(cpane);
-		add_hi(cpane, cpane->hdir - 1);
-	} else {
-		if (cpane->hdir < cpane->dirc - scrmv - 1) {
-			rm_hi(cpane, cpane->hdir - 1);
-			cpane->hdir += scrmv;
-			add_hi(cpane, cpane->hdir - 1);
-		} else {
-			mvbtm(arg);
-		}
-	}
-}
-
-static void
-scrup(const Arg *arg)
-{
-	if (cpane->dirc < 1)
-		return;
-	if (cpane->dirc < scrheight && cpane->hdir > 1) {
-		if (cpane->hdir > scrmv) {
-			rm_hi(cpane, cpane->hdir - 1);
-			cpane->hdir = cpane->hdir - scrmv;
-			add_hi(cpane, cpane->hdir - 1);
-			print_info(cpane, NULL);
-		} else {
-			mvtop(arg);
-		}
-	} else {
-		scrups(arg);
-	}
-}
-
-static void
-scrups(const Arg *arg)
-{
-	int real, dynmv;
-	real = cpane->hdir - cpane->firstrow;
-	dynmv = MIN(cpane->firstrow, scrmv);
-
-	if (cpane->firstrow > 0 && real < scrmv + scrsp) {
-		cpane->firstrow -= dynmv;
-		rm_hi(cpane, cpane->hdir - 1);
-		cpane->hdir -= scrmv;
-		refresh_pane(cpane);
-		add_hi(cpane, cpane->hdir - 1);
-	} else {
-		if (cpane->hdir > scrmv + 1) {
-			rm_hi(cpane, cpane->hdir - 1);
-			cpane->hdir -= scrmv;
-			add_hi(cpane, cpane->hdir - 1);
-		} else {
-			mvtop(arg);
-		}
 	}
 }
 
@@ -1333,7 +1213,7 @@ exit_vmode(const Arg *arg)
 static void
 selup(const Arg *arg)
 {
-	mvup(arg);
+	mv_ver(arg);
 	print_prompt("-- VISUAL --");
 	int index = abs(cpane->hdir - sel_indexes[0]);
 
@@ -1352,7 +1232,7 @@ selup(const Arg *arg)
 static void
 seldwn(const Arg *arg)
 {
-	mvdwn(arg);
+	mv_ver(arg);
 	print_prompt("-- VISUAL --");
 	int index = abs(cpane->hdir - sel_indexes[0]);
 
@@ -1450,12 +1330,10 @@ static void
 seldel(const Arg *arg)
 {
 	char *inp_conf;
-	int conf_len = 4;
-	char conf[] = "yes";
 
-	inp_conf = ecalloc(conf_len, sizeof(char));
-	if ((get_usrinput(inp_conf, conf_len, "delete file (yes) ?") < 0) ||
-		(strncmp(inp_conf, conf, conf_len) != 0)) {
+	inp_conf = ecalloc(delconf_len, sizeof(char));
+	if ((get_usrinput(inp_conf, delconf_len, "delete file (yes) ?") < 0) ||
+		(strncmp(inp_conf, delconf, delconf_len) != 0)) {
 		free(inp_conf);
 		return; /* canceled by user or wrong inp_conf */
 	}
