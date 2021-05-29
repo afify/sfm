@@ -26,9 +26,7 @@ static const size_t cp_cmd_len = LEN(cp_cmd);
 static const size_t mv_cmd_len = LEN(mv_cmd);
 
 /* bookmarks */
-static Bookmark bmarks[] = {
-	{'\\', "/root"},
-};
+static const char root[]   = "/";
 
 /* software */
 static const char *mpv[]          = { "mpv", "--fullscreen" };
@@ -89,6 +87,7 @@ static Key nkeys[] = {
 	{ {.ch = 'P'},                 selmv,           {0}          },
 	{ {.ch = 'c'},                 rname,           {0}          },
 	{ {.key = TB_KEY_SPACE},       switch_pane,     {0}          },
+	{ {.ch = '\\'},                bkmrk,           {.v = root}  },
 };
 
 /* visual keys */
@@ -101,9 +100,9 @@ static Key vkeys[] = {
 	{ {.ch = 'a'},                 selall,          {.i = 0}     },
 	{ {.ch = 'y'},                 selynk,          {.i = 0}     },
 	{ {.ch = 'd'},                 seldel,          {.i = 0}     },
-	{ {.ch = 'q'},                 exit_vmode,      {.i = 0}     },
-	{ {.ch = 'v'},                 exit_vmode,      {.i = 0}     },
-	{ {.key = TB_KEY_ESC},         exit_vmode,      {.i = 0}     },
+	{ {.ch = 'q'},                 exit_vmode,      {0}          },
+	{ {.ch = 'v'},                 exit_vmode,      {0}          },
+	{ {.key = TB_KEY_ESC},         exit_vmode,      {0}          },
 };
 
 static const size_t nkeyslen = LEN(nkeys);

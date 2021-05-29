@@ -82,11 +82,6 @@ typedef struct {
 } Pane;
 
 typedef struct {
-	uint32_t ch;
-	char path[MAX_P];
-} Bookmark;
-
-typedef struct {
 	const char **ext;
 	size_t exlen;
 	const void *v;
@@ -153,6 +148,7 @@ static void scrdwn(const Arg *arg);
 static void scrdwns(const Arg *arg);
 static void scrup(const Arg *arg);
 static void scrups(const Arg *arg);
+static void bkmrk(const Arg *arg);
 static int get_usrinput(char *, size_t, const char *, ...);
 static int frules(char *);
 static int spawn(const void *, size_t, const void *, size_t, char *);
@@ -162,7 +158,6 @@ static int addwatch(Pane *);
 static int read_events(void);
 static void rmwatch(Pane *);
 static void fsev_shdn(void);
-static ssize_t findbm(uint32_t);
 static void start_filter(const Arg *arg);
 static void start_vmode(const Arg *arg);
 static void exit_vmode(const Arg *arg);
@@ -1031,6 +1026,23 @@ scrups(const Arg *arg)
 	}
 }
 
+static void
+bkmrk(const Arg *arg)
+{
+	if (check_dir((char *)arg->v) != 0) {
+		print_error(strerror(errno));
+		return;
+	}
+
+	rmwatch(cpane);
+	strncpy(cpane->dirn, (char *)arg->v, MAX_P);
+	cpane->firstrow = 0;
+	cpane->parent_row = 1;
+	cpane->hdir = 1;
+	if (listdir(cpane) < 0)
+		print_error(strerror(errno));
+}
+
 static int
 get_usrinput(char *out, size_t sout, const char *fmt, ...)
 {
@@ -1262,23 +1274,6 @@ fsev_shdn(void)
 #elif defined(_SYS_EVENT_H_)
 	close(kq);
 #endif
-}
-
-static ssize_t
-findbm(uint32_t event)
-{
-	ssize_t i;
-
-	for (i = 0; i < (ssize_t)LEN(bmarks); i++) {
-		if (event == bmarks[i].ch) {
-			if (check_dir(bmarks[i].path) != 0) {
-				print_error(strerror(errno));
-				return -1;
-			}
-			return i;
-		}
-	}
-	return -1;
 }
 
 static void
@@ -1588,7 +1583,6 @@ static void
 grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 {
 	size_t i;
-	ssize_t b;
 
 	for (i = 0; i < max_keys; i++) {
 		if (event->ch != 0) {
@@ -1603,18 +1597,6 @@ grabkeys(struct tb_event *event, Key *key, size_t max_keys)
 			}
 		}
 	}
-
-	/* bookmarks */
-	b = findbm(event->ch);
-	if (b < 0)
-		return;
-	rmwatch(cpane);
-	strncpy(cpane->dirn, bmarks[b].path, MAX_P);
-	cpane->firstrow = 0;
-	cpane->parent_row = 1;
-	cpane->hdir = 1;
-	if (listdir(cpane) < 0)
-		print_error(strerror(errno));
 }
 
 void *
