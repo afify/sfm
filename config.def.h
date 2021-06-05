@@ -90,6 +90,7 @@ static Key nkeys[] = {
 	{ {.ch = 'c'},                 rname,        {0}             },
 	{ {.key = TB_KEY_SPACE},       switch_pane,  {0}             },
 	{ {.ch = '\\'},                bkmrk,        {.v = root}     },
+	{ {.ch = '.'},                 toggle_df,    {0}             },
 };
 
 /* visual keys */
@@ -113,6 +114,9 @@ static const size_t vkeyslen = LEN(vkeys);
 /* permissions */
 static const mode_t ndir_perm = S_IRWXU;
 static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
+
+/* dotfiles */
+static int show_dotfiles = 1;
 
 /* statusbar */
 static const char dtfmt[] = "%F %R"; /* date time format */

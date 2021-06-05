@@ -151,6 +151,7 @@ static int addwatch(Pane *);
 static int read_events(void);
 static void rmwatch(Pane *);
 static void fsev_shdn(void);
+static void toggle_df(const Arg *arg);
 static void start_filter(const Arg *arg);
 static void start_vmode(const Arg *arg);
 static void exit_vmode(const Arg *arg);
@@ -1157,6 +1158,23 @@ fsev_shdn(void)
 }
 
 static void
+toggle_df(const Arg *arg)
+{
+	show_dotfiles = !show_dotfiles;
+	if (cpane == &pane_l) {
+		if (listdir(&pane_r) < 0)
+			print_error(strerror(errno));
+		if (listdir(&pane_l) < 0)
+			print_error(strerror(errno));
+	} else if (cpane == &pane_r) {
+		if (listdir(&pane_l) < 0)
+			print_error(strerror(errno));
+		if (listdir(&pane_r) < 0)
+			print_error(strerror(errno));
+	}
+}
+
+static void
 start_filter(const Arg *arg)
 {
 	if (cpane->dirc < 1)
@@ -1567,9 +1585,15 @@ set_direntr(Pane *pane, struct dirent *entry, DIR *dir, char *filter)
 	pane->direntr =
 		erealloc(pane->direntr, (10 + pane->dirc) * sizeof(Entry));
 	while ((entry = readdir(dir)) != 0) {
-		if ((strncmp(entry->d_name, ".", 2) == 0 ||
-			    strncmp(entry->d_name, "..", 3) == 0))
-			continue;
+		if (show_dotfiles == 1) {
+			if (entry->d_name[0] == '.' &&
+				(entry->d_name[1] == '\0' || entry->d_name[1] == '.'))
+				continue;
+		} else {
+			if (entry->d_name[0] == '.')
+				continue;
+
+		}
 
 		if (filter == NULL) {
 			ADD_ENTRY
