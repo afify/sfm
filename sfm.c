@@ -719,8 +719,7 @@ crnd(const Arg *arg)
 		return;
 	}
 
-	if (mkdir(path, ndir_perm) < 0)
-		print_error(strerror(errno));
+	PERROR(mkdir(path, ndir_perm) < 0);
 
 	free(user_input);
 	free(path);
@@ -815,8 +814,7 @@ mvbk(const Arg *arg)
 	rmwatch(cpane);
 	cpane->firstrow = cpane->parent_firstrow;
 	cpane->hdir = cpane->parent_row;
-	if (listdir(cpane) < 0)
-		print_error(strerror(errno));
+	PERROR(listdir(cpane) < 0);
 	cpane->parent_firstrow = 0;
 	cpane->parent_row = 1;
 }
@@ -855,8 +853,7 @@ mvfwd(const Arg *arg)
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
 		rmwatch(cpane);
-		if (listdir(cpane) < 0)
-			print_error(strerror(errno));
+		PERROR(listdir(cpane) < 0);
 		break;
 	case 1: /* not a directory open file */
 		rmwatch(cpane);
@@ -919,8 +916,7 @@ bkmrk(const Arg *arg)
 	cpane->firstrow = 0;
 	cpane->parent_row = 1;
 	cpane->hdir = 1;
-	if (listdir(cpane) < 0)
-		print_error(strerror(errno));
+	PERROR(listdir(cpane) < 0);
 }
 
 static int
@@ -1160,8 +1156,8 @@ static void
 toggle_df(const Arg *arg)
 {
 	show_dotfiles = !show_dotfiles;
-	listdir(&panes[Left]);
-	listdir(&panes[Right]);
+	PERROR(listdir(&panes[Left]));
+	PERROR(listdir(&panes[Right]));
 	tb_present();
 }
 
@@ -1414,8 +1410,7 @@ rname(const Arg *arg)
 	}
 
 	char *rename_cmd[] = { "mv", CURSOR(cpane).name, new_name };
-	if (spawn(rename_cmd, 3, NULL, 0, NULL) < 0)
-		print_error(strerror(errno));
+	PERROR(spawn(rename_cmd, 3, NULL, 0, NULL) < 0);
 
 	free(input_name);
 }
@@ -1773,8 +1768,8 @@ th_handler(int num)
 {
 	(void)num;
 
-	listdir(&panes[Left]);
-	listdir(&panes[Right]);
+	PERROR(listdir(&panes[Left]));
+	PERROR(listdir(&panes[Right]));
 	if (cpane->dirc > 0)
 		add_hi(cpane, cpane->hdir - 1);
 	tb_present();
@@ -1795,21 +1790,18 @@ start_signal(void)
 static void
 start(void)
 {
-	if (tb_init() != 0)
-		die("tb_init");
+	FAIL_IF(tb_init() != 0, "tb_init()");
 	if (tb_select_output_mode(TB_OUTPUT_256) != TB_OUTPUT_256)
 		if (tb_select_output_mode(TB_OUTPUT_NORMAL) != TB_OUTPUT_NORMAL)
 			die("output error");
-
 	draw_frame();
 	set_panes();
 	get_editor();
-	if (start_signal() < 0)
-		print_error(strerror(errno));
-	if (fsev_init() < 0)
-		print_error(strerror(errno));
-	listdir(&panes[Left]);
-	listdir(&panes[Right]);
+	PERROR(start_signal() < 0);
+	PERROR(start_signal() < 0);
+	PERROR(fsev_init() < 0);
+	PERROR(listdir(&panes[Left]) < 0);
+	PERROR(listdir(&panes[Right]) < 0);
 	tb_present();
 
 	pthread_create(&fsev_thread, NULL, read_th, NULL);
