@@ -1672,6 +1672,7 @@ t_resize(void)
 {
 	tb_clear();
 	draw_frame();
+	panes[Right].dirx = (twidth / 2) + 2;
 	refresh_pane(&panes[Left]);
 	refresh_pane(&panes[Right]);
 	if (cpane->dirc > 0)
