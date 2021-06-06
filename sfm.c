@@ -1768,11 +1768,8 @@ void
 th_handler(int num)
 {
 	(void)num;
-
 	PERROR(listdir(&panes[Left]));
 	PERROR(listdir(&panes[Right]));
-	if (cpane->dirc > 0)
-		add_hi(cpane, cpane->hdir - 1);
 	tb_present();
 }
 
