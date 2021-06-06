@@ -69,6 +69,7 @@ $ man sfm
 | `p`      | paste               |
 | `P`      | move                |
 | `c`      | rename              |
+| `.`      | toggle dotfiles     |
 | `v`      | start visual mode   |
 | `/`      | start filter        |
 | `ENTER`  | find  filter        |
