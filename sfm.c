@@ -1796,7 +1796,6 @@ start(void)
 	set_panes();
 	get_editor();
 	PERROR(start_signal() < 0);
-	PERROR(start_signal() < 0);
 	PERROR(fsev_init() < 0);
 	PERROR(listdir(&panes[Left]) < 0);
 	PERROR(listdir(&panes[Right]) < 0);
