@@ -760,20 +760,14 @@ mv_ver(const Arg *arg)
 
 	if (cpane->dirc < 1)
 		return;
-	if (cpane->hdir - cpane->firstrow - arg->i < 1) { /* move to the top */
-		if (arg->i > 1)
-			mvtop(arg);
+	if (cpane->hdir - arg->i < 1) /* first line */
 		return;
-	}
-	if (cpane->hdir - arg->i > cpane->dirc || /* move to the bottom */
-		cpane->hdir - cpane->firstrow - arg->i > scrheight - 1) {
-		if (arg->i < 1)
-			mvbtm(arg);
-		return;
-	}
 
-	if (cpane->firstrow > 1 && arg->i > 0 &&
-		cpane->hdir < (cpane->firstrow + arg->i)) { /* scroll up */
+	if (cpane->hdir - arg->i > cpane->dirc) /* last line */
+		return;
+
+	if (cpane->firstrow > 0 && arg->i > 0 &&
+		cpane->hdir <= (cpane->firstrow + arg->i)) { /* scroll up */
 		cpane->firstrow = cpane->firstrow - arg->i;
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = cpane->hdir - arg->i;
@@ -782,7 +776,7 @@ mv_ver(const Arg *arg)
 		return;
 	}
 
-	if (cpane->hdir - cpane->firstrow >= scrheight - 1 &&
+	if (cpane->hdir - cpane->firstrow >= scrheight + arg->i &&
 		arg->i < 0) { /* scroll down */
 		cpane->firstrow = cpane->firstrow - arg->i;
 		rm_hi(cpane, cpane->hdir - 1);
