@@ -963,6 +963,9 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 				out[counter - 1] = '\0';
 				return 0;
 
+			} else if (fev.key == TB_KEY_SPACE) {
+				break;
+
 			} else {
 				if (counter < sout) {
 					print_xstatus((char)fev.ch,
