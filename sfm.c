@@ -981,6 +981,15 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 			tb_present();
 			break;
 
+		case TB_EVENT_RESIZE:
+			t_resize();
+			clear_status();
+			print_tb(buf, 1, height - 1, col.fg, col.bg);
+			print_tb(out, startat + 1, height - 1, cstatus.fg,
+				cstatus.bg);
+			tb_present();
+			break;
+
 		default:
 			return -1;
 		}
