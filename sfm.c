@@ -914,28 +914,23 @@ bkmrk(const Arg *arg)
 }
 
 static int
-get_usrinput(char *out, size_t sout, const char *fmt, ...)
+get_usrinput(char *result, size_t max_chars, const char *fmt, ...)
 {
-	int height = tb_height();
-	size_t startat;
+	char msg[MAX_N];
+	size_t i, cpos, startat;
 	struct tb_event fev;
-	size_t counter = (size_t)1;
-	char empty = ' ';
-	int x = 0;
-	int name_size = 0;
-	char buf[256];
+	va_list vl;
+
+	i = 0;
+	cpos = 1;
+
+	va_start(vl, fmt);
+	startat = vsnprintf(msg, MAX_N, fmt, vl) + 1;
+	va_end(vl);
 
 	clear_status();
-
-	va_list vl;
-	Cpair col;
-	col = cprompt;
-	va_start(vl, fmt);
-	name_size = vsnprintf(buf, sizeof(buf), fmt, vl);
-	va_end(vl);
-	print_tb(buf, 1, height - 1, col.fg, col.bg);
-	startat = name_size + 1;
-	tb_set_cursor((int)(startat + 1), height - 1);
+	print_tb(msg, 1, theight - 1, cprompt.fg, cprompt.bg);
+	tb_set_cursor(startat + 1, theight - 1);
 	tb_present();
 
 	while (tb_poll_event(&fev) != 0) {
@@ -949,32 +944,32 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 
 			if (fev.key == TB_KEY_BACKSPACE ||
 				fev.key == TB_KEY_BACKSPACE2) {
-				if (BETWEEN(counter, 2, sout)) {
-					out[x - 1] = '\0';
-					counter--;
-					x--;
-					print_xstatus(empty, startat + counter);
+				if (BETWEEN(cpos, 2, max_chars)) {
+					result[i - 1] = '\0';
+					cpos--;
+					i--;
+					print_xstatus(' ', startat + cpos);
 					tb_set_cursor(
-						startat + counter, theight - 1);
+						startat + cpos, theight - 1);
 				}
 
 			} else if (fev.key == TB_KEY_ENTER) {
 				tb_set_cursor(-1, -1);
-				out[counter - 1] = '\0';
+				result[cpos - 1] = '\0';
 				return 0;
 
-			} else if (fev.key == TB_KEY_SPACE) {
+			} else if (fev.key) { /* disable other TB_KEY_* */
 				break;
 
 			} else {
-				if (counter < sout) {
+				if (cpos < max_chars) {
 					print_xstatus((char)fev.ch,
-						(startat + counter));
-					out[x] = (char)fev.ch;
-					tb_set_cursor((startat + counter + 1),
+						(startat + cpos));
+					result[i] = (char)fev.ch;
+					tb_set_cursor((startat + cpos + 1),
 						theight - 1);
-					counter++;
-					x++;
+					cpos++;
+					i++;
 				}
 			}
 
@@ -984,8 +979,8 @@ get_usrinput(char *out, size_t sout, const char *fmt, ...)
 		case TB_EVENT_RESIZE:
 			t_resize();
 			clear_status();
-			print_tb(buf, 1, height - 1, col.fg, col.bg);
-			print_tb(out, startat + 1, height - 1, cstatus.fg,
+			print_tb(msg, 1, theight - 1, cprompt.fg, cprompt.bg);
+			print_tb(result, startat + 1, theight - 1, cstatus.fg,
 				cstatus.bg);
 			tb_present();
 			break;
