@@ -140,7 +140,6 @@ static void mv_ver(const Arg *arg);
 static void mvbk(const Arg *arg);
 static void mvbtm(const Arg *arg);
 static void mvfwd(const Arg *arg);
-static void mvmid(const Arg *arg);
 static void mvtop(const Arg *arg);
 static void bkmrk(const Arg *arg);
 static int get_usrinput(char *, size_t, const char *, ...);
@@ -862,20 +861,6 @@ mvfwd(const Arg *arg)
 	case -1: /* failed to open directory */
 		print_error(strerror(errno));
 	}
-}
-
-static void
-mvmid(const Arg *arg)
-{
-	if (cpane->dirc < 1)
-		return;
-	rm_hi(cpane, cpane->hdir - 1);
-	if (cpane->dirc < scrheight / 2)
-		cpane->hdir = (cpane->dirc + 1) / 2;
-	else
-		cpane->hdir = (scrheight / 2) + cpane->firstrow;
-	add_hi(cpane, cpane->hdir - 1);
-	print_info(cpane, NULL);
 }
 
 static void
