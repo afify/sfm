@@ -188,7 +188,7 @@ static Pane *cpane;
 static int pane_idx;
 static char *editor[2];
 static char fed[] = "vi";
-static int theight, twidth, scrheight;
+static int theight, twidth, hwidth, scrheight;
 static int *sel_indexes;
 static size_t sel_len = 0;
 static char **sel_files;
@@ -308,25 +308,23 @@ static void
 print_row(Pane *pane, size_t entpos, Cpair col)
 {
 	int x, y;
-	char *result;
-	char buf[MAX_P];
-	char lnk_full[MAX_P];
-	int width;
+	char *full_str;
+	char rez_pth[MAX_N - 5];
+	char lnk_full[MAX_N];
 
-	width = (twidth / 2) - 4;
-	result = basename(pane->direntr[entpos].name);
+	full_str = basename(pane->direntr[entpos].name);
 	x = pane->dirx;
 	y = entpos - pane->firstrow + 1;
 
 	if (S_ISLNK(pane->direntr[entpos].mode) != 0) {
-		if (realpath(pane->direntr[entpos].name, buf) != NULL) {
-			(void)snprintf(
-				lnk_full, MAX_N, "%s -> %s", result, buf);
-			result = lnk_full;
+		if (realpath(pane->direntr[entpos].name, rez_pth) != NULL) {
+			snprintf(
+				lnk_full, MAX_N, "%s -> %s", full_str, rez_pth);
+			full_str = lnk_full;
 		}
 	}
 
-	printf_tb(x, y, col, "%*.*s", ~width, width, result);
+	printf_tb(x, y, col, "%*.*s", ~hwidth, hwidth, full_str);
 }
 
 static void
@@ -948,8 +946,8 @@ get_usrinput(char *result, size_t max_chars, const char *fmt, ...)
 
 			} else {
 				if (cpos < max_chars) {
-					print_xstatus((char)fev.ch,
-						(startat + cpos));
+					print_xstatus(
+						(char)fev.ch, (startat + cpos));
 					result[i] = (char)fev.ch;
 					tb_set_cursor((startat + cpos + 1),
 						theight - 1);
@@ -1504,8 +1502,7 @@ static void
 refresh_pane(Pane *pane)
 {
 	size_t y, dyn_max, start_from;
-	int width;
-	width = (twidth / 2) - 4;
+	hwidth = (twidth / 2) - 4;
 	Cpair col;
 
 	y = 1;
@@ -1527,7 +1524,7 @@ refresh_pane(Pane *pane)
 
 	/* print current directory title */
 	pane->dircol.fg |= TB_BOLD;
-	printf_tb(pane->dirx, 0, pane->dircol, " %.*s ", width, pane->dirn);
+	printf_tb(pane->dirx, 0, pane->dircol, " %.*s ", hwidth, pane->dirn);
 }
 
 static void
@@ -1581,11 +1578,9 @@ listdir(Pane *pane)
 {
 	DIR *dir;
 	struct dirent *entry;
-	int width;
 	int filtercount = 0;
 	size_t oldc = pane->dirc;
 
-	width = (twidth / 2) - 4;
 	pane->dirc = 0;
 
 	dir = opendir(pane->dirn);
@@ -1622,7 +1617,7 @@ listdir(Pane *pane)
 
 	/* print current directory title */
 	pane->dircol.fg |= TB_BOLD;
-	printf_tb(pane->dirx, 0, pane->dircol, " %.*s ", width, pane->dirn);
+	printf_tb(pane->dirx, 0, pane->dircol, " %.*s ", hwidth, pane->dirn);
 
 	if (pane->filter == NULL) /* dont't watch when filtering */
 		if (addwatch(pane) < 0)
@@ -1720,6 +1715,7 @@ draw_frame(void)
 	int i;
 	theight = tb_height();
 	twidth = tb_width();
+	hwidth = (twidth / 2) - 4;
 	scrheight = theight - 2;
 
 	/* 2 horizontal lines */
