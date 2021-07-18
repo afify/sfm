@@ -1770,7 +1770,19 @@ start_signal(void)
 static void
 start(void)
 {
-	FAIL_IF(tb_init() != 0, "tb_init()");
+	switch (tb_init()) {
+	case TB_EFAILED_TO_OPEN_TTY:
+		die("TB_EFAILED_TO_OPEN_TTY");
+	case TB_EUNSUPPORTED_TERMINAL:
+		die("TB_EUNSUPPORTED_TERMINAL");
+	case TB_EPIPE_TRAP_ERROR:
+		die("TB_EUNSUPPORTED_TERMINAL");
+	case 0:
+		break;
+	default:
+		die("UNKNOWN FAILURE");
+	}
+
 	if (tb_select_output_mode(TB_OUTPUT_256) != TB_OUTPUT_256)
 		if (tb_select_output_mode(TB_OUTPUT_NORMAL) != TB_OUTPUT_NORMAL)
 			die("output error");
