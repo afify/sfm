@@ -193,7 +193,7 @@ static int *sel_indexes;
 static size_t sel_len = 0;
 static char **sel_files;
 static int cont_vmode = 0;
-pid_t main_pid;
+static pid_t fork_pid = 0, main_pid;
 #if defined(_SYS_INOTIFY_H)
 #define READEVSZ 16
 static int inotify_fd;
@@ -850,6 +850,7 @@ mvfwd(const Arg *arg)
 		rmwatch(cpane);
 		tb_shutdown();
 		s = opnf(CURSOR(cpane).name);
+		fork_pid = 0;
 		if (tb_init() != 0)
 			die("tb_init");
 		t_resize();
@@ -994,7 +995,7 @@ spawn(const void *com_argv, size_t com_argc, const void *f_argv, size_t f_argc,
 {
 	int ws;
 	size_t argc;
-	pid_t pid, r;
+	pid_t r;
 
 	argc = com_argc + f_argc + 2;
 	char *argv[argc];
@@ -1005,15 +1006,15 @@ spawn(const void *com_argv, size_t com_argc, const void *f_argv, size_t f_argc,
 	argv[argc - 2] = fn;
 	argv[argc - 1] = NULL;
 
-	pid = fork();
-	switch (pid) {
+	fork_pid = fork();
+	switch (fork_pid) {
 	case -1:
 		return -1;
 	case 0:
 		execvp(argv[0], argv);
 		exit(EXIT_SUCCESS);
 	default:
-		while ((r = waitpid(pid, &ws, 0)) == -1 && errno == EINTR)
+		while ((r = waitpid(fork_pid, &ws, 0)) == -1 && errno == EINTR)
 			continue;
 		if (r == -1)
 			return -1;
@@ -1749,6 +1750,8 @@ draw_frame(void)
 void
 th_handler(int num)
 {
+	if (fork_pid > 0)
+		return;
 	(void)num;
 	PERROR(listdir(&panes[Left]));
 	PERROR(listdir(&panes[Right]));
