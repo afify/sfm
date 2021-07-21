@@ -144,7 +144,7 @@ static void mvtop(const Arg *arg);
 static void bkmrk(const Arg *arg);
 static int get_usrinput(char *, size_t, const char *, ...);
 static int frules(char *);
-static int spawn(const void *, size_t, const void *, size_t, char *);
+static int spawn(const void *, size_t, const void *, size_t, char *, int);
 static int opnf(char *);
 static int fsev_init(void);
 static int addwatch(Pane *);
@@ -210,6 +210,7 @@ static struct timespec gtimeout;
 #define OFF_T "%lld"
 #endif
 enum { Left, Right }; /* panes */
+enum { Wait, DontWait }; /* spawn forks */
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
@@ -672,7 +673,7 @@ delent(const Arg *arg)
 
 	char *tmp[1];
 	tmp[0] = CURSOR(cpane).name;
-	if (spawn(rm_cmd, rm_cmd_len, tmp, 1, NULL) < 0) {
+	if (spawn(rm_cmd, rm_cmd_len, tmp, 1, NULL, DontWait) < 0) {
 		print_error(strerror(errno));
 		return;
 	}
@@ -802,7 +803,6 @@ mvbk(const Arg *arg)
 		return;
 	}
 
-	rmwatch(cpane);
 	cpane->firstrow = cpane->parent_firstrow;
 	cpane->hdir = cpane->parent_row;
 	PERROR(listdir(cpane) < 0);
@@ -843,14 +843,11 @@ mvfwd(const Arg *arg)
 		cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
-		rmwatch(cpane);
 		PERROR(listdir(cpane) < 0);
 		break;
 	case 1: /* not a directory open file */
-		rmwatch(cpane);
 		tb_shutdown();
 		s = opnf(CURSOR(cpane).name);
-		fork_pid = 0;
 		if (tb_init() != 0)
 			die("tb_init");
 		t_resize();
@@ -889,7 +886,6 @@ bkmrk(const Arg *arg)
 		return;
 	}
 
-	rmwatch(cpane);
 	strncpy(cpane->dirn, (char *)arg->v, MAX_P);
 	cpane->firstrow = 0;
 	cpane->parent_row = 1;
@@ -991,7 +987,7 @@ frules(char *ex)
 
 static int
 spawn(const void *com_argv, size_t com_argc, const void *f_argv, size_t f_argc,
-	char *fn)
+	char *fn, int waiting)
 {
 	int ws;
 	size_t argc;
@@ -1014,13 +1010,17 @@ spawn(const void *com_argv, size_t com_argc, const void *f_argv, size_t f_argc,
 		execvp(argv[0], argv);
 		exit(EXIT_SUCCESS);
 	default:
-		while ((r = waitpid(fork_pid, &ws, 0)) == -1 && errno == EINTR)
-			continue;
-		if (r == -1)
-			return -1;
-		if ((WIFEXITED(ws) != 0) && (WEXITSTATUS(ws) != 0))
-			return -1;
+		if (waiting == Wait) {
+			while ((r = waitpid(fork_pid, &ws, 0)) == -1 &&
+				errno == EINTR)
+				continue;
+			if (r == -1)
+				return -1;
+			if ((WIFEXITED(ws) != 0) && (WEXITSTATUS(ws) != 0))
+				return -1;
+		}
 	}
+	fork_pid = 0; /* enable th_handler() */
 	return 0;
 }
 
@@ -1035,9 +1035,10 @@ opnf(char *fn)
 	free(ex);
 
 	if (c < 0) /* extension not found open in editor */
-		return spawn(editor, 1, NULL, 0, fn);
+		return spawn(editor, 1, NULL, 0, fn, Wait);
 	else
-		return spawn((char **)rules[c].v, rules[c].vlen, NULL, 0, fn);
+		return spawn(
+			(char **)rules[c].v, rules[c].vlen, NULL, 0, fn, Wait);
 }
 
 static int
@@ -1331,7 +1332,7 @@ seldel(const Arg *arg)
 
 	init_files();
 
-	if (spawn(rm_cmd, rm_cmd_len, sel_files, sel_len, NULL) < 0)
+	if (spawn(rm_cmd, rm_cmd_len, sel_files, sel_len, NULL, DontWait) < 0)
 		print_error(strerror(errno));
 	else
 		print_status(cprompt, "%zu files are deleted", sel_len);
@@ -1348,7 +1349,8 @@ paste(const Arg *arg)
 		return;
 	}
 
-	if (spawn(cp_cmd, cp_cmd_len, sel_files, sel_len, cpane->dirn) < 0)
+	if (spawn(cp_cmd, cp_cmd_len, sel_files, sel_len, cpane->dirn,
+		    DontWait) < 0)
 		print_error(strerror(errno));
 	else
 		print_status(cprompt, "%zu files are copied", sel_len);
@@ -1364,7 +1366,8 @@ selmv(const Arg *arg)
 		return;
 	}
 
-	if (spawn(mv_cmd, mv_cmd_len, sel_files, sel_len, cpane->dirn) < 0)
+	if (spawn(mv_cmd, mv_cmd_len, sel_files, sel_len, cpane->dirn,
+		    DontWait) < 0)
 		print_error(strerror(errno));
 	else
 		print_status(cprompt, "%zu files are moved", sel_len);
@@ -1395,7 +1398,7 @@ rname(const Arg *arg)
 	}
 
 	char *rename_cmd[] = { "mv", CURSOR(cpane).name, new_name };
-	PERROR(spawn(rename_cmd, 3, NULL, 0, NULL) < 0);
+	PERROR(spawn(rename_cmd, 3, NULL, 0, NULL, DontWait) < 0);
 
 	free(input_name);
 }
@@ -1525,7 +1528,7 @@ refresh_pane(Pane *pane)
 
 	/* print current directory title */
 	pane->dircol.fg |= TB_BOLD;
-	printf_tb(pane->dirx, 0, pane->dircol, " %.*s ", hwidth, pane->dirn);
+	printf_tb(pane->dirx, 0, pane->dircol, " %.*s", hwidth, pane->dirn);
 }
 
 static void
@@ -1618,7 +1621,7 @@ listdir(Pane *pane)
 
 	/* print current directory title */
 	pane->dircol.fg |= TB_BOLD;
-	printf_tb(pane->dirx, 0, pane->dircol, " %.*s ", hwidth, pane->dirn);
+	printf_tb(pane->dirx, 0, pane->dircol, " %.*s", hwidth, pane->dirn);
 
 	if (pane->filter == NULL) /* dont't watch when filtering */
 		if (addwatch(pane) < 0)
@@ -1750,7 +1753,7 @@ draw_frame(void)
 void
 th_handler(int num)
 {
-	if (fork_pid > 0)
+	if (fork_pid > 0) /* while forking don't listdir() */
 		return;
 	(void)num;
 	PERROR(listdir(&panes[Left]));
