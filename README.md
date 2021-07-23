@@ -1,4 +1,4 @@
-![sfm](https://github.com/afify/sfm/blob/main/sfm.png?raw=true)
+<img src="https://afify.dev/img/sfm.png" alt="sfm logo"/>
 
 **simple file manager**
 
@@ -40,7 +40,7 @@ $ perf stat -r 100 $filemanager
 | `vifm`      | `38,792,656`  | `93,301,255`  |
 | `ranger`    | `536,225,530` | `956,977,175` |
 
-<img src="https://github.com/afify/afify.github.io/raw/main/img/sfm_sc.png" alt="drawing" width="800"/>
+<img src="https://afify.dev/img/sfm_sc.png" alt="sfm screenshot" width="800"/>
 
 Options
 -------
