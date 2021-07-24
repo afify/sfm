@@ -98,8 +98,14 @@ make install
 ```
 **latest release**
 ```sh
-wget $(curl -s https://git.afify.dev/sfm/tags.xml | grep --color=never -m 1 -o "\[v.*\]" | tr -d '[]'| awk '{print "https://git.afify.dev/sfm/releases/sfm-"$1".tar.gz"}')
-tar -xzf sfm-*.tar.gz && cd sfm-*/
+[ "$(uname)" = "Linux" ] && shacmd="sha256sum" grepf="--color=never"|| shacmd="sha256"
+latest=$(curl -s https://git.afify.dev/sfm/tags.xml | grep $grepf -m 1 -o "\[v.*\]" | tr -d '[]')
+tgz="https://git.afify.dev/sfm/releases/sfm-${latest}.tar.gz"
+sha="${tgz}.sha256"
+wget "${tgz}"
+wget "${sha}"
+${shacmd} -c "sfm-${latest}.tar.gz.sha256" || exit
+tar -xzf "sfm-${latest}.tar.gz" && cd "sfm-${latest}" || exit
 make
 make install
 ```
