@@ -4,14 +4,20 @@
 #define CONFIG_H
 
 /* colors                      fg,  bg */
-static const Cpair cdir    = { 33,  0 };
-static const Cpair cerr    = { 124, 0 };
-static const Cpair cexec   = { 2,   0 };
+static const Cpair cdir    = { 31, 0 };
 static const Cpair cfile   = { 243, 0 };
+static const Cpair clnk    = { 96, 0 };
+static const Cpair cblk    = { 95, 0 };
+static const Cpair cchr    = { 94, 0 };
+static const Cpair cifo    = { 93, 0 };
+static const Cpair csock   = { 92, 0 };
+static const Cpair cexec   = { 91, 0 };
+static const Cpair cother  = { 90, 0 };
+
 static const Cpair cframe  = { 233, 233 };
-static const Cpair cother  = { 3,   0 };
 static const Cpair cpanell = { 166, 233 };
 static const Cpair cpanelr = { 5,   233 };
+static const Cpair cerr    = { 124, 0 };
 static const Cpair cprompt = { 33,  0 };
 static const Cpair csearch = { 255, 0 };
 static const Cpair cstatus = { 243, 0 };

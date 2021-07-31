@@ -120,7 +120,6 @@ static void clear_pane(Pane *);
 static void add_hi(Pane *, size_t);
 static void rm_hi(Pane *, size_t);
 static int check_dir(char *);
-static mode_t chech_execf(mode_t);
 static int sort_name(const void *const, const void *const);
 static void get_dirp(char *);
 static char *get_ext(char *);
@@ -402,14 +401,6 @@ check_dir(char *path)
 	return 0;
 }
 
-static mode_t
-chech_execf(mode_t mode)
-{
-	if (S_ISREG(mode))
-		return (((S_IXUSR | S_IXGRP | S_IXOTH) & mode));
-	return 0;
-}
-
 static int
 sort_name(const void *const A, const void *const B)
 {
@@ -645,13 +636,34 @@ get_dirsize(char *fullpath, off_t *fullsize)
 static void
 get_hicol(Cpair *col, mode_t mode)
 {
-	*col = cfile;
-	if (S_ISDIR(mode))
+	switch (mode & S_IFMT) {
+	case S_IFREG:
+		*col = cfile;
+		if ((S_IXUSR | S_IXGRP | S_IXOTH) & mode)
+			*col = cexec;
+		break;
+	case S_IFDIR:
 		*col = cdir;
-	else if (S_ISLNK(mode))
+		break;
+	case S_IFLNK:
+		*col = clnk;
+		break;
+	case S_IFBLK:
+		*col = cblk;
+		break;
+	case S_IFCHR:
+		*col = cchr;
+		break;
+	case S_IFIFO:
+		*col = cifo;
+		break;
+	case S_IFSOCK:
+		*col = csock;
+		break;
+	default:
 		*col = cother;
-	else if (chech_execf(mode) > 0)
-		*col = cexec;
+		break;
+	}
 }
 
 static void
