@@ -1793,10 +1793,13 @@ start(void)
 	switch (tb_init()) {
 	case TB_EFAILED_TO_OPEN_TTY:
 		die("TB_EFAILED_TO_OPEN_TTY");
+		break;
 	case TB_EUNSUPPORTED_TERMINAL:
 		die("TB_EUNSUPPORTED_TERMINAL");
+		break;
 	case TB_EPIPE_TRAP_ERROR:
 		die("TB_EUNSUPPORTED_TERMINAL");
+		break;
 	case 0:
 		break;
 	default:
