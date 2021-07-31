@@ -70,10 +70,10 @@ typedef struct {
 	char dirn[MAX_P]; // dir name cwd
 	char *filter;
 	Entry *direntr; // dir entries
-	int dirx; // pane cwd x pos
 	int dirc; // dir entries sum
 	int hdir; // highlighted dir
-	int ex;
+	int x_srt;
+	int x_end;
 	int firstrow;
 	int parent_firstrow;
 	int parent_row; // FIX
@@ -314,7 +314,7 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	char lnk_full[MAX_N];
 
 	full_str = basename(pane->direntr[entpos].name);
-	x = pane->dirx;
+	x = pane->x_srt;
 	y = entpos - pane->firstrow + 1;
 
 	if (S_ISLNK(pane->direntr[entpos].mode) != 0) {
@@ -353,13 +353,13 @@ clear_pane(Pane *pane)
 	y = 0, i = 0;
 
 	while (i < scrheight) {
-		clear(pane->dirx, pane->ex, y, TB_DEFAULT);
+		clear(pane->x_srt, pane->x_end, y, TB_DEFAULT);
 		i++;
 		y++;
 	}
 
 	/* draw top line */
-	for (y = pane->dirx; y < pane->ex; ++y) {
+	for (y = pane->x_srt; y < pane->x_end; ++y) {
 		tb_change_cell(y, 0, u_hl, cframe.fg, cframe.bg);
 	}
 }
@@ -1528,7 +1528,7 @@ refresh_pane(Pane *pane)
 
 	/* print current directory title */
 	pane->dircol.fg |= TB_BOLD;
-	printf_tb(pane->dirx, 0, pane->dircol, " %.*s", hwidth, pane->dirn);
+	printf_tb(pane->x_srt, 0, pane->dircol, " %.*s", hwidth, pane->dirn);
 }
 
 static void
@@ -1621,7 +1621,7 @@ listdir(Pane *pane)
 
 	/* print current directory title */
 	pane->dircol.fg |= TB_BOLD;
-	printf_tb(pane->dirx, 0, pane->dircol, " %.*s", hwidth, pane->dirn);
+	printf_tb(pane->x_srt, 0, pane->dircol, " %.*s", hwidth, pane->dirn);
 
 	if (pane->filter == NULL) /* dont't watch when filtering */
 		if (addwatch(pane) < 0)
@@ -1657,7 +1657,9 @@ t_resize(void)
 {
 	tb_clear();
 	draw_frame();
-	panes[Right].dirx = (twidth / 2) + 2;
+	panes[Left].x_end = (twidth / 2) - 1;
+	panes[Right].x_end = twidth - 1;
+	panes[Right].x_srt = (twidth / 2) + 2;
 	refresh_pane(&panes[Left]);
 	refresh_pane(&panes[Right]);
 	if (cpane->dirc > 0)
@@ -1690,9 +1692,9 @@ set_panes(void)
 	pane_idx = Left; /* cursor pane */
 	cpane = &panes[pane_idx];
 
-	panes[Left].ex = (twidth / 2) - 1;
 	panes[Left].pane_id = 0;
-	panes[Left].dirx = 2;
+	panes[Left].x_srt = 2;
+	panes[Left].x_end = (twidth / 2) - 1;
 	panes[Left].dircol = cpanell;
 	panes[Left].firstrow = 0;
 	panes[Left].direntr = ecalloc(0, sizeof(Entry));
@@ -1701,9 +1703,9 @@ set_panes(void)
 	panes[Left].inotify_wd = -1;
 	panes[Left].parent_row = 1;
 
-	panes[Right].ex = twidth - 1;
 	panes[Right].pane_id = 1;
-	panes[Right].dirx = (twidth / 2) + 2;
+	panes[Right].x_srt = (twidth / 2) + 2;
+	panes[Right].x_end = twidth - 1;
 	panes[Right].dircol = cpanelr;
 	panes[Right].firstrow = 0;
 	panes[Right].direntr = ecalloc(0, sizeof(Entry));
