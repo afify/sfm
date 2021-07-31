@@ -104,8 +104,8 @@ tgz="https://git.afify.dev/sfm/releases/sfm-${latest}.tar.gz"
 sha="${tgz}.sha256"
 wget "${tgz}"
 wget "${sha}"
-${shacmd} -c "sfm-${latest}.tar.gz.sha256" || exit
-tar -xzf "sfm-${latest}.tar.gz" && cd "sfm-${latest}" || exit
+${shacmd} -c "sfm-${latest}.tar.gz.sha256" && \
+tar -xzf "sfm-${latest}.tar.gz" && cd "sfm-${latest}" && \
 make
 make install
 ```
