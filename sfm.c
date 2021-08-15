@@ -308,8 +308,7 @@ static void
 print_row(Pane *pane, size_t entpos, Cpair col)
 {
 	int x, y;
-	char *full_str;
-	char rez_pth[MAX_N - 5];
+	char *full_str, *rez_pth;
 	char lnk_full[MAX_N];
 
 	full_str = basename(pane->direntr[entpos].name);
@@ -317,11 +316,12 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	y = entpos - pane->firstrow + 1;
 
 	if (S_ISLNK(pane->direntr[entpos].mode) != 0) {
+		rez_pth = ecalloc(MAX_P, sizeof(char));
 		if (realpath(pane->direntr[entpos].name, rez_pth) != NULL) {
-			snprintf(
-				lnk_full, MAX_N, "%s -> %s", full_str, rez_pth);
+			snprintf(lnk_full, MAX_N, "%s -> %s", full_str, rez_pth);
 			full_str = lnk_full;
 		}
+		free(rez_pth);
 	}
 
 	printf_tb(x, y, col, "%*.*s", ~hwidth, hwidth, full_str);
