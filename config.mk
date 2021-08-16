@@ -1,5 +1,5 @@
 # sfm version
-VERSION = 0.3
+VERSION = 0.3.1
 
 # paths
 PREFIX    = /usr/local
