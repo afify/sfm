@@ -167,6 +167,7 @@ static void init_files(void);
 static void free_files(void);
 static void yank(const Arg *arg);
 static void rname(const Arg *arg);
+static void dupl(const Arg *arg);
 static void switch_pane(const Arg *arg);
 static void quit(const Arg *arg);
 static void grabkeys(struct tb_event *, Key *, size_t);
@@ -318,7 +319,8 @@ print_row(Pane *pane, size_t entpos, Cpair col)
 	if (S_ISLNK(pane->direntr[entpos].mode) != 0) {
 		rez_pth = ecalloc(MAX_P, sizeof(char));
 		if (realpath(pane->direntr[entpos].name, rez_pth) != NULL) {
-			snprintf(lnk_full, MAX_N, "%s -> %s", full_str, rez_pth);
+			snprintf(
+				lnk_full, MAX_N, "%s -> %s", full_str, rez_pth);
 			full_str = lnk_full;
 		}
 		free(rez_pth);
@@ -1411,6 +1413,38 @@ rname(const Arg *arg)
 
 	char *rename_cmd[] = { "mv", CURSOR(cpane).name, new_name };
 	PERROR(spawn(rename_cmd, 3, NULL, 0, NULL, DontWait) < 0);
+
+	free(input_name);
+}
+
+static void
+dupl(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+	char new_name[MAX_P];
+	char *input_name;
+
+	input_name = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(input_name, MAX_N, "new name: %s",
+		    basename(CURSOR(cpane).name)) < 0) {
+		free(input_name);
+		return;
+	}
+
+	if (snprintf(new_name, MAX_P, "%s/%s", cpane->dirn, input_name) < 0) {
+		free(input_name);
+		print_error(strerror(errno));
+		return;
+	}
+
+	char *tmp[1];
+	tmp[0] = CURSOR(cpane).name;
+	if (spawn(cp_cmd, cp_cmd_len, tmp, 1, new_name, DontWait) < 0) {
+		print_error(strerror(errno));
+		return;
+	}
 
 	free(input_name);
 }

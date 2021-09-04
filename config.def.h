@@ -85,6 +85,7 @@ static Key nkeys[] = {
 	{ {.ch = 'n'},                 crnf,         {0}             },
 	{ {.ch = 'N'},                 crnd,         {0}             },
 	{ {.ch = 'd'},                 delent,       {0}             },
+	{ {.ch = 'D'},                 dupl,         {0}             },
 	{ {.ch = 'x'},                 calcdir,      {0}             },
 	{ {.ch = '/'},                 start_filter, {0}             },
 	{ {.ch = 'q'},                 quit,         {0}             },

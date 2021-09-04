@@ -50,31 +50,32 @@ $ man sfm
 ```
 
 **normal mode**
-| key      | description         |
-|:---------|:--------------------|
-| `q`      | quit                |
-| `h`      | back                |
-| `j`      | down                |
-| `k`      | up                  |
-| `l`      | open                |
-| `g`      | top                 |
-| `G`      | bottom              |
-| `M`      | middle              |
-| `ctrl+u` | scroll up           |
-| `ctrl+d` | scroll down         |
-| `n`      | create new file     |
-| `N`      | create new dir      |
-| `d`      | delete file \| dir  |
-| `y`      | yank                |
-| `p`      | paste               |
-| `P`      | move                |
-| `c`      | rename              |
-| `.`      | toggle dotfiles     |
-| `v`      | start visual mode   |
-| `/`      | start filter        |
-| `ENTER`  | find  filter        |
-| `ESC`    | exit  filter        |
-| `SPACE`  | switch pane         |
+| key      | description            |
+|:---------|:-----------------------|
+| `q`      | quit                   |
+| `h`      | back                   |
+| `j`      | down                   |
+| `k`      | up                     |
+| `l`      | open                   |
+| `g`      | top                    |
+| `G`      | bottom                 |
+| `M`      | middle                 |
+| `ctrl+u` | scroll up              |
+| `ctrl+d` | scroll down            |
+| `n`      | create new file        |
+| `N`      | create new dir         |
+| `d`      | delete file \| dir     |
+| `D`      | duplicate file \| dir  |
+| `y`      | yank                   |
+| `p`      | paste                  |
+| `P`      | move                   |
+| `c`      | rename                 |
+| `.`      | toggle dotfiles        |
+| `v`      | start visual mode      |
+| `/`      | start filter           |
+| `ENTER`  | find  filter           |
+| `ESC`    | exit  filter           |
+| `SPACE`  | switch pane            |
 
 **visual mode**
 | key      | description         |
