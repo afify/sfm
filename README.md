@@ -71,7 +71,8 @@ $ man sfm
 | `P`      | move                   |
 | `c`      | rename                 |
 | `cw`     | rename                 |
-| `co`     | owner and group        |
+| `co`     | change owner and group |
+| `cm`     | change mode            |
 | `cc`     | exit change            |
 | `cq`     | exit change            |
 | `.`      | toggle dotfiles        |

@@ -170,6 +170,7 @@ static void free_files(void);
 static void yank(const Arg *arg);
 static void rname(const Arg *arg);
 static void chngo(const Arg *arg);
+static void chngm(const Arg *arg);
 static void dupl(const Arg *arg);
 static void switch_pane(const Arg *arg);
 static void quit(const Arg *arg);
@@ -1228,7 +1229,7 @@ start_change(const Arg *arg)
 	struct tb_event fev;
 
 	cont_change = 0;
-	print_prompt("c [wopa]");
+	print_prompt("c [woma]");
 	tb_present();
 	while (tb_poll_event(&fev) != 0) {
 		switch (fev.type) {
@@ -1435,6 +1436,7 @@ rname(const Arg *arg)
 
 	if (get_usrinput(input_name, MAX_N, "rename: %s",
 		    basename(CURSOR(cpane).name)) < 0) {
+		exit_change(0);
 		free(input_name);
 		return;
 	}
@@ -1464,12 +1466,41 @@ chngo(const Arg *arg)
 
 	if (get_usrinput(input_og, MAX_N, "OWNER:GROUP %s",
 		    basename(CURSOR(cpane).name)) < 0) {
+		exit_change(0);
 		free(input_og);
 		return;
 	}
 
 	tmp[0] = input_og;
 	if (spawn(chown_cmd, chown_cmd_len, tmp, 1, CURSOR(cpane).name,
+		    DontWait) < 0) {
+		print_error(strerror(errno));
+		return;
+	}
+
+	free(input_og);
+	exit_change(0);
+}
+
+static void
+chngm(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+	char *input_og;
+	char *tmp[1];
+
+	input_og = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(input_og, MAX_N, "chmod %s",
+		    basename(CURSOR(cpane).name)) < 0) {
+		exit_change(0);
+		free(input_og);
+		return;
+	}
+
+	tmp[0] = input_og;
+	if (spawn(chmod_cmd, chmod_cmd_len, tmp, 1, CURSOR(cpane).name,
 		    DontWait) < 0) {
 		print_error(strerror(errno));
 		return;

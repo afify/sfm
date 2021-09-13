@@ -26,12 +26,14 @@ static const Cpair cstatus = { 243, 0 };
 static const char *rm_cmd[] = { "rm", "-rf" }; /* delete */
 static const char *cp_cmd[] = { "cp", "-r" }; /* copy */
 static const char *chown_cmd[] = { "chown", "-R" }; /* change file owner and group */
+static const char *chmod_cmd[] = { "chmod" }; /* change file mode bits */
 static const char *mv_cmd[] = { "mv" }; /* move */
 static const char delconf[] = "yes";
 
 static const size_t rm_cmd_len    = LEN(rm_cmd);
 static const size_t cp_cmd_len    = LEN(cp_cmd);
 static const size_t chown_cmd_len = LEN(chown_cmd);
+static const size_t chmod_cmd_len = LEN(chmod_cmd);
 static const size_t mv_cmd_len    = LEN(mv_cmd);
 static const size_t delconf_len   = LEN(delconf);
 
@@ -104,7 +106,7 @@ static Key ckeys[] = {
 	/* keyval                      function         arg */
 	{ {.ch = 'w'},                 rname,            {0}            },
 	{ {.ch = 'o'},                 chngo,            {0}            },
-// 	{ {.ch = 'p'},                 chngp,            {0}            },
+	{ {.ch = 'm'},                 chngm,            {0}            },
 // 	{ {.ch = 'a'},                 chngq,            {0}            },
 	{ {.ch = 'q'},                 exit_change,      {0}            },
 	{ {.ch = 'c'},                 exit_change,      {0}            },
