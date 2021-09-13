@@ -70,11 +70,15 @@ $ man sfm
 | `p`      | paste                  |
 | `P`      | move                   |
 | `c`      | rename                 |
+| `cw`     | rename                 |
+| `co`     | owner and group        |
+| `cc`     | exit change            |
+| `cq`     | exit change            |
 | `.`      | toggle dotfiles        |
 | `v`      | start visual mode      |
 | `/`      | start filter           |
 | `ENTER`  | find  filter           |
-| `ESC`    | exit  filter           |
+| `ESC`    | exit  filter|change    |
 | `SPACE`  | switch pane            |
 
 **visual mode**

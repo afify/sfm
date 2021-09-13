@@ -64,7 +64,19 @@ paste
 move
 .TP
 .B c
+start change
+.TP
+.B cw
 rename
+.TP
+.B co
+owner and group
+.TP
+.B cc
+exit change
+.TP
+.B cq
+exit change
 .TP
 .B .
 toggle dotfiles
@@ -101,7 +113,7 @@ exit visual mode
 exit visual mode
 .TP
 .B ESC
-exit visual mode
+exit visual mode | change
 .SH CUSTOMIZATION
 sfm is customized by creating a custom
 .IR config.h

@@ -25,13 +25,15 @@ static const Cpair cstatus = { 243, 0 };
 /* commands */
 static const char *rm_cmd[] = { "rm", "-rf" }; /* delete */
 static const char *cp_cmd[] = { "cp", "-r" }; /* copy */
+static const char *chown_cmd[] = { "chown", "-R" }; /* change file owner and group */
 static const char *mv_cmd[] = { "mv" }; /* move */
 static const char delconf[] = "yes";
 
-static const size_t rm_cmd_len  = LEN(rm_cmd);
-static const size_t cp_cmd_len  = LEN(cp_cmd);
-static const size_t mv_cmd_len  = LEN(mv_cmd);
-static const size_t delconf_len = LEN(delconf);
+static const size_t rm_cmd_len    = LEN(rm_cmd);
+static const size_t cp_cmd_len    = LEN(cp_cmd);
+static const size_t chown_cmd_len = LEN(chown_cmd);
+static const size_t mv_cmd_len    = LEN(mv_cmd);
+static const size_t delconf_len   = LEN(delconf);
 
 /* bookmarks */
 static const char root[]   = "/";
@@ -47,7 +49,6 @@ static const char *r2[]           = { "r2", "-c", "vv" };
 
 /* extensions*/
 static const char *images[]    = { "bmp", "jpg", "jpeg", "png", "gif", "xpm" };
-static const char *web[]       = { "htm", "html" };
 static const char *pdf[]       = { "epub", "pdf" };
 static const char *arts[]      = { "xcf" };
 static const char *obj[]       = { "o", "a", "so" };
@@ -60,7 +61,6 @@ static const char *documents[] = { "odt", "doc", "docx", "xls", "xlsx", "odp",
 static Rule rules[] = {
 	{videos,    LEN(videos),    mpv,         LEN(mpv)         },
 	{images,    LEN(images),    sxiv,        LEN(sxiv)        },
-	{web,       LEN(web),       surf,        LEN(surf)        },
 	{pdf,       LEN(pdf),       mupdf,       LEN(mupdf)       },
 	{documents, LEN(documents), libreoffice, LEN(libreoffice) },
 	{arts,      LEN(arts),      gimp,        LEN(gimp)        },
@@ -93,10 +93,22 @@ static Key nkeys[] = {
 	{ {.ch = 'y'},                 yank,         {0}             },
 	{ {.ch = 'p'},                 paste,        {0}             },
 	{ {.ch = 'P'},                 selmv,        {0}             },
-	{ {.ch = 'c'},                 rname,        {0}             },
+	{ {.ch = 'c'},                 start_change, {0}             },
 	{ {.key = TB_KEY_SPACE},       switch_pane,  {0}             },
 	{ {.ch = '\\'},                bkmrk,        {.v = root}     },
 	{ {.ch = '.'},                 toggle_df,    {0}             },
+};
+
+/* change keys */
+static Key ckeys[] = {
+	/* keyval                      function         arg */
+	{ {.ch = 'w'},                 rname,            {0}            },
+	{ {.ch = 'o'},                 chngo,            {0}            },
+// 	{ {.ch = 'p'},                 chngp,            {0}            },
+// 	{ {.ch = 'a'},                 chngq,            {0}            },
+	{ {.ch = 'q'},                 exit_change,      {0}            },
+	{ {.ch = 'c'},                 exit_change,      {0}            },
+	{ {.key = TB_KEY_ESC},         exit_change,      {0}            },
 };
 
 /* visual keys */
@@ -116,6 +128,7 @@ static Key vkeys[] = {
 
 static const size_t nkeyslen = LEN(nkeys);
 static const size_t vkeyslen = LEN(vkeys);
+static const size_t ckeyslen = LEN(ckeys);
 
 /* permissions */
 static const mode_t ndir_perm = S_IRWXU;
