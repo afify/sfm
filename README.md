@@ -82,6 +82,7 @@ $ man sfm
 | `ENTER`  | find  filter           |
 | `ESC`    | exit  filter|change    |
 | `SPACE`  | switch pane            |
+| `ctrl+r` | refresh panes          |
 
 **visual mode**
 | key      | description         |

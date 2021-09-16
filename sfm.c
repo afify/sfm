@@ -184,6 +184,7 @@ static int listdir(Pane *);
 static void t_resize(void);
 static void set_panes(void);
 static void draw_frame(void);
+static void refresh(const Arg *arg);
 static void start(void);
 
 /* global variables */
@@ -1941,6 +1942,12 @@ start_signal(void)
 	sigemptyset(&sa.sa_mask);
 	sa.sa_flags = SA_RESTART;
 	return sigaction(SIGUSR1, &sa, NULL);
+}
+
+static void
+refresh(const Arg *arg)
+{
+	kill(main_pid, SIGWINCH);
 }
 
 static void
