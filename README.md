@@ -73,6 +73,7 @@ $ man sfm
 | `cw`     | rename                 |
 | `co`     | change owner and group |
 | `cm`     | change mode            |
+| `cf`     | change flags           |
 | `cc`     | exit change            |
 | `cq`     | exit change            |
 | `.`      | toggle dotfiles        |
