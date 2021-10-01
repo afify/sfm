@@ -24,9 +24,25 @@
 #include <unistd.h>
 #include <wchar.h>
 
-static int inputmode = TB_INPUT_ESC;
+#define ENTER_MOUSE_SEQ "\x1b[?1000h\x1b[?1002h\x1b[?1015h\x1b[?1006h"
+#define EXIT_MOUSE_SEQ "\x1b[?1006l\x1b[?1015l\x1b[?1002l\x1b[?1000l"
+#define EUNSUPPORTED_TERM -1
+#define TI_MAGIC 0432
+#define TI_ALT_MAGIC 542
+#define TI_HEADER_LENGTH 12
+#define TB_KEYS_NUM 22
+#define CELL(buf, x, y) (buf)->cells[(y) * (buf)->width + (x)]
+#define IS_CURSOR_HIDDEN(cx, cy) (cx == -1 || cy == -1)
+#define LAST_COORD_INIT -1
+#define WRITE_LITERAL(X) bytebuffer_append(&output_buffer, (X), sizeof(X) - 1)
+#define WRITE_INT(X) \
+	bytebuffer_append(&output_buffer, buf, convertnum((X), buf))
 
-/* bytebuffer.inl --------------------------------------------------------- */
+struct cellbuf {
+	int width;
+	int height;
+	struct tb_cell *cells;
+};
 
 struct bytebuffer {
 	char *buf;
@@ -34,90 +50,6 @@ struct bytebuffer {
 	int cap;
 };
 
-static void
-bytebuffer_reserve(struct bytebuffer *b, int cap)
-{
-	if (b->cap >= cap) {
-		return;
-	}
-
-	// prefer doubling capacity
-	if (b->cap * 2 >= cap) {
-		cap = b->cap * 2;
-	}
-
-	char *newbuf = realloc(b->buf, cap);
-	b->buf = newbuf;
-	b->cap = cap;
-}
-
-static void
-bytebuffer_init(struct bytebuffer *b, int cap)
-{
-	b->cap = 0;
-	b->len = 0;
-	b->buf = 0;
-
-	if (cap > 0) {
-		b->cap = cap;
-		b->buf = malloc(cap); // just assume malloc works always
-	}
-}
-
-static void
-bytebuffer_free(struct bytebuffer *b)
-{
-	if (b->buf)
-		free(b->buf);
-}
-
-static void
-bytebuffer_clear(struct bytebuffer *b)
-{
-	b->len = 0;
-}
-
-static void
-bytebuffer_append(struct bytebuffer *b, const char *data, int len)
-{
-	bytebuffer_reserve(b, b->len + len);
-	memcpy(b->buf + b->len, data, len);
-	b->len += len;
-}
-
-static void
-bytebuffer_puts(struct bytebuffer *b, const char *str)
-{
-	bytebuffer_append(b, str, strlen(str));
-}
-
-static void
-bytebuffer_resize(struct bytebuffer *b, int len)
-{
-	bytebuffer_reserve(b, len);
-	b->len = len;
-}
-
-static void
-bytebuffer_flush(struct bytebuffer *b, int fd)
-{
-	(void)write(fd, b->buf, b->len);
-	bytebuffer_clear(b);
-}
-
-static void
-bytebuffer_truncate(struct bytebuffer *b, int n)
-{
-	if (n <= 0)
-		return;
-	if (n > b->len)
-		n = b->len;
-	const int nmove = b->len - n;
-	memmove(b->buf, b->buf + n, nmove);
-	b->len -= n;
-}
-
-/* term.inl --------------------------------------------------------------- */
 enum {
 	T_ENTER_CA,
 	T_EXIT_CA,
@@ -136,11 +68,61 @@ enum {
 	T_FUNCS_NUM,
 };
 
-#define ENTER_MOUSE_SEQ "\x1b[?1000h\x1b[?1002h\x1b[?1015h\x1b[?1006h"
-#define EXIT_MOUSE_SEQ "\x1b[?1006l\x1b[?1015l\x1b[?1002l\x1b[?1000l"
+static int init_term_builtin(void);
+static char *read_file(const char *file);
+static char *terminfo_try_path(const char *path, const char *term);
+static char *load_terminfo(void);
+static const char *terminfo_copy_string(char *data, int str, int table);
+static int init_term(void);
+static void shutdown_term(void);
+static bool starts_with(const char *s1, int len, const char *s2);
+static int parse_mouse_event(struct tb_event *event, const char *buf, int len);
+static int parse_escape_seq(struct tb_event *event, const char *buf, int len);
+static int convertnum(uint32_t num, char *buf);
+static void write_cursor(int x, int y);
+static void write_sgr(uint16_t fg, uint16_t bg);
+static void cellbuf_init(struct cellbuf *buf, int width, int height);
+static void cellbuf_resize(struct cellbuf *buf, int width, int height);
+static void cellbuf_clear(struct cellbuf *buf);
+static void cellbuf_free(struct cellbuf *buf);
+static void get_term_size(int *w, int *h);
+static void update_term_size(void);
+static void send_attr(uint16_t fg, uint16_t bg);
+static void send_char(int x, int y, uint32_t c);
+static void send_clear(void);
+static void sigwinch_handler(int xxx);
+static void update_size(void);
+static int read_up_to(int n);
+static int wait_fill_event(struct tb_event *event, struct timeval *timeout);
+static void bytebuffer_reserve(struct bytebuffer *b, int cap);
+static void bytebuffer_init(struct bytebuffer *b, int cap);
+static void bytebuffer_free(struct bytebuffer *b);
+static void bytebuffer_clear(struct bytebuffer *b);
+static void bytebuffer_append(struct bytebuffer *b, const char *data, int len);
+static void bytebuffer_puts(struct bytebuffer *b, const char *str);
+static void bytebuffer_resize(struct bytebuffer *b, int len);
+static void bytebuffer_flush(struct bytebuffer *b, int fd);
+static void bytebuffer_truncate(struct bytebuffer *b, int n);
 
-#define EUNSUPPORTED_TERM -1
-
+static struct termios orig_tios;
+static struct cellbuf back_buffer;
+static struct cellbuf front_buffer;
+static struct bytebuffer output_buffer;
+static struct bytebuffer input_buffer;
+static int termw = -1;
+static int termh = -1;
+static int inputmode = TB_INPUT_ESC;
+static int outputmode = TB_OUTPUT_NORMAL;
+static int inout;
+static int winch_fds[2];
+static int lastx = LAST_COORD_INIT;
+static int lasty = LAST_COORD_INIT;
+static int cursor_x = -1;
+static int cursor_y = -1;
+static uint16_t background = TB_DEFAULT;
+static uint16_t foreground = TB_DEFAULT;
+/* may happen in a different thread */
+static volatile int buffer_size_change_request;
 // rxvt-256color
 static const char *rxvt_256color_keys[] = { "\033[11~", "\033[12~", "\033[13~",
 	"\033[14~", "\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~",
@@ -163,7 +145,6 @@ static const char *rxvt_256color_funcs[] = {
 	ENTER_MOUSE_SEQ,
 	EXIT_MOUSE_SEQ,
 };
-
 // Eterm
 static const char *eterm_keys[] = { "\033[11~", "\033[12~", "\033[13~",
 	"\033[14~", "\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~",
@@ -186,7 +167,6 @@ static const char *eterm_funcs[] = {
 	"",
 	"",
 };
-
 // screen
 static const char *screen_keys[] = { "\033OP", "\033OQ", "\033OR", "\033OS",
 	"\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~", "\033[21~",
@@ -208,7 +188,6 @@ static const char *screen_funcs[] = {
 	ENTER_MOUSE_SEQ,
 	EXIT_MOUSE_SEQ,
 };
-
 // rxvt-unicode
 static const char *rxvt_unicode_keys[] = { "\033[11~", "\033[12~", "\033[13~",
 	"\033[14~", "\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~",
@@ -231,7 +210,6 @@ static const char *rxvt_unicode_funcs[] = {
 	ENTER_MOUSE_SEQ,
 	EXIT_MOUSE_SEQ,
 };
-
 // linux
 static const char *linux_keys[] = { "\033[[A", "\033[[B", "\033[[C", "\033[[D",
 	"\033[[E", "\033[17~", "\033[18~", "\033[19~", "\033[20~", "\033[21~",
@@ -253,7 +231,6 @@ static const char *linux_funcs[] = {
 	"",
 	"",
 };
-
 // xterm
 static const char *xterm_keys[] = { "\033OP", "\033OQ", "\033OR", "\033OS",
 	"\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~", "\033[21~",
@@ -275,7 +252,6 @@ static const char *xterm_funcs[] = {
 	ENTER_MOUSE_SEQ,
 	EXIT_MOUSE_SEQ,
 };
-
 static struct term {
 	const char *name;
 	const char **keys;
@@ -289,7 +265,6 @@ static struct term {
 	{ "xterm", xterm_keys, xterm_funcs },
 	{ 0, 0, 0 },
 };
-
 static bool init_from_terminfo = false;
 static const char **keys;
 static const char **funcs;
@@ -444,11 +419,6 @@ load_terminfo(void)
 	return terminfo_try_path("/usr/share/terminfo", term);
 }
 
-#define TI_MAGIC 0432
-#define TI_ALT_MAGIC 542
-#define TI_HEADER_LENGTH 12
-#define TB_KEYS_NUM 22
-
 static const char *
 terminfo_copy_string(char *data, int str, int table)
 {
@@ -565,8 +535,6 @@ shutdown_term(void)
 	}
 }
 
-/* input.inl -------------------------------------------------------------- */
-
 // if s1 starts with s2 returns true, else false
 // len is the length of s1
 // s2 should be null-terminated
@@ -582,10 +550,144 @@ starts_with(const char *s1, int len, const char *s2)
 	return *s2 == 0;
 }
 
-// convert escape sequence to event, and return consumed bytes on success (failure == 0)
+static int
+parse_mouse_event(struct tb_event *event, const char *buf, int len)
+{
+	if (len >= 6 && starts_with(buf, len, "\033[M")) {
+		// X10 mouse encoding, the simplest one
+		// \033 [ M Cb Cx Cy
+		int b = buf[3] - 32;
+		switch (b & 3) {
+		case 0:
+			if ((b & 64) != 0)
+				event->key = TB_KEY_MOUSE_WHEEL_UP;
+			else
+				event->key = TB_KEY_MOUSE_LEFT;
+			break;
+		case 1:
+			if ((b & 64) != 0)
+				event->key = TB_KEY_MOUSE_WHEEL_DOWN;
+			else
+				event->key = TB_KEY_MOUSE_MIDDLE;
+			break;
+		case 2:
+			event->key = TB_KEY_MOUSE_RIGHT;
+			break;
+		case 3:
+			event->key = TB_KEY_MOUSE_RELEASE;
+			break;
+		default:
+			return -6;
+		}
+		event->type = TB_EVENT_MOUSE; // TB_EVENT_KEY by default
+		if ((b & 32) != 0)
+			event->mod |= TB_MOD_MOTION;
+
+		// the coord is 1,1 for upper left
+		event->x = (uint8_t)buf[4] - 1 - 32;
+		event->y = (uint8_t)buf[5] - 1 - 32;
+
+		return 6;
+	} else if (starts_with(buf, len, "\033[<") ||
+		starts_with(buf, len, "\033[")) {
+		// xterm 1006 extended mode or urxvt 1015 extended mode
+		// xterm: \033 [ < Cb ; Cx ; Cy (M or m)
+		// urxvt: \033 [ Cb ; Cx ; Cy M
+		int i, mi = -1, starti = -1;
+		int isM, isU, s1 = -1, s2 = -1;
+		int n1 = 0, n2 = 0, n3 = 0;
+
+		for (i = 0; i < len; i++) {
+			// We search the first (s1) and the last (s2) ';'
+			if (buf[i] == ';') {
+				if (s1 == -1)
+					s1 = i;
+				s2 = i;
+			}
+
+			// We search for the first 'm' or 'M'
+			if ((buf[i] == 'm' || buf[i] == 'M') && mi == -1) {
+				mi = i;
+				break;
+			}
+		}
+		if (mi == -1)
+			return 0;
+
+		// whether it's a capital M or not
+		isM = (buf[mi] == 'M');
+
+		if (buf[2] == '<') {
+			isU = 0;
+			starti = 3;
+		} else {
+			isU = 1;
+			starti = 2;
+		}
+
+		if (s1 == -1 || s2 == -1 || s1 == s2)
+			return 0;
+
+		n1 = strtoul(&buf[starti], NULL, 10);
+		n2 = strtoul(&buf[s1 + 1], NULL, 10);
+		n3 = strtoul(&buf[s2 + 1], NULL, 10);
+
+		if (isU)
+			n1 -= 32;
+
+		switch (n1 & 3) {
+		case 0:
+			if ((n1 & 64) != 0) {
+				event->key = TB_KEY_MOUSE_WHEEL_UP;
+			} else {
+				event->key = TB_KEY_MOUSE_LEFT;
+			}
+			break;
+		case 1:
+			if ((n1 & 64) != 0) {
+				event->key = TB_KEY_MOUSE_WHEEL_DOWN;
+			} else {
+				event->key = TB_KEY_MOUSE_MIDDLE;
+			}
+			break;
+		case 2:
+			event->key = TB_KEY_MOUSE_RIGHT;
+			break;
+		case 3:
+			event->key = TB_KEY_MOUSE_RELEASE;
+			break;
+		default:
+			return mi + 1;
+		}
+
+		if (!isM) {
+			// on xterm mouse release is signaled by lowercase m
+			event->key = TB_KEY_MOUSE_RELEASE;
+		}
+
+		event->type = TB_EVENT_MOUSE; // TB_EVENT_KEY by default
+		if ((n1 & 32) != 0)
+			event->mod |= TB_MOD_MOTION;
+
+		event->x = (uint8_t)n2 - 1;
+		event->y = (uint8_t)n3 - 1;
+
+		return mi + 1;
+	}
+
+	return 0;
+}
+
+// convert escape sequence to event, and return consumed bytes on success
+// (failure == 0)
 static int
 parse_escape_seq(struct tb_event *event, const char *buf, int len)
 {
+	int mouse_parsed = parse_mouse_event(event, buf, len);
+
+	if (mouse_parsed != 0)
+		return mouse_parsed;
+
 	// it's pretty simple here, find 'starts_with' match and return
 	// success, else return failure
 	int i;
@@ -600,7 +702,7 @@ parse_escape_seq(struct tb_event *event, const char *buf, int len)
 }
 
 static bool
-extract_event(struct tb_event *event, struct bytebuffer *inbuf)
+extract_event(struct tb_event *event, struct bytebuffer *inbuf, int inputmode)
 {
 	const char *buf = inbuf->buf;
 	const int len = inbuf->len;
@@ -633,7 +735,7 @@ extract_event(struct tb_event *event, struct bytebuffer *inbuf)
 				// event and redo parsing
 				event->mod = TB_MOD_ALT;
 				bytebuffer_truncate(inbuf, 1);
-				return extract_event(event, inbuf);
+				return extract_event(event, inbuf, inputmode);
 			}
 			assert(!"never got here");
 		}
@@ -667,60 +769,6 @@ extract_event(struct tb_event *event, struct bytebuffer *inbuf)
 	// sequence
 	return false;
 }
-
-/* -------------------------------------------------------- */
-
-struct cellbuf {
-	int width;
-	int height;
-	struct tb_cell *cells;
-};
-
-#define CELL(buf, x, y) (buf)->cells[(y) * (buf)->width + (x)]
-#define IS_CURSOR_HIDDEN(cx, cy) (cx == -1 || cy == -1)
-#define LAST_COORD_INIT -1
-
-static struct termios orig_tios;
-
-static struct cellbuf back_buffer;
-static struct cellbuf front_buffer;
-static struct bytebuffer output_buffer;
-static struct bytebuffer input_buffer;
-
-static int termw = -1;
-static int termh = -1;
-
-static int outputmode = TB_OUTPUT_NORMAL;
-
-static int inout;
-static int winch_fds[2];
-
-static int lastx = LAST_COORD_INIT;
-static int lasty = LAST_COORD_INIT;
-static int cursor_x = -1;
-static int cursor_y = -1;
-
-static uint16_t background = TB_DEFAULT;
-static uint16_t foreground = TB_DEFAULT;
-
-static void write_cursor(int x, int y);
-static void write_sgr(uint16_t fg, uint16_t bg);
-
-static void cellbuf_init(struct cellbuf *buf, int width, int height);
-static void cellbuf_resize(struct cellbuf *buf, int width, int height);
-static void cellbuf_clear(struct cellbuf *buf);
-static void cellbuf_free(struct cellbuf *buf);
-
-static void update_size(void);
-static void update_term_size(void);
-static void send_attr(uint16_t fg, uint16_t bg);
-static void send_char(int x, int y, uint32_t c);
-static void send_clear(void);
-static void sigwinch_handler(int xxx);
-static int wait_fill_event(struct tb_event *event, struct timeval *timeout);
-
-/* may happen in a different thread */
-static volatile int buffer_size_change_request;
 
 /* -------------------------------------------------------- */
 
@@ -989,7 +1037,7 @@ tb_select_input_mode(int mode)
 			mode |= TB_INPUT_ESC;
 
 		/* technically termbox can handle that, but let's be nice and show here
-		   what mode is actually used */
+           what mode is actually used */
 		if ((mode & (TB_INPUT_ESC | TB_INPUT_ALT)) ==
 			(TB_INPUT_ESC | TB_INPUT_ALT))
 			mode &= ~TB_INPUT_ALT;
@@ -1039,10 +1087,6 @@ convertnum(uint32_t num, char *buf)
 	}
 	return l;
 }
-
-#define WRITE_LITERAL(X) bytebuffer_append(&output_buffer, (X), sizeof(X) - 1)
-#define WRITE_INT(X) \
-	bytebuffer_append(&output_buffer, buf, convertnum((X), buf))
 
 static void
 write_cursor(int x, int y)
@@ -1163,10 +1207,8 @@ get_term_size(int *w, int *h)
 
 	ioctl(inout, TIOCGWINSZ, &sz);
 
-	if (w)
-		*w = sz.ws_col;
-	if (h)
-		*h = sz.ws_row;
+	*w = sz.ws_col > 0 ? sz.ws_col : 80;
+	*h = sz.ws_row > 0 ? sz.ws_row : 24;
 }
 
 static void
@@ -1177,8 +1219,8 @@ update_term_size(void)
 
 	ioctl(inout, TIOCGWINSZ, &sz);
 
-	termw = sz.ws_col;
-	termh = sz.ws_row;
+	termw = sz.ws_col > 0 ? sz.ws_col : 80;
+	termh = sz.ws_row > 0 ? sz.ws_row : 24;
 }
 
 static void
@@ -1266,10 +1308,10 @@ send_clear(void)
 	bytebuffer_flush(&output_buffer, inout);
 
 	/* we need to invalidate cursor position too and these two vars are
-	 * used only for simple cursor positioning optimization, cursor
-	 * actually may be in the correct place, but we simply discard
-	 * optimization once and it gives us simple solution for the case when
-	 * cursor moved */
+     * used only for simple cursor positioning optimization, cursor
+     * actually may be in the correct place, but we simply discard
+     * optimization once and it gives us simple solution for the case when
+     * cursor moved */
 	lastx = LAST_COORD_INIT;
 	lasty = LAST_COORD_INIT;
 }
@@ -1279,7 +1321,7 @@ sigwinch_handler(int xxx)
 {
 	(void)xxx;
 	const int zzz = 1;
-	(void)write(winch_fds[1], &zzz, sizeof(int));
+	write(winch_fds[1], &zzz, sizeof(int));
 }
 
 static void
@@ -1339,7 +1381,7 @@ wait_fill_event(struct tb_event *event, struct timeval *timeout)
 
 	// try to extract event from input buffer, return on success
 	event->type = TB_EVENT_KEY;
-	if (extract_event(event, &input_buffer))
+	if (extract_event(event, &input_buffer, inputmode))
 		return event->type;
 
 	// it looks like input buffer is incomplete, let's try the short path,
@@ -1347,7 +1389,7 @@ wait_fill_event(struct tb_event *event, struct timeval *timeout)
 	int n = read_up_to(ENOUGH_DATA_FOR_PARSING);
 	if (n < 0)
 		return -1;
-	if (n > 0 && extract_event(event, &input_buffer))
+	if (n > 0 && extract_event(event, &input_buffer, inputmode))
 		return event->type;
 
 	// n == 0, or not enough data, let's go to select
@@ -1369,16 +1411,99 @@ wait_fill_event(struct tb_event *event, struct timeval *timeout)
 			if (n == 0)
 				continue;
 
-			if (extract_event(event, &input_buffer))
+			if (extract_event(event, &input_buffer, inputmode))
 				return event->type;
 		}
 		if (FD_ISSET(winch_fds[0], &events)) {
 			event->type = TB_EVENT_RESIZE;
 			int zzz = 0;
-			(void)read(winch_fds[0], &zzz, sizeof(int));
+			read(winch_fds[0], &zzz, sizeof(int));
 			buffer_size_change_request = 1;
 			get_term_size(&event->w, &event->h);
 			return TB_EVENT_RESIZE;
 		}
 	}
+}
+
+static void
+bytebuffer_reserve(struct bytebuffer *b, int cap)
+{
+	if (b->cap >= cap) {
+		return;
+	}
+
+	// prefer doubling capacity
+	if (b->cap * 2 >= cap) {
+		cap = b->cap * 2;
+	}
+
+	char *newbuf = realloc(b->buf, cap);
+	b->buf = newbuf;
+	b->cap = cap;
+}
+
+static void
+bytebuffer_init(struct bytebuffer *b, int cap)
+{
+	b->cap = 0;
+	b->len = 0;
+	b->buf = 0;
+
+	if (cap > 0) {
+		b->cap = cap;
+		b->buf = malloc(cap); // just assume malloc works always
+	}
+}
+
+static void
+bytebuffer_free(struct bytebuffer *b)
+{
+	if (b->buf)
+		free(b->buf);
+}
+
+static void
+bytebuffer_clear(struct bytebuffer *b)
+{
+	b->len = 0;
+}
+
+static void
+bytebuffer_append(struct bytebuffer *b, const char *data, int len)
+{
+	bytebuffer_reserve(b, b->len + len);
+	memcpy(b->buf + b->len, data, len);
+	b->len += len;
+}
+
+static void
+bytebuffer_puts(struct bytebuffer *b, const char *str)
+{
+	bytebuffer_append(b, str, strlen(str));
+}
+
+static void
+bytebuffer_resize(struct bytebuffer *b, int len)
+{
+	bytebuffer_reserve(b, len);
+	b->len = len;
+}
+
+static void
+bytebuffer_flush(struct bytebuffer *b, int fd)
+{
+	write(fd, b->buf, b->len);
+	bytebuffer_clear(b);
+}
+
+static void
+bytebuffer_truncate(struct bytebuffer *b, int n)
+{
+	if (n <= 0)
+		return;
+	if (n > b->len)
+		n = b->len;
+	const int nmove = b->len - n;
+	memmove(b->buf, b->buf + n, nmove);
+	b->len -= n;
 }
