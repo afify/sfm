@@ -182,6 +182,8 @@ static void refresh_pane(Pane *);
 static void set_direntr(Pane *, struct dirent *, DIR *, char *);
 static int listdir(Pane *);
 static void t_resize(void);
+static void get_shell(void);
+static void opnsh(const Arg *arg);
 static void set_panes(void);
 static void draw_frame(void);
 static void refresh(const Arg *arg);
@@ -194,6 +196,8 @@ static Pane *cpane;
 static int pane_idx;
 static char *editor[2];
 static char fed[] = "vi";
+static char *shell[2];
+static char sh[] = "/bin/sh";
 static int theight, twidth, hwidth, scrheight;
 static int *sel_indexes;
 static size_t sel_len = 0;
@@ -1062,6 +1066,21 @@ opnf(char *fn)
 			(char **)rules[c].v, rules[c].vlen, NULL, 0, fn, Wait);
 }
 
+static void
+opnsh(const Arg *arg)
+{
+	int s;
+
+	tb_shutdown();
+	chdir(cpane->dirn);
+	s = spawn(shell, 1, NULL, 0, NULL, Wait);
+	if (tb_init() != 0)
+		die("tb_init");
+	t_resize();
+	if (s < 0)
+		print_error("process failed non-zero exit");
+}
+
 static int
 fsev_init(void)
 {
@@ -1847,6 +1866,16 @@ get_editor(void)
 }
 
 static void
+get_shell(void)
+{
+	shell[0] = getenv("SHELL");
+	shell[1] = NULL;
+
+	if (shell[0] == NULL)
+		shell[0] = sh;
+}
+
+static void
 set_panes(void)
 {
 	char *home;
@@ -1975,6 +2004,7 @@ start(void)
 	draw_frame();
 	set_panes();
 	get_editor();
+	get_shell();
 	PERROR(start_signal() < 0);
 	PERROR(fsev_init() < 0);
 	PERROR(listdir(&panes[Left]) < 0);

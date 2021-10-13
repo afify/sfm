@@ -103,6 +103,7 @@ static Key nkeys[] = {
 	{ {.ch = 'p'},                 paste,        {0}             },
 	{ {.ch = 'P'},                 selmv,        {0}             },
 	{ {.ch = 'c'},                 start_change, {0}             },
+	{ {.ch = 'b'},                 opnsh,        {0}             },
 	{ {.key = TB_KEY_SPACE},       switch_pane,  {0}             },
 	{ {.key = TB_KEY_CTRL_R},      refresh,      {0}             },
 	{ {.ch = '\\'},                bkmrk,        {.v = root}     },
