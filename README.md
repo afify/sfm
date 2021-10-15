@@ -10,8 +10,7 @@
 Description
 ------------
 sfm is a simple file manager for unix-like systems.
-
-* Use pthread to read events, no timers.
+* pthreads(7) to read events, no timers.
 * BSD kqueue(2) - kernel event notification mechanism.
 * Linux inotify(7) - monitoring filesystem events.
 * dual pane.
@@ -29,18 +28,8 @@ sfm is a simple file manager for unix-like systems.
 Performance
 ------------
 ```sh
-$ perf stat -r 100 $filemanager
+$ perf stat -r 10 sfm
 ```
-| filemanager | cycles        | instructions  |
-|:------------|:--------------|:--------------|
-| `sfm`       | `1,137,335`   | `1,789,463`   |
-| `noice`     | `5,380,103`   | `9,214,250`   |
-| `nnn`       | `5,664,917`   | `9,790,040`   |
-| `lf`        | `18,874,802`  | `33,281,073`  |
-| `vifm`      | `38,792,656`  | `93,301,255`  |
-| `ranger`    | `536,225,530` | `956,977,175` |
-
-<img src="https://afify.dev/img/sfm_sc.png" alt="sfm screenshot" width="800"/>
 
 Options
 -------
@@ -48,52 +37,7 @@ Options
 $ sfm [-v]
 $ man sfm
 ```
-
-**normal mode**
-| key      | description            |
-|:---------|:-----------------------|
-| `q`      | quit                   |
-| `h`      | back                   |
-| `j`      | down                   |
-| `k`      | up                     |
-| `l`      | open                   |
-| `g`      | top                    |
-| `G`      | bottom                 |
-| `M`      | middle                 |
-| `ctrl+u` | scroll up              |
-| `ctrl+d` | scroll down            |
-| `n`      | create new file        |
-| `N`      | create new dir         |
-| `d`      | delete file \| dir     |
-| `D`      | duplicate file \| dir  |
-| `y`      | yank                   |
-| `p`      | paste                  |
-| `P`      | move                   |
-| `c`      | rename                 |
-| `cw`     | rename                 |
-| `co`     | change owner and group |
-| `cm`     | change mode            |
-| `cf`     | change flags           |
-| `cc`     | exit change            |
-| `cq`     | exit change            |
-| `.`      | toggle dotfiles        |
-| `v`      | start visual mode      |
-| `/`      | start filter           |
-| `ENTER`  | find  filter           |
-| `ESC`    | exit  filter|change    |
-| `SPACE`  | switch pane            |
-| `ctrl+r` | refresh panes          |
-
-**visual mode**
-| key      | description         |
-|:---------|:--------------------|
-| `j`      | select down         |
-| `k`      | select up           |
-| `d`      | delete selection    |
-| `y`      | yank selection      |
-| `v`      | exit visual mode    |
-| `q`      | exit visual mode    |
-| `ESC`    | exit visual mode    |
+<img src="https://afify.dev/img/sfm_sc.png" alt="sfm screenshot" width="800"/>
 
 Installation
 ------------
@@ -117,6 +61,7 @@ tar -xzf "sfm-${latest}.tar.gz" && cd "sfm-${latest}" && \
 make
 make install
 ```
+
 Run
 ---
 ```sh
