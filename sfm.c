@@ -426,9 +426,9 @@ sort_name(const void *const A, const void *const B)
 	} else if (data1 == data2) {
 		char *a = basename((*(Entry *)A).name);
 		char *b = basename((*(Entry *)B).name);
-		if (*a == '.')
+		if (*a == '.' && sort_ignore_dot)
 			a++;
-		if (*b == '.')
+		if (*b == '.' && sort_ignore_dot)
 			b++;
 		result = strncmp(a, b, MAX_N);
 		return result;
