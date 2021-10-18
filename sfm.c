@@ -424,7 +424,13 @@ sort_name(const void *const A, const void *const B)
 	if (data1 < data2) {
 		return -1;
 	} else if (data1 == data2) {
-		result = strncmp((*(Entry *)A).name, (*(Entry *)B).name, MAX_N);
+		char *a = basename((*(Entry *)A).name);
+		char *b = basename((*(Entry *)B).name);
+		if (*a == '.')
+			a++;
+		if (*b == '.')
+			b++;
+		result = strncmp(a, b, MAX_N);
 		return result;
 	} else {
 		return 1;
