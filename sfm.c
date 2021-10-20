@@ -184,6 +184,7 @@ static int listdir(Pane *);
 static void t_resize(void);
 static void get_shell(void);
 static void opnsh(const Arg *arg);
+static void init_pane(char *, int);
 static void set_panes(void);
 static void draw_frame(void);
 static void refresh(const Arg *arg);
@@ -1541,7 +1542,7 @@ chngf(const Arg *arg)
 
 	input_og = ecalloc(MAX_N, sizeof(char));
 
-	if (get_usrinput(input_og, MAX_N, CHFLAG" %s",
+	if (get_usrinput(input_og, MAX_N, CHFLAG " %s",
 		    basename(CURSOR(cpane).name)) < 0) {
 		exit_change(0);
 		free(input_og);
@@ -1876,6 +1877,33 @@ get_shell(void)
 }
 
 static void
+init_pane(char *path, int pane)
+{
+	struct stat file_status;
+
+	if (strncmp("/", path, 1) == 0) {
+		lstat(path, &file_status);
+		if (S_ISDIR(file_status.st_mode) == 0)
+			die("sfm: not a directory: %s", path);
+		strncpy(panes[pane].dirn, path, MAX_P);
+	} else {
+		char startdir[MAX_P];
+		char real_startdir[MAX_P];
+
+		getcwd(startdir, sizeof(startdir));
+		strcat(startdir, "/");
+		strncat(startdir, path, MAX_P - strlen(startdir));
+		realpath(startdir, real_startdir);
+
+		lstat(startdir, &file_status);
+		if (S_ISDIR(file_status.st_mode) == 0)
+			die("sfm: not a directory: %s", path);
+
+		strncpy(panes[pane].dirn, real_startdir, MAX_P);
+	}
+}
+
+static void
 set_panes(void)
 {
 	char *home;
@@ -1896,7 +1924,8 @@ set_panes(void)
 	panes[Left].dircol = cpanell;
 	panes[Left].firstrow = 0;
 	panes[Left].direntr = ecalloc(0, sizeof(Entry));
-	strncpy(panes[Left].dirn, cwd, MAX_P);
+	if (panes[Left].dirn[0] == '\0')
+		strncpy(panes[Left].dirn, cwd, MAX_P);
 	panes[Left].hdir = 1;
 	panes[Left].inotify_wd = -1;
 	panes[Left].parent_row = 1;
@@ -1907,7 +1936,8 @@ set_panes(void)
 	panes[Right].dircol = cpanelr;
 	panes[Right].firstrow = 0;
 	panes[Right].direntr = ecalloc(0, sizeof(Entry));
-	strncpy(panes[Right].dirn, home, MAX_P);
+	if (panes[Right].dirn[0] == '\0')
+		strncpy(panes[Right].dirn, home, MAX_P);
 	panes[Right].hdir = 1;
 	panes[Right].inotify_wd = -1;
 	panes[Right].parent_row = 1;
@@ -2023,11 +2053,27 @@ main(int argc, char *argv[])
 		    NULL) == -1)
 		die("pledge");
 #endif /* __OpenBSD__ */
+
+	panes[Left].dirn[0] = '\0';
+	panes[Right].dirn[0] = '\0';
+
 	if (argc == 1)
 		start();
-	else if (argc == 2 && strncmp("-v", argv[1], 2) == 0)
-		die("sfm-" VERSION);
-	else
-		die("usage: sfm [-v]");
+	else if (argc == 2) {
+		if (strncmp("-v", argv[1], 2) == 0)
+			die("sfm-" VERSION);
+		else if (strncmp("-", argv[1], 1) == 0)
+			die("usage: sfm [-v] [directory] [directory]");
+		else {
+			init_pane(argv[1], Left);
+			start();
+		}
+	} else if (argc == 3) {
+		init_pane(argv[1], Left);
+		init_pane(argv[2], Right);
+		start();
+	} else
+		die("usage: sfm [-v] [directory] [directory]");
+
 	return 0;
 }
