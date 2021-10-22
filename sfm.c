@@ -685,12 +685,13 @@ delent(const Arg *arg)
 	if (cpane->dirc < 1)
 		return;
 	char *inp_conf;
-	int conf_len = 4;
-	char conf[] = "yes";
+	char prompt[32];
 
-	inp_conf = ecalloc(conf_len, sizeof(char));
-	if ((get_usrinput(inp_conf, conf_len, "delete file (yes) ?") < 0) ||
-		(strncmp(inp_conf, conf, conf_len) != 0)) {
+	sprintf(prompt, "delete file (%s) ?", delconf);
+
+	inp_conf = ecalloc(delconf_len, sizeof(char));
+	if ((get_usrinput(inp_conf, delconf_len, prompt) < 0) ||
+		(strncmp(inp_conf, delconf, delconf_len) != 0)) {
 		free(inp_conf);
 		return; /* canceled by user or wrong inp_conf */
 	}
@@ -1391,9 +1392,12 @@ static void
 seldel(const Arg *arg)
 {
 	char *inp_conf;
+	char prompt[32];
+
+	sprintf(prompt, "delete file(s) (%s) ?", delconf);
 
 	inp_conf = ecalloc(delconf_len, sizeof(char));
-	if ((get_usrinput(inp_conf, delconf_len, "delete file (yes) ?") < 0) ||
+	if ((get_usrinput(inp_conf, delconf_len, prompt) < 0) ||
 		(strncmp(inp_conf, delconf, delconf_len) != 0)) {
 		free(inp_conf);
 		return; /* canceled by user or wrong inp_conf */
