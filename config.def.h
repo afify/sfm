@@ -146,7 +146,7 @@ static const mode_t nf_perm   = S_IRUSR | S_IWUSR;
 
 /* dotfiles */
 static int show_dotfiles = 1;
-static const int sort_ignore_dot = 1;
+static const int sort_ignore_dot = 0;
 
 /* statusbar */
 static const char dtfmt[] = "%F %R"; /* date time format */
