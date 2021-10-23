@@ -685,12 +685,10 @@ delent(const Arg *arg)
 	if (cpane->dirc < 1)
 		return;
 	char *inp_conf;
-	char prompt[32];
-
-	sprintf(prompt, "delete file (%s) ?", delconf);
 
 	inp_conf = ecalloc(delconf_len, sizeof(char));
-	if ((get_usrinput(inp_conf, delconf_len, prompt) < 0) ||
+	if ((get_usrinput(inp_conf, delconf_len, "delete files(s) (%s) ?",
+		     delconf) < 0) ||
 		(strncmp(inp_conf, delconf, delconf_len) != 0)) {
 		free(inp_conf);
 		return; /* canceled by user or wrong inp_conf */
@@ -1392,12 +1390,10 @@ static void
 seldel(const Arg *arg)
 {
 	char *inp_conf;
-	char prompt[32];
-
-	sprintf(prompt, "delete file(s) (%s) ?", delconf);
 
 	inp_conf = ecalloc(delconf_len, sizeof(char));
-	if ((get_usrinput(inp_conf, delconf_len, prompt) < 0) ||
+	if ((get_usrinput(inp_conf, delconf_len, "delete files(s) (%s) ?",
+		     delconf) < 0) ||
 		(strncmp(inp_conf, delconf, delconf_len) != 0)) {
 		free(inp_conf);
 		return; /* canceled by user or wrong inp_conf */
@@ -1545,7 +1541,7 @@ chngf(const Arg *arg)
 
 	input_og = ecalloc(MAX_N, sizeof(char));
 
-	if (get_usrinput(input_og, MAX_N, CHFLAG" %s",
+	if (get_usrinput(input_og, MAX_N, CHFLAG " %s",
 		    basename(CURSOR(cpane).name)) < 0) {
 		exit_change(0);
 		free(input_og);
