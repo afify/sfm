@@ -45,6 +45,10 @@ $ man sfm
 
 Installation
 ------------
+<a href="https://repology.org/project/sfm-afify/versions">
+    <img src="https://repology.org/badge/vertical-allrepos/sfm-afify.svg" alt="Packaging status">
+</a>
+
 **current**
 ```sh
 git clone git://git.afify.dev/sfm
