@@ -56,7 +56,7 @@ static const char *gimp[]         = { "gimp" };
 static const char *r2[]           = { "r2", "-c", "vv" };
 
 /* extensions*/
-static const char *images[]    = { "bmp", "jpg", "jpeg", "png", "gif", "xpm" };
+static const char *images[]    = { "bmp", "jpg", "jpeg", "png", "gif", "webp", "xpm" };
 static const char *pdf[]       = { "epub", "pdf" };
 static const char *arts[]      = { "xcf" };
 static const char *obj[]       = { "o", "a", "so" };
