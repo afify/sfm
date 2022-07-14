@@ -19,6 +19,7 @@
 #include <sys/event.h>
 #endif
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -473,6 +474,9 @@ get_ext(char *str)
 	ext = ecalloc(MAX_EXT + 1, sizeof(char));
 	strncpy(ext, &str[len - counter], MAX_EXT);
 	ext[MAX_EXT] = '\0';
+	for(char *p=ext; *p; p++) {
+		*p=tolower(*p);
+	}
 	return ext;
 }
 
