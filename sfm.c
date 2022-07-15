@@ -475,7 +475,7 @@ get_ext(char *str)
 	strncpy(ext, &str[len - counter], MAX_EXT);
 	ext[MAX_EXT] = '\0';
 	for(char *p=ext; *p; p++) {
-		*p=tolower(*p);
+		*p=tolower(*(const unsigned char *)p);
 	}
 	return ext;
 }
