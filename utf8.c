@@ -1,78 +1,53 @@
-#include "termbox.h"
+/* See LICENSE file for copyright and license details. */
 
-static const unsigned char utf8_length[256] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-	2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3,
-	3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5,
-	5, 6, 6, 1, 1 };
+#include <stdio.h>
+#include <stdint.h>
 
-static const unsigned char utf8_mask[6] = { 0x7F, 0x1F, 0x0F, 0x07, 0x03,
-	0x01 };
+#include "utf8.h"
+#include "util.h"
 
-int
-tb_utf8_char_length(char c)
+/* macros */
+/* typedef */
+/* function declarations */
+/* global variables */
+/* function implementations */
+
+
+static const uchar utfbyte[UTF_SIZ + 1] = {0x80,    0, 0xC0, 0xE0, 0xF0};
+static const uchar utfmask[UTF_SIZ + 1] = {0xC0, 0x80, 0xE0, 0xF0, 0xF8};
+static const Rune utfmin[UTF_SIZ + 1] = {       0,    0,  0x80,  0x800,  0x10000};
+static const Rune utfmax[UTF_SIZ + 1] = {0x10FFFF, 0x7F, 0x7FF, 0xFFFF, 0x10FFFF};
+
+size_t
+utf8validate(Rune *u, size_t i)
 {
-	return utf8_length[(unsigned char)c];
+	if (!BETWEEN(*u, utfmin[i], utfmax[i]) || BETWEEN(*u, 0xD800, 0xDFFF))
+		*u = UTF_INVALID;
+	for (i = 1; *u > utfmax[i]; ++i)
+		;
+
+	return i;
 }
 
-int
-tb_utf8_char_to_unicode(uint32_t *out, const char *c)
+char
+utf8encodebyte(Rune u, size_t i)
 {
-	if (*c == 0)
-		return TB_EOF;
-
-	int i;
-	unsigned char len = tb_utf8_char_length(*c);
-	unsigned char mask = utf8_mask[len - 1];
-	uint32_t result = c[0] & mask;
-	for (i = 1; i < len; ++i) {
-		result <<= 6;
-		result |= c[i] & 0x3f;
-	}
-
-	*out = result;
-	return (int)len;
+	return utfbyte[i] | (u & ~utfmask[i]);
 }
-
-int
-tb_utf8_unicode_to_char(char *out, uint32_t c)
+size_t
+utf8encode(Rune u, char *c)
 {
-	int len = 0;
-	int first;
-	int i;
+	size_t len, i;
 
-	if (c < 0x80) {
-		first = 0;
-		len = 1;
-	} else if (c < 0x800) {
-		first = 0xc0;
-		len = 2;
-	} else if (c < 0x10000) {
-		first = 0xe0;
-		len = 3;
-	} else if (c < 0x200000) {
-		first = 0xf0;
-		len = 4;
-	} else if (c < 0x4000000) {
-		first = 0xf8;
-		len = 5;
-	} else {
-		first = 0xfc;
-		len = 6;
-	}
+	len = utf8validate(&u, 0);
+	if (len > UTF_SIZ)
+		return 0;
 
-	for (i = len - 1; i > 0; --i) {
-		out[i] = (c & 0x3f) | 0x80;
-		c >>= 6;
+	for (i = len - 1; i != 0; --i) {
+		c[i] = utf8encodebyte(u, 0);
+		u >>= 6;
 	}
-	out[0] = c | first;
+	c[0] = utf8encodebyte(u, len);
 
 	return len;
 }
