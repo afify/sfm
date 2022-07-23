@@ -114,16 +114,41 @@ draw_frame(Cpair cframe)
 
 }
 
-char
+uint32_t
 getkey(void)
 {
 	int nread;
-	char c;
-	while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-		if (nread == -1 && errno != EAGAIN)
-			die("read");
-	}
-	return c;
+
+	uint32_t r = '\x0';
+
+	//while ((nread = read(STDIN_FILENO, c, 3)) != 1) {
+	//	if (nread == -1 && errno != EAGAIN)
+	//		die("read");
+	//}
+
+	nread = read(STDIN_FILENO, &r, 4);
+	if (nread == -1) exit(1);
+	//memcpy(&r, c, nread);
+	//CLEAR_LINE
+
+	//char buf[1000];
+	//	snprintf(buf, 1000,
+	//		"r=%x",
+	//			r
+	//			);
+	//	size_t buflen = strlen(buf);
+//		twrite(2, 2, buf, buflen, cerr);
+	//if (nread == 1)
+	//	twrite(3, 3, "1", 1, cerr);
+	//else if (nread == 2)
+	//	twrite(3, 4, "2", 1, cerr);
+	//else if (nread == 3)
+	//	twrite(3, 5, "3", 1, cerr);
+	//else if (nread == 4)
+	//	twrite(3, 6, "4", 1, cerr);
+
+	//r = 0;
+	return r;
 }
 
 void

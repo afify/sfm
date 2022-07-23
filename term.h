@@ -14,16 +14,16 @@
 #define BOLD 1
 #define RVS  7
 
-#define XK_Left                          0xff51  /* Move left, left arrow */
-#define XK_Up                            0xff52  /* Move up, up arrow */
-#define XK_Right                         0xff53  /* Move right, right arrow */
-#define XK_Down                          0xff54  /* Move down, down arrow */
-
 #define XK_CTRL(k)       ((k)&0x1f)
-#define XK_UP            0x41
-#define XK_DOWN          0x42
-#define XK_LEFT          0x43
-#define XK_RIGHT         0x44
+#define XK_ALT(k)        (k)1b
+#define XK_UP            0x415b1b
+#define XK_DOWN          0x425b1b
+#define XK_RIGHT         0x435b1b
+#define XK_LEFT          0x445b1b
+#define XK_HOME          0x485b1b
+#define XK_END           0x7e345b1b
+#define XK_PGUP          0x7e355b1b
+#define XK_PGDOWN        0x7e365b1b
 
 #define XK_BACKSPACE     0x08
 #define XK_TAB           0x09
@@ -61,7 +61,7 @@ typedef struct {
 Term* init_term(void);
 void quit_term(void);
 void draw_frame(Cpair);
-char getkey(void);
+uint32_t getkey(void);
 void move_to_col(int);
 void move_to(int, int);
 void twrite(int, int, char *, size_t, Cpair);

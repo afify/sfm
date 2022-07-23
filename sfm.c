@@ -92,7 +92,7 @@ typedef union {
 } Arg;
 
 typedef struct {
-	const char k;
+	const uint32_t k;
 	void (*func)(const Arg *);
 	const Arg arg;
 } Key;
@@ -126,7 +126,7 @@ static void add_hi(Pane *, size_t);
 static void rm_hi(Pane *, size_t);
 
 static void start_ev(void);
-static void grabkeys(char, Key *, size_t);
+static void grabkeys(uint32_t, Key *, size_t);
 
 /* global variables */
 static Term *term;
@@ -943,28 +943,26 @@ rm_hi(Pane *pane, size_t entpos)
 static void
 start_ev(void)
 {
-	char c;
-	//char buf[MAX_P];
+	uint32_t c;
+	char buf[MAX_P];
 
 	while (1) {
 		c = getkey();
-		grabkeys(c, nkeys, nkeyslen);
+		//grabkeys(c, nkeys, nkeyslen);
 
-		//snprintf(buf, MAX_P,
-		//	"c=%c c=%d c=%x sizeof(c)=%ld",
-		//		c,
-		//		c,
-		//		c,
-		//		sizeof(c)
-		//		);
-		//size_t buflen = strlen(buf);
-		//CLEAR_LINE
-		//twrite(3, 3, buf, buflen, cerr);
+		snprintf(buf, MAX_P,
+			"c=%x sizeof(c)=%ld",
+				c,
+				sizeof(c)
+				);
+		size_t buflen = strlen(buf);
+		CLEAR_LINE
+		twrite(7, 7, buf, buflen, cerr);
 	}
 }
 
 static void
-grabkeys(char k, Key *key, size_t max_keys)
+grabkeys(uint32_t k, Key *key, size_t max_keys)
 {
 	size_t i;
 
@@ -991,7 +989,7 @@ start(void)
 	listdir(&panes[Left]);
 	listdir(&panes[Right]);
 
-	////pthread_create(&fsev_thread, NULL, read_th, NULL);
+	//pthread_create(&fsev_thread, NULL, read_th, NULL);
 	start_ev();
 
 }
