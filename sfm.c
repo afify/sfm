@@ -944,20 +944,20 @@ static void
 start_ev(void)
 {
 	uint32_t c;
-	char buf[MAX_P];
+	//char buf[MAX_P];
 
 	while (1) {
 		c = getkey();
-		//grabkeys(c, nkeys, nkeyslen);
+		grabkeys(c, nkeys, nkeyslen);
 
-		snprintf(buf, MAX_P,
-			"c=%x sizeof(c)=%ld",
-				c,
-				sizeof(c)
-				);
-		size_t buflen = strlen(buf);
-		CLEAR_LINE
-		twrite(7, 7, buf, buflen, cerr);
+		//snprintf(buf, MAX_P,
+		//	"c=%x sizeof(c)=%ld",
+		//		c,
+		//		sizeof(c)
+		//		);
+		//size_t buflen = strlen(buf);
+		//CLEAR_LINE
+		//twrite(7, 7, buf, buflen, cerr);
 	}
 }
 
@@ -967,11 +967,9 @@ grabkeys(uint32_t k, Key *key, size_t max_keys)
 	size_t i;
 
 	for (i = 0; i < max_keys; i++) {
-		if (k != 0) {
-			if (k == key[i].k) {
-				key[i].func(&key[i].arg);
-				return;
-			}
+		if (k == key[i].k) {
+			key[i].func(&key[i].arg);
+			return;
 		}
 	}
 }

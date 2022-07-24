@@ -46,40 +46,6 @@ quit_term(void)
 	reset_term();
 }
 
-//void
-//draw_frame(Cpair cframe)
-//{
-//	int y;
-//	char buf[64];
-//	size_t buflen;
-//
-//	snprintf(buf, nterm.cols, "\x1b[%d;48;5;%d;38;5;%dm%s\x1b[0;0m",
-//		cframe.attr, cframe.bg, cframe.fg, "  ");
-//	buflen= strnlen(buf, 64);
-//
-//	for (y = 0; y < nterm.cols ; y++) {
-//		printf("%s", buf);
-//	}
-//
-//
-//	for (y = 0; y < nterm.rows - 1; y++) {
-//		printf("%s", buf);
-//		move_to_col(nterm.cols/2);
-//		printf("%s", buf);
-//		move_to_col(nterm.cols - 1);
-//		printf("%s", buf);
-//		if (y < nterm.rows - 1) {
-//			printf("\r\n");
-//		}
-//	}
-//
-//	for (y = 0; y < nterm.cols; y++) {
-//		printf("%s", buf);
-//	}
-//
-//	fflush(stdout);
-//}
-
 void
 draw_frame(Cpair cframe)
 {
@@ -117,37 +83,11 @@ draw_frame(Cpair cframe)
 uint32_t
 getkey(void)
 {
-	int nread;
+	uint32_t r = 0;
 
-	uint32_t r = '\x0';
+	if ((read(STDIN_FILENO, &r, sizeof(uint32_t))) < 0)
+		die("cant read");
 
-	//while ((nread = read(STDIN_FILENO, c, 3)) != 1) {
-	//	if (nread == -1 && errno != EAGAIN)
-	//		die("read");
-	//}
-
-	nread = read(STDIN_FILENO, &r, 4);
-	if (nread == -1) exit(1);
-	//memcpy(&r, c, nread);
-	//CLEAR_LINE
-
-	//char buf[1000];
-	//	snprintf(buf, 1000,
-	//		"r=%x",
-	//			r
-	//			);
-	//	size_t buflen = strlen(buf);
-//		twrite(2, 2, buf, buflen, cerr);
-	//if (nread == 1)
-	//	twrite(3, 3, "1", 1, cerr);
-	//else if (nread == 2)
-	//	twrite(3, 4, "2", 1, cerr);
-	//else if (nread == 3)
-	//	twrite(3, 5, "3", 1, cerr);
-	//else if (nread == 4)
-	//	twrite(3, 6, "4", 1, cerr);
-
-	//r = 0;
 	return r;
 }
 
