@@ -61,20 +61,23 @@ draw_frame(Cpair cframe)
 		termb_append(buf, buflen);
 	}
 
-	for (y = 0; y < nterm.rows - 1; y++) {
+	for (y = 0; y < nterm.rows - 2; y++) {
 		termb_append(buf, buflen);
 		move_to_col(nterm.cols/2);
 		termb_append(buf, buflen);
 		move_to_col(nterm.cols - 1);
 		termb_append(buf, buflen);
-		if (y < nterm.rows - 1) {
-			termb_append("\r\n", 2);
-		}
+		termb_append("\r\n", 2);
 	}
 
 	for (y = 0; y < nterm.cols; y++) {
 		termb_append(buf, buflen);
 	}
+	//termb_append("\r\n", 2);
+
+	//for (y = 0; y < nterm.cols; y++) {
+	//	termb_append(buf, buflen);
+	//}
 
 	termb_write();
 
@@ -104,6 +107,21 @@ twrite(int x, int y, char *str, size_t len, Cpair col)
 		y, x, col.attr, col.bg, col.fg, str);
 	buflen = strlen(buf);
 	write(STDOUT_FILENO, buf, buflen);
+}
+
+void
+print_status(Cpair col, const char *fmt, ...)
+{
+	char buf[1000];
+	size_t buflen;
+	va_list vl;
+	va_start(vl, fmt);
+	(void)vsnprintf(buf, 1000, fmt, vl);
+	va_end(vl);
+	buflen = strlen(buf);
+
+	//clear_status();
+	twrite(1, nterm.rows, buf, buflen, col);
 }
 
 void
@@ -156,10 +174,15 @@ set_term(void) {
 	if (get_term_size(&nterm.rows, &nterm.cols) == -1)
 		die("getWindowSize");
 	nterm.avail_cols = (nterm.cols - 6 ) / 2;
-	nterm.term.c_oflag &= ~OPOST;
-	nterm.term.c_lflag &= ~(ECHO | ICANON);
+	nterm.term.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+	nterm.term.c_oflag &= ~(OPOST);
+	nterm.term.c_cflag |= (CS8);
+	nterm.term.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+	nterm.term.c_cc[VMIN] = 0;
+	nterm.term.c_cc[VTIME] = 1;
 
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &nterm.term) < 0)
+	//if (tcsetattr(STDIN_FILENO, TCSANOW, &nterm.term) < 0)
+	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &nterm.term) < 0)
 		die("tcsetattr");
 
 	write(STDOUT_FILENO,

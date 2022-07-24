@@ -65,6 +65,7 @@ uint32_t getkey(void);
 void move_to_col(int);
 void move_to(int, int);
 void twrite(int, int, char *, size_t, Cpair);
+void print_status(Cpair, const char *, ...);
 int get_term_size(int *, int *);
 void termb_append(const char *s, int len);
 void termb_write(void);
