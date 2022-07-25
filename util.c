@@ -11,8 +11,8 @@ void *
 ecalloc(size_t nmemb, size_t size)
 {
 	void *p;
-	p = calloc(nmemb, size);
-	FAIL_IF(p == NULL, "calloc");
+	if ((p = calloc(nmemb, size)) == NULL)
+		die("calloc:");
 	return p;
 }
 
@@ -33,7 +33,7 @@ die(const char *fmt, ...)
 	(void)vfprintf(stderr, fmt, ap);
 	va_end(ap);
 
-	if (fmt[0] != '\0' && fmt[strlen(fmt)-1] == ':') {
+	if (fmt[0] != '\0' && fmt[strlen(fmt) - 1] == ':') {
 		(void)fputc(' ', stderr);
 		perror(NULL);
 	} else {

@@ -3,7 +3,7 @@
 
 include config.mk
 
-SRC = sfm.c util.c term.c utf8.c
+SRC = sfm.c util.c term.c
 OBJ = ${SRC:.c=.o}
 
 all: options sfm

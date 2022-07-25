@@ -15,7 +15,7 @@
 #if defined(__linux__)
 #include <sys/inotify.h>
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
-	defined(__APPLE__)
+    defined(__APPLE__)
 #include <sys/event.h>
 #endif
 
@@ -63,20 +63,20 @@ typedef struct {
 } Entry;
 
 typedef struct {
-	//int pane_id;
+	// int pane_id;
 	char dirname[MAX_P]; // dir name cwd
-	//char *filter;
+	// char *filter;
 	Entry *direntry; // dir entries
-	int dirc; // dir entries sum
-	int hdir; // highlighted dir
+	int dirc;	 // dir entries sum
+	int hdir;	 // highlighted dir
 	int x_srt;
 	int x_end;
 	int firstrow;
-	//int parent_firstrow;
-	//int parent_row; // FIX
+	// int parent_firstrow;
+	// int parent_row; // FIX
 	Cpair dircol;
-	//int inotify_wd;
-	//int event_fd;
+	// int inotify_wd;
+	// int event_fd;
 } Pane;
 
 typedef struct {
@@ -119,7 +119,6 @@ static void create_dir_entries(Pane *, DIR *, char *);
 static char *get_fullpath(char *, char *);
 static int sort_name(const void *const, const void *const);
 
-
 static void print_dir_entries(Pane *);
 static void get_hicol(Cpair *, mode_t);
 static void append_row(Pane *, size_t, Cpair);
@@ -131,38 +130,38 @@ static void grabkeys(uint32_t, Key *, size_t);
 
 /* global variables */
 static Term *term;
-//static pthread_t fsev_thread;
+// static pthread_t fsev_thread;
 static Pane panes[2];
 static Pane *cpane;
 static int pane_idx;
 static char *editor[2];
-static char fed[] = "vi"; //TODO rename var
+static char fed[] = "vi"; // TODO rename var
 static char *shell[2];
 static char sh[] = "/bin/sh";
 static int twidth, hwidth, scrheight;
-//static int *sel_indexes;
-//static size_t sel_len = 0;
-//static char **sel_files;
-//static int cont_vmode = 0;
-//static int cont_change = 0;
-//static pid_t fork_pid = 0;
+// static int *sel_indexes;
+// static size_t sel_len = 0;
+// static char **sel_files;
+// static int cont_vmode = 0;
+// static int cont_change = 0;
+// static pid_t fork_pid = 0;
 static pid_t main_pid;
 //#if defined(_SYS_INOTIFY_H)
 //#define READEVSZ 16
-//static int inotify_fd;
+// static int inotify_fd;
 //#elif defined(_SYS_EVENT_H_)
 //#define READEVSZ 0
-//static int kq;
-//struct kevent evlist[2]; /* events we want to monitor */
-//struct kevent chlist[2]; /* events that were triggered */
-//static struct timespec gtimeout;
+// static int kq;
+// struct kevent evlist[2]; /* events we want to monitor */
+// struct kevent chlist[2]; /* events that were triggered */
+// static struct timespec gtimeout;
 //#endif
 #if defined(__linux__) || defined(__FreeBSD__)
 #define OFF_T "%ld"
 #elif defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
 #define OFF_T "%lld"
 #endif
-enum { Left, Right }; /* panes */
+enum { Left, Right };	 /* panes */
 enum { Wait, DontWait }; /* spawn forks */
 
 /* configuration, allows nested code to access above variables */
@@ -180,7 +179,7 @@ mv_ver(const Arg *arg)
 	if (cpane->hdir - arg->i > cpane->dirc - 1) /* last line */
 		return;
 
-	//if (cpane->firstrow > 0 && arg->i > 0 &&
+	// if (cpane->firstrow > 0 && arg->i > 0 &&
 	//	cpane->hdir <= (cpane->firstrow + arg->i)) { /* scroll up */
 	//	cpane->firstrow = cpane->firstrow - arg->i;
 	//	rm_hi(cpane, cpane->hdir);
@@ -188,9 +187,9 @@ mv_ver(const Arg *arg)
 	//	print_dir_entries(cpane);
 	//	add_hi(cpane, cpane->hdir);
 	//	return;
-	//}
+	// }
 
-	//if (cpane->hdir - cpane->firstrow >= scrheight + arg->i &&
+	// if (cpane->hdir - cpane->firstrow >= scrheight + arg->i &&
 	//	arg->i < 0) { /* scroll down */
 	//	cpane->firstrow = cpane->firstrow - arg->i;
 	//	rm_hi(cpane, cpane->hdir);
@@ -198,32 +197,33 @@ mv_ver(const Arg *arg)
 	//	print_dir_entries(cpane);
 	//	add_hi(cpane, cpane->hdir);
 	//	return;
-	//}
+	// }
 
 	rm_hi(cpane, cpane->hdir);
 	cpane->hdir = cpane->hdir - arg->i;
 	add_hi(cpane, cpane->hdir);
-	//print_info(cpane, NULL);
+	// print_info(cpane, NULL);
 }
 
 static void
 mvbk(const Arg *arg)
 {
-	if (cpane->dirname[0] == '/' && cpane->dirname[1] == '\0') { /* cwd = / */
+	if (cpane->dirname[0] == '/' &&
+	    cpane->dirname[1] == '\0') { /* cwd = / */
 		return;
 	}
 
-	//get_dirp(cpane->dirname);
-	//if (check_dir(cpane->dirname) < 0) {
+	// get_dirp(cpane->dirname);
+	// if (check_dir(cpane->dirname) < 0) {
 	//	print_error(strerror(errno));
 	//	return;
-	//}
+	// }
 
-	//cpane->firstrow = cpane->parent_firstrow;
-	//cpane->hdir = cpane->parent_row;
-	//PERROR(listdir(cpane) < 0);
-	//cpane->parent_firstrow = 0;
-	//cpane->parent_row = 1;
+	// cpane->firstrow = cpane->parent_firstrow;
+	// cpane->hdir = cpane->parent_row;
+	// PERROR(listdir(cpane) < 0);
+	// cpane->parent_firstrow = 0;
+	// cpane->parent_row = 1;
 }
 
 static void
@@ -231,18 +231,18 @@ mvbtm(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
-	//if (cpane->dirc > scrheight) {
+	// if (cpane->dirc > scrheight) {
 	//	rm_hi(cpane, cpane->hdir);
 	//	cpane->hdir = cpane->dirc;
 	//	cpane->firstrow = cpane->dirc - scrheight + 1;
 	//	print_dir_entries(cpane);
 	//	add_hi(cpane, cpane->hdir);
-	//} else {
+	// } else {
 	rm_hi(cpane, cpane->hdir);
-	cpane->hdir = cpane->dirc -1;
+	cpane->hdir = cpane->dirc - 1;
 	add_hi(cpane, cpane->hdir);
 	//}
-	//print_info(cpane, NULL);
+	// print_info(cpane, NULL);
 }
 
 static void
@@ -250,19 +250,19 @@ mvfwd(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
-	//int s;
+	// int s;
 
 	switch (check_dir(CURSOR(cpane).name)) {
 	case 0:
 		strncpy(cpane->dirname, CURSOR(cpane).name, MAX_P);
-		//cpane->parent_row = cpane->hdir;
-		//cpane->parent_firstrow = cpane->firstrow;
+		// cpane->parent_row = cpane->hdir;
+		// cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 0;
 		cpane->firstrow = 0;
-		//PERROR(listdir(cpane) < 0);
+		// PERROR(listdir(cpane) < 0);
 		listdir(cpane);
 		break;
-	//case 1: /* not a directory open file */
+	// case 1: /* not a directory open file */
 	//	tb_shutdown();
 	//	s = opnf(CURSOR(cpane).name);
 	//	if (tb_init() != 0)
@@ -272,7 +272,7 @@ mvfwd(const Arg *arg)
 	//		print_error("process failed non-zero exit");
 	//	break;
 	case -1: /* failed to open directory */
-	//	print_error(strerror(errno));
+		//	print_error(strerror(errno));
 		break;
 	}
 }
@@ -282,45 +282,19 @@ mvtop(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
-	//if (cpane->dirc > scrheight) {
+	// if (cpane->dirc > scrheight) {
 	//	rm_hi(cpane, cpane->hdir);
 	//	cpane->hdir = 1;
 	//	cpane->firstrow = 0;
 	//	print_dir_entries(cpane);
 	//	add_hi(cpane, cpane->hdir);
-	//} else {
+	// } else {
 	rm_hi(cpane, cpane->hdir);
 	cpane->hdir = 0;
 	add_hi(cpane, cpane->hdir);
 	//	//print_info(cpane, NULL);
 	//}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 static void
 switch_pane(const Arg *arg)
@@ -330,9 +304,9 @@ switch_pane(const Arg *arg)
 	cpane = &panes[pane_idx ^= 1];
 	if (cpane->dirc > 0) {
 		add_hi(cpane, cpane->hdir);
-		//print_info(cpane, NULL);
+		// print_info(cpane, NULL);
 	} else {
-		//clear_status();
+		// clear_status();
 	}
 }
 
@@ -344,7 +318,6 @@ quit(const Arg *arg)
 	quit_term();
 	exit(EXIT_SUCCESS);
 }
-
 
 static int
 check_dir(char *path)
@@ -366,12 +339,8 @@ check_dir(char *path)
 	return 0;
 }
 
-
-
-
-
-//static void
-//print_row(Pane *pane, size_t entpos, Cpair col)
+// static void
+// print_row(Pane *pane, size_t entpos, Cpair col)
 //{
 //	int x, y;
 //	char *full_str, *rez_pth;
@@ -395,10 +364,10 @@ check_dir(char *path)
 //	//twrite(x, y, full_str, strlen(full_str), col);
 //	tprintf(x, y, col, "%*.*s", ~(pane->x_end - 2), pane->x_end - 2,
 //		full_str);
-//}
+// }
 
-//static void
-//get_dirp(char *cdir)
+// static void
+// get_dirp(char *cdir)
 //{
 //	int counter, len, i;
 //
@@ -415,10 +384,10 @@ check_dir(char *path)
 //	}
 //
 //	cdir[len - counter - 1] = '\0';
-//}
+// }
 //
-//static char *
-//get_ext(char *str)
+// static char *
+// get_ext(char *str)
 //{
 //	char *ext;
 //	char dot;
@@ -440,18 +409,18 @@ check_dir(char *path)
 //	strncpy(ext, &str[len - counter], MAX_EXT);
 //	ext[MAX_EXT] = '\0';
 //	return ext;
-//}
+// }
 
-//static int
-//get_fdt(char *result, time_t status)
+// static int
+// get_fdt(char *result, time_t status)
 //{
 //	struct tm lt;
 //	localtime_r(&status, &lt);
 //	return strftime(result, MAX_DTF, dtfmt, &lt);
-//}
+// }
 //
-//static char *
-//get_fgrp(gid_t status)
+// static char *
+// get_fgrp(gid_t status)
 //{
 //	char *result;
 //	struct group *gr;
@@ -465,9 +434,9 @@ check_dir(char *path)
 //
 //	result[MAX_GRPN - 1] = '\0';
 //	return result;
-//}
-//static char *
-//get_fperm(mode_t mode)
+// }
+// static char *
+// get_fperm(mode_t mode)
 //{
 //	char *buf;
 //	size_t i;
@@ -498,10 +467,10 @@ check_dir(char *path)
 //	buf[10] = '\0';
 //
 //	return buf;
-//}
+// }
 //
-//static char *
-//get_fsize(off_t size)
+// static char *
+// get_fsize(off_t size)
 //{
 //	char *result; /* need to be freed */
 //	char unit;
@@ -541,10 +510,10 @@ check_dir(char *path)
 //		strncat(result, "???", result_len);
 //
 //	return result;
-//}
+// }
 //
-//static char *
-//get_fusr(uid_t status)
+// static char *
+// get_fusr(uid_t status)
 //{
 //	char *result;
 //	struct passwd *pw;
@@ -558,10 +527,10 @@ check_dir(char *path)
 //
 //	result[MAX_USRN - 1] = '\0';
 //	return result;
-//}
+// }
 
-//static void
-//get_dirsize(char *fullpath, off_t *fullsize)
+// static void
+// get_dirsize(char *fullpath, off_t *fullsize)
 //{
 //	DIR *dir;
 //	char *ent_full;
@@ -594,10 +563,10 @@ check_dir(char *path)
 //
 //	closedir(dir);
 //	//clear_status();
-//}
+// }
 
-//static void
-//print_info(Pane *pane, char *dirsize)
+// static void
+// print_info(Pane *pane, char *dirsize)
 //{
 //	char *sz, *ur, *gr, *dt, *prm;
 //
@@ -629,8 +598,7 @@ check_dir(char *path)
 //	free(gr);
 //	free(dt);
 //	free(sz);
-//}
-
+// }
 
 static void
 set_panes(void)
@@ -652,27 +620,27 @@ set_panes(void)
 	pane_idx = Left; /* cursor pane */
 	cpane = &panes[pane_idx];
 
-	//panes[Left].pane_id = 0;
+	// panes[Left].pane_id = 0;
 	panes[Left].x_srt = 3;
-	//panes[Left].x_end = (term->cols / 2) - 1;
+	// panes[Left].x_end = (term->cols / 2) - 1;
 	panes[Left].dircol = cpanell;
 	panes[Left].firstrow = 0;
 	panes[Left].direntry = ecalloc(0, sizeof(Entry));
 	strncpy(panes[Left].dirname, cwd, MAX_P);
 	panes[Left].hdir = 0;
-	//panes[Left].inotify_wd = -1;
-	//panes[Left].parent_row = 1;
+	// panes[Left].inotify_wd = -1;
+	// panes[Left].parent_row = 1;
 
-	//panes[Right].pane_id = 1;
+	// panes[Right].pane_id = 1;
 	panes[Right].x_srt = (term->cols / 2) + 2;
-	//panes[Right].x_end = term->cols - 1;
+	// panes[Right].x_end = term->cols - 1;
 	panes[Right].dircol = cpanelr;
 	panes[Right].firstrow = 0;
 	panes[Right].direntry = ecalloc(0, sizeof(Entry));
 	strncpy(panes[Right].dirname, home, MAX_P);
 	panes[Right].hdir = 0;
-	//panes[Right].inotify_wd = -1;
-	//panes[Right].parent_row = 1;
+	// panes[Right].inotify_wd = -1;
+	// panes[Right].parent_row = 1;
 }
 
 static void
@@ -700,22 +668,22 @@ sighandler(int signo)
 {
 	switch (signo) {
 	case SIGWINCH:
-	//tb_clear();
-	//draw_frame();
-	//panes[Left].x_end = (twidth / 2) - 1;
-	//panes[Right].x_end = twidth - 1;
-	//panes[Right].x_srt = (twidth / 2) + 2;
-	//print_dir_entries(&panes[Left]);
-	//print_dir_entries(&panes[Right]);
-	//if (cpane->dirc > 0)
-	//	add_hi(cpane, cpane->hdir);
-	//tb_present();
+		// tb_clear();
+		// draw_frame();
+		// panes[Left].x_end = (twidth / 2) - 1;
+		// panes[Right].x_end = twidth - 1;
+		// panes[Right].x_srt = (twidth / 2) + 2;
+		// print_dir_entries(&panes[Left]);
+		// print_dir_entries(&panes[Right]);
+		// if (cpane->dirc > 0)
+		//	add_hi(cpane, cpane->hdir);
+		// tb_present();
 
 		CLEAR_SCREEN
 		get_term_size(&term->rows, &term->cols);
-		term->avail_cols = (term->cols - 6 ) / 2;
+		term->avail_cols = (term->cols - 6) / 2;
 		draw_frame(cframe);
-		//print_dir_entries(cpane);
+		// print_dir_entries(cpane);
 		panes[Right].x_srt = (term->cols / 2) + 2;
 		print_dir_entries(&panes[Left]);
 		print_dir_entries(&panes[Right]);
@@ -778,8 +746,8 @@ create_dir_entries(Pane *pane, DIR *dir, char *filter)
 
 		if (show_dotfiles == 1) {
 			if (entry->d_name[0] == '.' &&
-				(entry->d_name[1] == '\0' ||
-					entry->d_name[1] == '.'))
+			    (entry->d_name[1] == '\0' ||
+				entry->d_name[1] == '.'))
 				continue;
 		} else {
 			if (entry->d_name[0] == '.')
@@ -787,7 +755,8 @@ create_dir_entries(Pane *pane, DIR *dir, char *filter)
 		}
 
 		pane->dirc++;
-		pane->direntry = erealloc(pane->direntry, (pane->dirc) * sizeof(Entry));
+		pane->direntry = erealloc(pane->direntry,
+		    (pane->dirc) * sizeof(Entry));
 
 		tmpfull = get_fullpath(pane->dirname, entry->d_name);
 		strncpy(pane->direntry[i].name, tmpfull, MAX_N);
@@ -854,23 +823,25 @@ print_dir_entries(Pane *pane)
 	/* print each entry in directory */
 	while (start_from < dyn_max) {
 		get_hicol(&col, pane->direntry[start_from].mode);
-		move_to(y+1, pane->x_srt);
+		move_to(y + 1, pane->x_srt);
 		append_row(pane, start_from, col);
 		start_from++;
 		y++;
 	}
 	termb_write();
 
-       // if (pane->dirc > 0)
-       //         print_info(pane, NULL);
-       // else
-       //         clear_status();
+	// if (pane->dirc > 0)
+	//         print_info(pane, NULL);
+	// else
+	//         clear_status();
 
-       // /* print current directory title */
-       // pane->dircol.fg |= TB_BOLD;
-       // printf_tb(pane->x_srt, 0, pane->dircol, " %.*s", hwidth, pane->dirname);
+	// /* print current directory title */
+	// pane->dircol.fg |= TB_BOLD;
+	// printf_tb(pane->x_srt, 0, pane->dircol, " %.*s", hwidth,
+	// pane->dirname);
 
-	twrite(pane->x_srt, 0, pane->dirname, strlen(pane->dirname), pane->dircol);
+	twrite(pane->x_srt, 0, pane->dirname, strlen(pane->dirname),
+	    pane->dircol);
 }
 
 static void
@@ -926,10 +897,9 @@ append_row(Pane *pane, size_t entpos, Cpair col)
 	}
 
 	result[term->avail_cols] = '\0';
-	snprintf(buf, MAX_P,
-		"\x1b[%d;48;5;%d;38;5;%dm%*s\x1b[0;0m",
-		col.attr, col.bg, col.fg, -(term->avail_cols), result);
-	buflen= strnlen(buf, MAX_N);
+	snprintf(buf, MAX_P, "\x1b[%d;48;5;%d;38;5;%dm%*s\x1b[0;0m", col.attr,
+	    col.bg, col.fg, -(term->avail_cols), result);
+	buflen = strnlen(buf, MAX_N);
 	termb_append(buf, buflen);
 }
 
@@ -958,20 +928,20 @@ static void
 start_ev(void)
 {
 	uint32_t c;
-	//char buf[MAX_P];
+	// char buf[MAX_P];
 
 	while (1) {
 		c = getkey();
 		grabkeys(c, nkeys, nkeyslen);
 
-		//snprintf(buf, MAX_P,
+		// snprintf(buf, MAX_P,
 		//	"c=%x sizeof(c)=%ld",
 		//		c,
 		//		sizeof(c)
 		//		);
-		//size_t buflen = strlen(buf);
-		//CLEAR_LINE
-		//twrite(7, 7, buf, buflen, cerr);
+		// size_t buflen = strlen(buf);
+		// CLEAR_LINE
+		// twrite(7, 7, buf, buflen, cerr);
 	}
 }
 
@@ -1002,9 +972,8 @@ start(void)
 	listdir(&panes[Right]);
 
 	print_status(cdir, "%s", cpane->dirname);
-	//pthread_create(&fsev_thread, NULL, read_th, NULL);
+	// pthread_create(&fsev_thread, NULL, read_th, NULL);
 	start_ev();
-
 }
 
 int
@@ -1012,7 +981,7 @@ main(int argc, char *argv[])
 {
 #if defined(__OpenBSD__)
 	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath",
-		    NULL) == -1)
+		NULL) == -1)
 		die("pledge");
 #endif /* __OpenBSD__ */
 	if (argc == 1)

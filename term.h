@@ -12,24 +12,24 @@
 
 #define NORM 0
 #define BOLD 1
-#define RVS  7
+#define RVS 7
 
-#define XK_CTRL(k)       ((k)&0x1f)
-#define XK_ALT(k)        (k)1b
-#define XK_UP            0x415b1b
-#define XK_DOWN          0x425b1b
-#define XK_RIGHT         0x435b1b
-#define XK_LEFT          0x445b1b
-#define XK_HOME          0x485b1b
-#define XK_END           0x7e345b1b
-#define XK_PGUP          0x7e355b1b
-#define XK_PGDOWN        0x7e365b1b
+#define XK_CTRL(k) ((k)&0x1f)
+#define XK_ALT(k) (k)1b
+#define XK_UP 0x415b1b
+#define XK_DOWN 0x425b1b
+#define XK_RIGHT 0x435b1b
+#define XK_LEFT 0x445b1b
+#define XK_HOME 0x485b1b
+#define XK_END 0x7e345b1b
+#define XK_PGUP 0x7e355b1b
+#define XK_PGDOWN 0x7e365b1b
 
-#define XK_BACKSPACE     0x08
-#define XK_TAB           0x09
-#define XK_ENTER         0x0D
-#define XK_ESC           0x1B
-#define XK_SPACE         0x20
+#define XK_BACKSPACE 0x08
+#define XK_TAB 0x09
+#define XK_ENTER 0x0D
+#define XK_ESC 0x1B
+#define XK_SPACE 0x20
 
 /* typedef */
 typedef struct {
@@ -49,7 +49,7 @@ typedef struct {
 
 typedef union {
 	uint16_t key; /* one of the TB_KEY_* constants */
-	uint32_t ch; /* unicode character */
+	uint32_t ch;  /* unicode character */
 } Evkey;
 
 typedef struct {
@@ -58,7 +58,7 @@ typedef struct {
 } Tbuf;
 
 /* function declarations */
-Term* init_term(void);
+Term *init_term(void);
 void quit_term(void);
 void draw_frame(Cpair);
 uint32_t getkey(void);

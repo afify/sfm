@@ -4,19 +4,18 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 #include <termios.h>
 #include <unistd.h>
 #include <wchar.h>
-#include <stdint.h>
 
 #include "term.h"
 #include "util.h"
-#include "utf8.h"
 
 /* global variables */
 Term oterm;
@@ -29,14 +28,14 @@ static void reset_term(void);
 static void backup_term(void);
 
 /* function implementations */
-Term*
+Term *
 init_term()
 {
 	backup_term();
 	set_term();
-	//raw_mode();
-	//CLEAR_SCREEN
-	//CURSOR_HIDE
+	// raw_mode();
+	// CLEAR_SCREEN
+	// CURSOR_HIDE
 	return &nterm;
 }
 
@@ -54,16 +53,16 @@ draw_frame(Cpair cframe)
 	size_t buflen;
 
 	snprintf(buf, nterm.cols, "\x1b[%d;48;5;%d;38;5;%dm%s\x1b[0;0m",
-		cframe.attr, cframe.bg, cframe.fg, "  ");
-	buflen= strnlen(buf, 64);
+	    cframe.attr, cframe.bg, cframe.fg, "  ");
+	buflen = strnlen(buf, 64);
 
-	for (y = 0; y < nterm.cols ; y++) {
+	for (y = 0; y < nterm.cols; y++) {
 		termb_append(buf, buflen);
 	}
 
 	for (y = 0; y < nterm.rows - 2; y++) {
 		termb_append(buf, buflen);
-		move_to_col(nterm.cols/2);
+		move_to_col(nterm.cols / 2);
 		termb_append(buf, buflen);
 		move_to_col(nterm.cols - 1);
 		termb_append(buf, buflen);
@@ -73,14 +72,13 @@ draw_frame(Cpair cframe)
 	for (y = 0; y < nterm.cols; y++) {
 		termb_append(buf, buflen);
 	}
-	//termb_append("\r\n", 2);
+	// termb_append("\r\n", 2);
 
-	//for (y = 0; y < nterm.cols; y++) {
+	// for (y = 0; y < nterm.cols; y++) {
 	//	termb_append(buf, buflen);
-	//}
+	// }
 
 	termb_write();
-
 }
 
 uint32_t
@@ -89,8 +87,7 @@ getkey(void)
 	uint32_t r = 0;
 
 	if ((read(STDIN_FILENO, &r, sizeof(uint32_t))) < 0)
-		die("cant read");
-
+		die("read:");
 	return r;
 }
 
@@ -103,8 +100,8 @@ twrite(int x, int y, char *str, size_t len, Cpair col)
 	size_t buflen;
 
 	snprintf(buf, nterm.cols,
-		"\x1b[%d;%df\x1b[%d;48;5;%d;38;5;%dm%s\x1b[0;0m",
-		y, x, col.attr, col.bg, col.fg, str);
+	    "\x1b[%d;%df\x1b[%d;48;5;%d;38;5;%dm%s\x1b[0;0m", y, x, col.attr,
+	    col.bg, col.fg, str);
 	buflen = strlen(buf);
 	write(STDOUT_FILENO, buf, buflen);
 }
@@ -120,7 +117,7 @@ print_status(Cpair col, const char *fmt, ...)
 	va_end(vl);
 	buflen = strlen(buf);
 
-	//clear_status();
+	// clear_status();
 	twrite(1, nterm.rows, buf, buflen, col);
 }
 
@@ -139,7 +136,7 @@ move_to(int x, int y)
 {
 	char buf[16];
 	size_t buflen;
-	snprintf(buf, 16,"\x1b[%d;%df", x, y);
+	snprintf(buf, 16, "\x1b[%d;%df", x, y);
 	buflen = strlen(buf);
 	termb_append(buf, buflen);
 }
@@ -159,21 +156,23 @@ get_term_size(int *rows, int *cols)
 // static - local functions
 // ============================================================================
 static void
-backup_term(void) {
+backup_term(void)
+{
 	if (tcgetattr(STDIN_FILENO, &oterm.term) < 0)
-		die("tcgetattr");
+		die("tcgetattr:");
 }
 
 static void
-set_term(void) {
+set_term(void)
+{
 	setvbuf(stdout, NULL, _IOFBF, 0);
 
 	nterm = oterm;
 	nterm.cx = 0;
 	nterm.cy = 0;
 	if (get_term_size(&nterm.rows, &nterm.cols) == -1)
-		die("getWindowSize");
-	nterm.avail_cols = (nterm.cols - 6 ) / 2;
+		die("get_term_size:");
+	nterm.avail_cols = (nterm.cols - 6) / 2;
 	nterm.term.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
 	nterm.term.c_oflag &= ~(OPOST);
 	nterm.term.c_cflag |= (CS8);
@@ -181,39 +180,40 @@ set_term(void) {
 	nterm.term.c_cc[VMIN] = 0;
 	nterm.term.c_cc[VTIME] = 1;
 
-	//if (tcsetattr(STDIN_FILENO, TCSANOW, &nterm.term) < 0)
+	// if (tcsetattr(STDIN_FILENO, TCSANOW, &nterm.term) < 0)
 	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &nterm.term) < 0)
-		die("tcsetattr");
+		die("tcsetattr:");
 
 	write(STDOUT_FILENO,
-		"\033[s"      // save cursor position
-		"\033[?47h"   // save screen
-		"\033[H"      // go home
-		"\033[?1049h" // enables the alternative buffer
-		"\033[?7l"    // disable line wrapping
+	    "\033[s"	  // save cursor position
+	    "\033[?47h"	  // save screen
+	    "\033[H"	  // go home
+	    "\033[?1049h" // enables the alternative buffer
+	    "\033[?7l"	  // disable line wrapping
 
-		//"\033[?25l"   // hide cursor
-		//"\033[2J"     // clear screen
-	//	"\033[2;%dr", // limit scrolling to our rows
-		, 25);
+	    //"\033[?25l"   // hide cursor
+	    //"\033[2J"     // clear screen
+	    //	"\033[2;%dr", // limit scrolling to our rows
+	    ,
+	    25);
 }
 
 static void
-reset_term(void) {
+reset_term(void)
+{
 	setvbuf(stdout, NULL, _IOLBF, 0);
-	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &oterm.term) < 0) {
-		perror("tcsetattr");
-		return;
-	}
+	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &oterm.term) < 0)
+		die("tcsetattr:");
 	write(STDOUT_FILENO,
-		"\033[u"       // restores the cursor to the last saved position 
-		"\033[?47l"    // restore screen
-		"\033[?1049l"  // disables the alternative buffer
-		"\033[?7h"    // enable line wrapping
+	    "\033[u"	  // restores the cursor to the last saved position
+	    "\033[?47l"	  // restore screen
+	    "\033[?1049l" // disables the alternative buffer
+	    "\033[?7h"	  // enable line wrapping
 
-		//"\033[?25h"   // unhide cursor
-		//"\033[r"      // reset scroll region
-		,23);
+	    //"\033[?25h"   // unhide cursor
+	    //"\033[r"      // reset scroll region
+	    ,
+	    23);
 }
 
 // ============================================================================
@@ -231,7 +231,7 @@ termb_free(void)
 void
 termb_append(const char *s, int len)
 {
-	char *new = realloc(ab.b, ab.len + len);
+	char *new = erealloc(ab.b, ab.len + len);
 	if (new == NULL)
 		return;
 	memcpy(&new[ab.len], s, len);
@@ -247,15 +247,15 @@ termb_write(void)
 	termb_free();
 }
 
-//void
-//disableRawMode()
+// void
+// disableRawMode()
 //{
 //	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &oterm.term) == -1)
 //		die("tcsetattr");
-//}
+// }
 
-//void
-//raw_mode()
+// void
+// raw_mode()
 //{
 //	//if (tcgetattr(STDIN_FILENO, &oterm.term) == -1)
 //	//	die("tcgetattr");
@@ -271,10 +271,10 @@ termb_write(void)
 //
 //	//if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
 //	//	die("tcsetattr");
-//}
+// }
 
-//void
-//tprintf(int x, int y, Cpair col, const char *fmt, ...)
+// void
+// tprintf(int x, int y, Cpair col, const char *fmt, ...)
 //{
 //	if (x > oterm.cols || y > oterm.rows)
 //		return;
@@ -294,10 +294,10 @@ termb_write(void)
 //		col.attr, col.bg, col.fg, str);
 //
 //	write(STDOUT_FILENO, buf, strlen(buf));
-//}
+// }
 //
-//void
-//tprintf_status(const char *fmt, ...)
+// void
+// tprintf_status(const char *fmt, ...)
 //{
 //	int x = 2;
 //	int y = oterm.rows - 1;
@@ -317,11 +317,11 @@ termb_write(void)
 //	full_buf = strlen(str);
 //	write(STDOUT_FILENO, str, full_buf);
 //
-//    //printf("\033[%d;H" // go to the bottom row
-//    //        //"\033[2K" // clear the row
-//    //        "\033[37;7;1m", // inverse + bold
-//    //        rows);
-//}
+//     //printf("\033[%d;H" // go to the bottom row
+//     //        //"\033[2K" // clear the row
+//     //        "\033[37;7;1m", // inverse + bold
+//     //        rows);
+// }
 //
 
 ////void
