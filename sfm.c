@@ -49,7 +49,8 @@
 #define MAX_USRN 32
 #define MAX_GRPN 32
 #define MAX_DTF 32
-#define CURSOR(x) (x)->direntry[(x)->hdir]
+#define CURSOR(x) (x)->direntry[(x)->hdir - 1]
+#define TERM_ROWS term->rows - 3
 
 /* typedef */
 typedef struct {
@@ -71,6 +72,7 @@ typedef struct {
 	int hdir;	 // highlighted dir
 	int x_srt;
 	int x_end;
+	int width;
 	int firstrow;
 	// int parent_firstrow;
 	// int parent_row; // FIX
@@ -98,35 +100,40 @@ typedef struct {
 } Key;
 
 /* function declarations */
+static char *get_fgrp(gid_t);
+static char *get_fperm(mode_t);
+static char *get_fsize(off_t);
+static char *get_fullpath(char *, char *);
+static char *get_fusr(uid_t);
+static int check_dir(char *);
+static int get_fdt(char *, time_t);
+static int listdir(Pane *);
+static int sort_name(const void *const, const void *const);
+static int start_signal(void);
+static void add_hi(Pane *, size_t);
+static void append_row(Pane *, size_t, Cpair);
+static void create_dir_entries(Pane *, DIR *, char *);
+static void get_dirp(char *);
+static void get_dirsize(char *, off_t *);
+static void get_editor(void);
+static void get_hicol(Cpair *, mode_t);
+static void get_shell(void);
+static void grabkeys(uint32_t, Key *, size_t);
 static void mv_ver(const Arg *arg);
 static void mvbk(const Arg *arg);
 static void mvbtm(const Arg *arg);
 static void mvfwd(const Arg *arg);
 static void mvtop(const Arg *arg);
-static void switch_pane(const Arg *arg);
-static void quit(const Arg *arg);
-
-static int check_dir(char *);
-
-static void start(void);
-static void set_panes(void);
-static void get_editor(void);
-static void get_shell(void);
-static void sighandler(int);
-static int start_signal(void);
-static int listdir(Pane *);
-static void create_dir_entries(Pane *, DIR *, char *);
-static char *get_fullpath(char *, char *);
-static int sort_name(const void *const, const void *const);
-
 static void print_dir_entries(Pane *);
-static void get_hicol(Cpair *, mode_t);
-static void append_row(Pane *, size_t, Cpair);
-static void add_hi(Pane *, size_t);
+static void print_error(char *);
+static void print_info(Pane *, char *);
+static void quit(const Arg *arg);
 static void rm_hi(Pane *, size_t);
-
+static void set_panes(void);
+static void sighandler(int);
+static void start(void);
 static void start_ev(void);
-static void grabkeys(uint32_t, Key *, size_t);
+static void switch_pane(const Arg *arg);
 
 /* global variables */
 static Term *term;
@@ -138,7 +145,6 @@ static char *editor[2];
 static char fed[] = "vi"; // TODO rename var
 static char *shell[2];
 static char sh[] = "/bin/sh";
-static int twidth, hwidth, scrheight;
 // static int *sel_indexes;
 // static size_t sel_len = 0;
 // static char **sel_files;
@@ -173,36 +179,37 @@ mv_ver(const Arg *arg)
 
 	if (cpane->dirc < 1)
 		return;
-	if (cpane->hdir - arg->i < 0) /* first line */
+	if (cpane->hdir - arg->i < 1) /* first line */
 		return;
 
-	if (cpane->hdir - arg->i > cpane->dirc - 1) /* last line */
+	if (cpane->hdir - arg->i > cpane->dirc) /* last line */
 		return;
 
-	// if (cpane->firstrow > 0 && arg->i > 0 &&
-	//	cpane->hdir <= (cpane->firstrow + arg->i)) { /* scroll up */
-	//	cpane->firstrow = cpane->firstrow - arg->i;
-	//	rm_hi(cpane, cpane->hdir);
-	//	cpane->hdir = cpane->hdir - arg->i;
-	//	print_dir_entries(cpane);
-	//	add_hi(cpane, cpane->hdir);
-	//	return;
-	// }
+	if (cpane->firstrow > 0 && arg->i > 0 &&
+	    cpane->hdir <= (cpane->firstrow + arg->i)) { /* scroll up */
+		cpane->firstrow = cpane->firstrow - arg->i;
+		rm_hi(cpane, cpane->hdir - 1);
+		cpane->hdir = cpane->hdir - arg->i;
+		print_dir_entries(cpane);
+		add_hi(cpane, cpane->hdir - 1);
+		return;
+	}
 
-	// if (cpane->hdir - cpane->firstrow >= scrheight + arg->i &&
-	//	arg->i < 0) { /* scroll down */
-	//	cpane->firstrow = cpane->firstrow - arg->i;
-	//	rm_hi(cpane, cpane->hdir);
-	//	cpane->hdir = cpane->hdir - arg->i;
-	//	print_dir_entries(cpane);
-	//	add_hi(cpane, cpane->hdir);
-	//	return;
-	// }
+	// if (cpane->hdir - cpane->firstrow >= (term->rows - 4) + arg->i &&
+	if (cpane->hdir - cpane->firstrow >= term->rows - 2 + arg->i &&
+	    arg->i < 0) { /* scroll down */
+		cpane->firstrow = cpane->firstrow - arg->i;
+		rm_hi(cpane, cpane->hdir - 1);
+		cpane->hdir = cpane->hdir - arg->i;
+		print_dir_entries(cpane);
+		add_hi(cpane, cpane->hdir - 1);
+		return;
+	}
 
-	rm_hi(cpane, cpane->hdir);
+	rm_hi(cpane, cpane->hdir - 1);
 	cpane->hdir = cpane->hdir - arg->i;
-	add_hi(cpane, cpane->hdir);
-	// print_info(cpane, NULL);
+	add_hi(cpane, cpane->hdir - 1);
+	print_info(cpane, NULL);
 }
 
 static void
@@ -213,15 +220,16 @@ mvbk(const Arg *arg)
 		return;
 	}
 
-	// get_dirp(cpane->dirname);
-	// if (check_dir(cpane->dirname) < 0) {
-	//	print_error(strerror(errno));
-	//	return;
-	// }
+	get_dirp(cpane->dirname);
+	if (check_dir(cpane->dirname) < 0) {
+		print_error(strerror(errno));
+		return;
+	}
 
 	// cpane->firstrow = cpane->parent_firstrow;
 	// cpane->hdir = cpane->parent_row;
-	// PERROR(listdir(cpane) < 0);
+	cpane->hdir = 1;
+	listdir(cpane);
 	// cpane->parent_firstrow = 0;
 	// cpane->parent_row = 1;
 }
@@ -231,18 +239,18 @@ mvbtm(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
-	// if (cpane->dirc > scrheight) {
-	//	rm_hi(cpane, cpane->hdir);
-	//	cpane->hdir = cpane->dirc;
-	//	cpane->firstrow = cpane->dirc - scrheight + 1;
-	//	print_dir_entries(cpane);
-	//	add_hi(cpane, cpane->hdir);
-	// } else {
-	rm_hi(cpane, cpane->hdir);
-	cpane->hdir = cpane->dirc - 1;
-	add_hi(cpane, cpane->hdir);
-	//}
-	// print_info(cpane, NULL);
+	if (cpane->dirc > (term->rows - 2)) { // need to scroll
+		rm_hi(cpane, cpane->hdir - 1);
+		cpane->hdir = cpane->dirc;
+		cpane->firstrow = cpane->dirc - (term->rows - 2) + 1;
+		print_dir_entries(cpane);
+		add_hi(cpane, cpane->hdir - 1);
+	} else { // no need to scroll
+		rm_hi(cpane, cpane->hdir - 1);
+		cpane->hdir = cpane->dirc;
+		add_hi(cpane, cpane->hdir - 1);
+	}
+	print_info(cpane, NULL);
 }
 
 static void
@@ -257,7 +265,7 @@ mvfwd(const Arg *arg)
 		strncpy(cpane->dirname, CURSOR(cpane).name, MAX_P);
 		// cpane->parent_row = cpane->hdir;
 		// cpane->parent_firstrow = cpane->firstrow;
-		cpane->hdir = 0;
+		cpane->hdir = 1;
 		cpane->firstrow = 0;
 		// PERROR(listdir(cpane) < 0);
 		listdir(cpane);
@@ -272,7 +280,7 @@ mvfwd(const Arg *arg)
 	//		print_error("process failed non-zero exit");
 	//	break;
 	case -1: /* failed to open directory */
-		//	print_error(strerror(errno));
+		print_error(strerror(errno));
 		break;
 	}
 }
@@ -282,29 +290,60 @@ mvtop(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
-	// if (cpane->dirc > scrheight) {
-	//	rm_hi(cpane, cpane->hdir);
-	//	cpane->hdir = 1;
-	//	cpane->firstrow = 0;
-	//	print_dir_entries(cpane);
-	//	add_hi(cpane, cpane->hdir);
-	// } else {
-	rm_hi(cpane, cpane->hdir);
-	cpane->hdir = 0;
-	add_hi(cpane, cpane->hdir);
-	//	//print_info(cpane, NULL);
-	//}
+	// if (cpane->dirc > (term->rows - 2)) {
+	if (cpane->dirc > term->rows - 2) {
+		rm_hi(cpane, cpane->hdir - 1);
+		cpane->hdir = 1;
+		cpane->firstrow = 0;
+		print_dir_entries(cpane);
+		add_hi(cpane, cpane->hdir - 1);
+	} else {
+		rm_hi(cpane, cpane->hdir - 1);
+		cpane->hdir = 1;
+		add_hi(cpane, cpane->hdir - 1);
+		print_info(cpane, NULL);
+	}
+}
+
+static void
+crnf(const Arg *arg)
+{
+	char *user_input, *path;
+	int rf;
+
+	user_input = ecalloc(MAX_USRI, sizeof(char));
+	// if (get_usrinput(user_input, MAX_USRI, "new file") < 0) {
+	//	free(user_input);
+	//	return;
+	// }
+
+	path = ecalloc(MAX_P, sizeof(char));
+	if (snprintf(path, MAX_P, "%s/%s", cpane->dirname, user_input) < 0) {
+		free(user_input);
+		free(path);
+		return;
+	}
+
+	rf = open(path, O_CREAT | O_EXCL, nf_perm);
+
+	if (rf < 0)
+		print_error(strerror(errno));
+	else if (close(rf) < 0)
+		print_error(strerror(errno));
+
+	free(user_input);
+	free(path);
 }
 
 static void
 switch_pane(const Arg *arg)
 {
 	if (cpane->dirc > 0)
-		rm_hi(cpane, cpane->hdir);
+		rm_hi(cpane, cpane->hdir - 1);
 	cpane = &panes[pane_idx ^= 1];
 	if (cpane->dirc > 0) {
-		add_hi(cpane, cpane->hdir);
-		// print_info(cpane, NULL);
+		add_hi(cpane, cpane->hdir - 1);
+		print_info(cpane, NULL);
 	} else {
 		// clear_status();
 	}
@@ -317,6 +356,53 @@ quit(const Arg *arg)
 	free(panes[Right].direntry);
 	quit_term();
 	exit(EXIT_SUCCESS);
+}
+
+static void
+print_info(Pane *pane, char *dirsize)
+{
+	char *sz, *ur, *gr, *dt, *prm;
+
+	dt = ecalloc(MAX_DTF, sizeof(char));
+
+	prm = get_fperm(CURSOR(pane).mode);
+	ur = get_fusr(CURSOR(pane).user);
+	gr = get_fgrp(CURSOR(pane).group);
+
+	if (get_fdt(dt, CURSOR(pane).dt) < 0)
+		*dt = '\0';
+
+	if (S_ISREG(CURSOR(pane).mode)) {
+		sz = get_fsize(CURSOR(pane).size);
+	} else {
+		if (dirsize == NULL) {
+			sz = ecalloc(1, sizeof(char));
+			*sz = '\0';
+		} else {
+			sz = dirsize;
+		}
+	}
+
+	print_status(cstatus, "%02d/%02d %s %s:%s %s %s", pane->hdir,
+	    pane->dirc, prm, ur, gr, dt, sz);
+
+	free(prm);
+	free(ur);
+	free(gr);
+	free(dt);
+	free(sz);
+}
+
+static void
+print_error(char *msg)
+{
+	print_status(cerr, msg);
+}
+
+static void
+print_warning(char *msg)
+{
+	print_status(cwarn, msg);
 }
 
 static int
@@ -339,266 +425,25 @@ check_dir(char *path)
 	return 0;
 }
 
-// static void
-// print_row(Pane *pane, size_t entpos, Cpair col)
-//{
-//	int x, y;
-//	char *full_str, *rez_pth;
-//	char lnk_full[MAX_N];
-//
-//	//int hwidth = pane->x_end - 2;
-//	full_str = basename(pane->direntry[entpos].name);
-//	x = pane->x_srt;
-//	y = entpos - pane->firstrow + 2;
-//
-//	if (S_ISLNK(pane->direntry[entpos].mode) != 0) {
-//		rez_pth = ecalloc(MAX_P, sizeof(char));
-//		if (realpath(pane->direntry[entpos].name, rez_pth) != NULL) {
-//			snprintf(
-//				lnk_full, MAX_N, "%s -> %s", full_str, rez_pth);
-//			full_str = lnk_full;
-//		}
-//		free(rez_pth);
-//	}
-//
-//	//twrite(x, y, full_str, strlen(full_str), col);
-//	tprintf(x, y, col, "%*.*s", ~(pane->x_end - 2), pane->x_end - 2,
-//		full_str);
-// }
+static void
+get_dirp(char *cdir)
+{
+	int counter, len, i;
 
-// static void
-// get_dirp(char *cdir)
-//{
-//	int counter, len, i;
-//
-//	counter = 0;
-//	len = strnlen(cdir, MAX_P);
-//	if (len == 1)
-//		return;
-//
-//	for (i = len - 1; i > 1; i--) {
-//		if (cdir[i] == '/')
-//			break;
-//		else
-//			counter++;
-//	}
-//
-//	cdir[len - counter - 1] = '\0';
-// }
-//
-// static char *
-// get_ext(char *str)
-//{
-//	char *ext;
-//	char dot;
-//	size_t counter, len, i;
-//
-//	dot = '.';
-//	counter = 0;
-//	len = strnlen(str, MAX_N);
-//
-//	for (i = len - 1; i > 0; i--) {
-//		if (str[i] == dot) {
-//			break;
-//		} else {
-//			counter++;
-//		}
-//	}
-//
-//	ext = ecalloc(MAX_EXT + 1, sizeof(char));
-//	strncpy(ext, &str[len - counter], MAX_EXT);
-//	ext[MAX_EXT] = '\0';
-//	return ext;
-// }
+	counter = 0;
+	len = strnlen(cdir, MAX_P);
+	if (len == 1)
+		return;
 
-// static int
-// get_fdt(char *result, time_t status)
-//{
-//	struct tm lt;
-//	localtime_r(&status, &lt);
-//	return strftime(result, MAX_DTF, dtfmt, &lt);
-// }
-//
-// static char *
-// get_fgrp(gid_t status)
-//{
-//	char *result;
-//	struct group *gr;
-//
-//	result = ecalloc(MAX_GRPN, sizeof(char));
-//	gr = getgrgid(status);
-//	if (gr == NULL)
-//		(void)snprintf(result, MAX_GRPN, "%u", status);
-//	else
-//		strncpy(result, gr->gr_name, MAX_GRPN);
-//
-//	result[MAX_GRPN - 1] = '\0';
-//	return result;
-// }
-// static char *
-// get_fperm(mode_t mode)
-//{
-//	char *buf;
-//	size_t i;
-//
-//	const char chars[] = "rwxrwxrwx";
-//	buf = ecalloc(11, sizeof(char));
-//
-//	if (S_ISDIR(mode))
-//		buf[0] = 'd';
-//	else if (S_ISREG(mode))
-//		buf[0] = '-';
-//	else if (S_ISLNK(mode))
-//		buf[0] = 'l';
-//	else if (S_ISBLK(mode))
-//		buf[0] = 'b';
-//	else if (S_ISCHR(mode))
-//		buf[0] = 'c';
-//	else if (S_ISFIFO(mode))
-//		buf[0] = 'p';
-//	else if (S_ISSOCK(mode))
-//		buf[0] = 's';
-//	else
-//		buf[0] = '?';
-//
-//	for (i = 1; i < 10; i++) {
-//		buf[i] = (mode & (1 << (9 - i))) ? chars[i - 1] : '-';
-//	}
-//	buf[10] = '\0';
-//
-//	return buf;
-// }
-//
-// static char *
-// get_fsize(off_t size)
-//{
-//	char *result; /* need to be freed */
-//	char unit;
-//	int result_len;
-//	int counter;
-//
-//	counter = 0;
-//	result_len = 6; /* 9999X/0 */
-//	result = ecalloc(result_len, sizeof(char));
-//
-//	while (size >= 1000) {
-//		size /= 1024;
-//		++counter;
-//	}
-//
-//	switch (counter) {
-//	case 0:
-//		unit = 'B';
-//		break;
-//	case 1:
-//		unit = 'K';
-//		break;
-//	case 2:
-//		unit = 'M';
-//		break;
-//	case 3:
-//		unit = 'G';
-//		break;
-//	case 4:
-//		unit = 'T';
-//		break;
-//	default:
-//		unit = '?';
-//	}
-//
-//	if (snprintf(result, result_len, OFF_T "%c", size, unit) < 0)
-//		strncat(result, "???", result_len);
-//
-//	return result;
-// }
-//
-// static char *
-// get_fusr(uid_t status)
-//{
-//	char *result;
-//	struct passwd *pw;
-//
-//	result = ecalloc(MAX_USRN, sizeof(char));
-//	pw = getpwuid(status);
-//	if (pw == NULL)
-//		(void)snprintf(result, MAX_USRN, "%u", status);
-//	else
-//		strncpy(result, pw->pw_name, MAX_USRN);
-//
-//	result[MAX_USRN - 1] = '\0';
-//	return result;
-// }
+	for (i = len - 1; i > 1; i--) {
+		if (cdir[i] == '/')
+			break;
+		else
+			counter++;
+	}
 
-// static void
-// get_dirsize(char *fullpath, off_t *fullsize)
-//{
-//	DIR *dir;
-//	char *ent_full;
-//	mode_t mode;
-//	struct dirent *entry;
-//	struct stat status;
-//
-//	dir = opendir(fullpath);
-//	if (dir == NULL) {
-//		return;
-//	}
-//
-//	while ((entry = readdir(dir)) != 0) {
-//		if ((strncmp(entry->d_name, ".", 2) == 0 ||
-//			    strncmp(entry->d_name, "..", 3) == 0))
-//			continue;
-//
-//		ent_full = get_fullpath(fullpath, entry->d_name);
-//		if (lstat(ent_full, &status) == 0) {
-//			mode = status.st_mode;
-//			if (S_ISDIR(mode)) {
-//				get_dirsize(ent_full, fullsize);
-//				free(ent_full);
-//			} else {
-//				*fullsize += status.st_size;
-//				free(ent_full);
-//			}
-//		}
-//	}
-//
-//	closedir(dir);
-//	//clear_status();
-// }
-
-// static void
-// print_info(Pane *pane, char *dirsize)
-//{
-//	char *sz, *ur, *gr, *dt, *prm;
-//
-//	dt = ecalloc(MAX_DTF, sizeof(char));
-//
-//	prm = get_fperm(CURSOR(pane).mode);
-//	ur = get_fusr(CURSOR(pane).user);
-//	gr = get_fgrp(CURSOR(pane).group);
-//
-//	if (get_fdt(dt, CURSOR(pane).dt) < 0)
-//		*dt = '\0';
-//
-//	if (S_ISREG(CURSOR(pane).mode)) {
-//		sz = get_fsize(CURSOR(pane).size);
-//	} else {
-//		if (dirsize == NULL) {
-//			sz = ecalloc(1, sizeof(char));
-//			*sz = '\0';
-//		} else {
-//			sz = dirsize;
-//		}
-//	}
-//
-//	tprintf_status("%02d/%02d %s %s:%s %s %s", pane->hdir, pane->dirc, prm,
-//		ur, gr, dt, sz);
-//
-//	free(prm);
-//	free(ur);
-//	free(gr);
-//	free(dt);
-//	free(sz);
-// }
+	cdir[len - counter - 1] = '\0';
+}
 
 static void
 set_panes(void)
@@ -607,9 +452,6 @@ set_panes(void)
 	char cwd[MAX_P];
 
 	get_term_size(&term->rows, &term->cols);
-	twidth = term->cols;
-	hwidth = (term->rows / 2) - 4;
-	scrheight = term->rows - 2;
 
 	home = getenv("HOME");
 	if (home == NULL)
@@ -622,23 +464,25 @@ set_panes(void)
 
 	// panes[Left].pane_id = 0;
 	panes[Left].x_srt = 3;
-	// panes[Left].x_end = (term->cols / 2) - 1;
+	panes[Left].x_end = (term->cols / 2) - 1;
+	panes[Left].width = panes[Left].x_end - panes[Left].x_srt + 1;
 	panes[Left].dircol = cpanell;
 	panes[Left].firstrow = 0;
 	panes[Left].direntry = ecalloc(0, sizeof(Entry));
 	strncpy(panes[Left].dirname, cwd, MAX_P);
-	panes[Left].hdir = 0;
+	panes[Left].hdir = 1;
 	// panes[Left].inotify_wd = -1;
 	// panes[Left].parent_row = 1;
 
 	// panes[Right].pane_id = 1;
 	panes[Right].x_srt = (term->cols / 2) + 2;
-	// panes[Right].x_end = term->cols - 1;
+	panes[Right].x_end = term->cols - 2;
+	panes[Right].width = panes[Right].x_end - panes[Right].x_srt + 1;
 	panes[Right].dircol = cpanelr;
 	panes[Right].firstrow = 0;
 	panes[Right].direntry = ecalloc(0, sizeof(Entry));
 	strncpy(panes[Right].dirname, home, MAX_P);
-	panes[Right].hdir = 0;
+	panes[Right].hdir = 1;
 	// panes[Right].inotify_wd = -1;
 	// panes[Right].parent_row = 1;
 }
@@ -670,9 +514,6 @@ sighandler(int signo)
 	case SIGWINCH:
 		// tb_clear();
 		// draw_frame();
-		// panes[Left].x_end = (twidth / 2) - 1;
-		// panes[Right].x_end = twidth - 1;
-		// panes[Right].x_srt = (twidth / 2) + 2;
 		// print_dir_entries(&panes[Left]);
 		// print_dir_entries(&panes[Right]);
 		// if (cpane->dirc > 0)
@@ -681,12 +522,21 @@ sighandler(int signo)
 
 		CLEAR_SCREEN
 		get_term_size(&term->rows, &term->cols);
-		term->avail_cols = (term->cols - 6) / 2;
 		draw_frame(cframe);
-		// print_dir_entries(cpane);
+
+		panes[Left].x_end = (term->cols / 2) - 1;
 		panes[Right].x_srt = (term->cols / 2) + 2;
+		panes[Right].x_end = term->cols - 2;
+		panes[Right].width = panes[Right].x_end - panes[Right].x_srt +
+		    1;
+		panes[Left].width = panes[Left].x_end - panes[Left].x_srt + 1;
+
 		print_dir_entries(&panes[Left]);
 		print_dir_entries(&panes[Right]);
+
+		print_status(cdir, "left=%d right=%d", panes[Left].width,
+		    panes[Right].width);
+
 		if (cpane->dirc > 0)
 			add_hi(cpane, cpane->hdir);
 		break;
@@ -725,7 +575,7 @@ listdir(Pane *pane)
 	print_dir_entries(pane);
 
 	if (pane == cpane && pane->dirc > 0)
-		add_hi(pane, pane->hdir);
+		add_hi(pane, pane->hdir - 1);
 
 	if (closedir(dir) < 0)
 		return -1;
@@ -777,21 +627,6 @@ create_dir_entries(Pane *pane, DIR *dir, char *filter)
 	pane->dirc = i;
 }
 
-static char *
-get_fullpath(char *first, char *second)
-{
-	char *full_path;
-
-	full_path = ecalloc(MAX_P, sizeof(char));
-
-	if (strncmp(first, "/", MAX_P) == 0)
-		(void)snprintf(full_path, MAX_P, "/%s", second);
-	else
-		(void)snprintf(full_path, MAX_P, "%s/%s", first, second);
-
-	return full_path;
-}
-
 static int
 sort_name(const void *const A, const void *const B)
 {
@@ -813,12 +648,12 @@ static void
 print_dir_entries(Pane *pane)
 {
 	size_t y, dyn_max, start_from;
-	hwidth = (term->cols / 2) - 4;
 	Cpair col;
 
 	y = 1;
 	start_from = pane->firstrow;
-	dyn_max = MIN(pane->dirc, (scrheight - 1) + pane->firstrow);
+	// dyn_max = MIN(pane->dirc, (TERM_ROWS) + pane->firstrow);
+	dyn_max = MIN(pane->dirc, (term->rows - 2 - 1) + pane->firstrow);
 
 	/* print each entry in directory */
 	while (start_from < dyn_max) {
@@ -842,6 +677,176 @@ print_dir_entries(Pane *pane)
 
 	twrite(pane->x_srt, 0, pane->dirname, strlen(pane->dirname),
 	    pane->dircol);
+}
+
+static int
+get_fdt(char *result, time_t status)
+{
+	struct tm lt;
+	localtime_r(&status, &lt);
+	return strftime(result, MAX_DTF, dtfmt, &lt);
+}
+
+static char *
+get_fgrp(gid_t status)
+{
+	char *result;
+	struct group *gr;
+
+	result = ecalloc(MAX_GRPN, sizeof(char));
+	gr = getgrgid(status);
+	if (gr == NULL)
+		(void)snprintf(result, MAX_GRPN, "%u", status);
+	else
+		strncpy(result, gr->gr_name, MAX_GRPN);
+
+	result[MAX_GRPN - 1] = '\0';
+	return result;
+}
+
+static char *
+get_fperm(mode_t mode)
+{
+	char *buf;
+	size_t i;
+
+	const char chars[] = "rwxrwxrwx";
+	buf = ecalloc(11, sizeof(char));
+
+	if (S_ISDIR(mode))
+		buf[0] = 'd';
+	else if (S_ISREG(mode))
+		buf[0] = '-';
+	else if (S_ISLNK(mode))
+		buf[0] = 'l';
+	else if (S_ISBLK(mode))
+		buf[0] = 'b';
+	else if (S_ISCHR(mode))
+		buf[0] = 'c';
+	else if (S_ISFIFO(mode))
+		buf[0] = 'p';
+	else if (S_ISSOCK(mode))
+		buf[0] = 's';
+	else
+		buf[0] = '?';
+
+	for (i = 1; i < 10; i++) {
+		buf[i] = (mode & (1 << (9 - i))) ? chars[i - 1] : '-';
+	}
+	buf[10] = '\0';
+
+	return buf;
+}
+
+static char *
+get_fsize(off_t size)
+{
+	char *result; /* need to be freed */
+	char unit;
+	int result_len;
+	int counter;
+
+	counter = 0;
+	result_len = 6; /* 9999X/0 */
+	result = ecalloc(result_len, sizeof(char));
+
+	while (size >= 1000) {
+		size /= 1024;
+		++counter;
+	}
+
+	switch (counter) {
+	case 0:
+		unit = 'B';
+		break;
+	case 1:
+		unit = 'K';
+		break;
+	case 2:
+		unit = 'M';
+		break;
+	case 3:
+		unit = 'G';
+		break;
+	case 4:
+		unit = 'T';
+		break;
+	default:
+		unit = '?';
+	}
+
+	if (snprintf(result, result_len, OFF_T "%c", size, unit) < 0)
+		strncat(result, "???", result_len);
+
+	return result;
+}
+
+static char *
+get_fullpath(char *first, char *second)
+{
+	char *full_path;
+
+	full_path = ecalloc(MAX_P, sizeof(char));
+
+	if (strncmp(first, "/", MAX_P) == 0)
+		(void)snprintf(full_path, MAX_P, "/%s", second);
+	else
+		(void)snprintf(full_path, MAX_P, "%s/%s", first, second);
+
+	return full_path;
+}
+
+static char *
+get_fusr(uid_t status)
+{
+	char *result;
+	struct passwd *pw;
+
+	result = ecalloc(MAX_USRN, sizeof(char));
+	pw = getpwuid(status);
+	if (pw == NULL)
+		(void)snprintf(result, MAX_USRN, "%u", status);
+	else
+		strncpy(result, pw->pw_name, MAX_USRN);
+
+	result[MAX_USRN - 1] = '\0';
+	return result;
+}
+
+static void
+get_dirsize(char *fullpath, off_t *fullsize)
+{
+	DIR *dir;
+	char *ent_full;
+	mode_t mode;
+	struct dirent *entry;
+	struct stat status;
+
+	dir = opendir(fullpath);
+	if (dir == NULL) {
+		return;
+	}
+
+	while ((entry = readdir(dir)) != 0) {
+		if ((strncmp(entry->d_name, ".", 2) == 0 ||
+			strncmp(entry->d_name, "..", 3) == 0))
+			continue;
+
+		ent_full = get_fullpath(fullpath, entry->d_name);
+		if (lstat(ent_full, &status) == 0) {
+			mode = status.st_mode;
+			if (S_ISDIR(mode)) {
+				get_dirsize(ent_full, fullsize);
+				free(ent_full);
+			} else {
+				*fullsize += status.st_size;
+				free(ent_full);
+			}
+		}
+	}
+
+	closedir(dir);
+	// clear_status();
 }
 
 static void
@@ -896,9 +901,9 @@ append_row(Pane *pane, size_t entpos, Cpair col)
 		free(rez_pth);
 	}
 
-	result[term->avail_cols] = '\0';
+	result[cpane->width] = '\0';
 	snprintf(buf, MAX_P, "\x1b[%d;48;5;%d;38;5;%dm%*s\x1b[0;0m", col.attr,
-	    col.bg, col.fg, -(term->avail_cols), result);
+	    col.bg, col.fg, -(cpane->width), result);
 	buflen = strnlen(buf, MAX_N);
 	termb_append(buf, buflen);
 }
@@ -909,7 +914,7 @@ add_hi(Pane *pane, size_t entpos)
 	Cpair col;
 	get_hicol(&col, pane->direntry[entpos].mode);
 	col.attr = RVS;
-	move_to((pane->hdir) + 2, pane->x_srt);
+	move_to((pane->hdir) + 1 - pane->firstrow, pane->x_srt);
 	append_row(pane, entpos, col);
 	termb_write();
 }
@@ -919,7 +924,7 @@ rm_hi(Pane *pane, size_t entpos)
 {
 	Cpair col;
 	get_hicol(&col, pane->direntry[entpos].mode);
-	move_to((pane->hdir) + 2, pane->x_srt);
+	move_to((pane->hdir) + 1 - pane->firstrow, pane->x_srt);
 	append_row(pane, entpos, col);
 	termb_write();
 }
@@ -954,6 +959,9 @@ grabkeys(uint32_t k, Key *key, size_t max_keys)
 		if (k == key[i].k) {
 			key[i].func(&key[i].arg);
 			return;
+			//} else{
+			//	print_status(cwarn, "[input] No key binding
+			// found for key %x", k);
 		}
 	}
 }
@@ -971,8 +979,9 @@ start(void)
 	listdir(&panes[Left]);
 	listdir(&panes[Right]);
 
-	print_status(cdir, "%s", cpane->dirname);
-	// pthread_create(&fsev_thread, NULL, read_th, NULL);
+	// print_status(cdir, "left=%d right=%d", panes[Left].width,
+	//     panes[Right].width);
+	//  pthread_create(&fsev_thread, NULL, read_th, NULL);
 	start_ev();
 }
 

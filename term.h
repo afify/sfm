@@ -33,11 +33,8 @@
 
 /* typedef */
 typedef struct {
-	int cx;
-	int cy;
 	int rows;
 	int cols;
-	int avail_cols;
 	struct termios term;
 } Term;
 
@@ -46,11 +43,6 @@ typedef struct {
 	uint16_t bg;
 	uint8_t attr;
 } Cpair;
-
-typedef union {
-	uint16_t key; /* one of the TB_KEY_* constants */
-	uint32_t ch;  /* unicode character */
-} Evkey;
 
 typedef struct {
 	char *b;
