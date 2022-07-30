@@ -26,7 +26,6 @@ Tbuf ab;
 static void set_term(void);
 static void reset_term(void);
 static void backup_term(void);
-static void clear_status(void);
 
 /* function implementations */
 Term *
@@ -119,14 +118,14 @@ print_status(Cpair col, const char *fmt, ...)
 	twrite(1, nterm.rows, buf, buflen, col);
 }
 
-static void
+void
 clear_status(void)
 {
 	write(STDOUT_FILENO,
-	    "\x1b[999;999f" // moves cursor to line 999, column 999
-	    "\x1b[2K"	    // erase the entire line
+	    "\x1b[999;1f" // moves cursor to line 999, column 1
+	    "\x1b[2K"	  // erase the entire line
 	    ,
-	    14);
+	    12);
 }
 
 void
@@ -182,8 +181,8 @@ set_term(void)
 	nterm.term.c_oflag &= ~(OPOST);
 	nterm.term.c_cflag |= (CS8);
 	nterm.term.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-	nterm.term.c_cc[VMIN] = 0;
-	nterm.term.c_cc[VTIME] = 1;
+	// nterm.term.c_cc[VMIN] = 0;
+	// nterm.term.c_cc[VTIME] = 1;
 
 	// if (tcsetattr(STDIN_FILENO, TCSANOW, &nterm.term) < 0)
 	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &nterm.term) < 0)
