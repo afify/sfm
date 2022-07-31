@@ -24,7 +24,6 @@ Tbuf ab;
 
 /* function declarations */
 static void set_term(void);
-static void reset_term(void);
 static void backup_term(void);
 
 /* function implementations */
@@ -34,12 +33,6 @@ init_term()
 	backup_term();
 	set_term();
 	return &nterm;
-}
-
-void
-quit_term(void)
-{
-	reset_term();
 }
 
 void
@@ -69,11 +62,6 @@ draw_frame(Cpair cframe)
 	for (y = 0; y < nterm.cols; y++) {
 		termb_append(buf, buflen);
 	}
-	// termb_append("\r\n", 2);
-
-	// for (y = 0; y < nterm.cols; y++) {
-	//	termb_append(buf, buflen);
-	// }
 
 	termb_write();
 }
@@ -159,9 +147,6 @@ get_term_size(int *rows, int *cols)
 	return 0;
 }
 
-// ============================================================================
-// static - local functions
-// ============================================================================
 static void
 backup_term(void)
 {
@@ -194,7 +179,6 @@ set_term(void)
 	    "\033[H"	  // go home
 	    "\033[?1049h" // enables the alternative buffer
 	    "\033[?7l"	  // disable line wrapping
-
 	    //"\033[?25l"   // hide cursor
 	    //"\033[2J"     // clear screen
 	    //	"\033[2;%dr", // limit scrolling to our rows
@@ -202,8 +186,8 @@ set_term(void)
 	    25);
 }
 
-static void
-reset_term(void)
+void
+quit_term(void)
 {
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &oterm.term) < 0)
@@ -213,16 +197,11 @@ reset_term(void)
 	    "\033[?47l"	  // restore screen
 	    "\033[?1049l" // disables the alternative buffer
 	    "\033[?7h"	  // enable line wrapping
-
 	    //"\033[?25h"   // unhide cursor
 	    //"\033[r"      // reset scroll region
 	    ,
 	    23);
 }
-
-// ============================================================================
-// Buffer
-// ============================================================================
 
 void
 termb_free(void)

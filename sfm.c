@@ -66,11 +66,11 @@ typedef struct {
 
 typedef struct {
 	// int pane_id;
-	char dirname[MAX_P]; // dir name cwd
-	// char *filter;
-	Entry *direntry; // dir entries
-	int dirc;	 // dir entries sum
-	int hdir;	 // highlighted dir
+	char dirname[MAX_P];
+	char *filter;
+	Entry *direntry;
+	int dirc;
+	int hdir;
 	int x_srt;
 	int x_end;
 	int width;
@@ -106,12 +106,19 @@ static void append_row(Pane *, size_t, Cpair);
 static void bkmrk(const Arg *arg);
 static void calcdir(const Arg *arg);
 static int check_dir(char *);
+static void chngf(const Arg *arg);
+static void chngm(const Arg *arg);
+static void chngo(const Arg *arg);
 static void clear_pane(Pane *);
 static void create_dir_entries(Pane *, DIR *, char *);
 static void crnd(const Arg *arg);
 static void crnf(const Arg *arg);
 static void delent(const Arg *arg);
 static void dupl(const Arg *arg);
+static void exit_change(const Arg *arg);
+static void exit_vmode(const Arg *arg);
+static void free_files(void);
+static int frules(char *);
 static void get_dirp(char *);
 static void get_dirsize(char *, off_t *);
 static void get_editor(void);
@@ -126,46 +133,62 @@ static void get_hicol(Cpair *, mode_t);
 static void get_shell(void);
 static int get_usrinput(char *, size_t, const char *, ...);
 static void grabkeys(uint32_t, Key *, size_t);
+static void init_files(void);
 static int listdir(Pane *);
 static void mvbk(const Arg *arg);
 static void mvbtm(const Arg *arg);
 static void mvfwd(const Arg *arg);
 static void mvtop(const Arg *arg);
 static void mv_ver(const Arg *arg);
+static int opnf(char *);
 static void opnsh(const Arg *arg);
+static void paste(const Arg *arg);
 static void print_dir_entries(Pane *);
 static void print_error(char *);
 static void print_info(Pane *, char *);
 static void quit(const Arg *arg);
 static void refresh(const Arg *arg);
 static void rm_hi(Pane *, size_t);
+static void rname(const Arg *arg);
+static void selall(const Arg *arg);
+static void selcalc(void);
+static void seldel(const Arg *arg);
+static void seldwn(const Arg *arg);
+static void selmv(const Arg *arg);
+static void selref(void);
+static void selup(const Arg *arg);
+static void selynk(const Arg *arg);
 static void set_panes(void);
 static void sighandler(int);
 static int sort_name(const void *const, const void *const);
 static int spawn(const void *, size_t, const void *, size_t, char *, int);
+static void start_change(const Arg *arg);
 static void start_ev(void);
+static void start_filter(const Arg *arg);
 static int start_signal(void);
+static void start_vmode(const Arg *arg);
 static void start(void);
 static void switch_pane(const Arg *arg);
 static void toggle_df(const Arg *arg);
+static void t_resize(void);
+static void yank(const Arg *arg);
 
 /* global variables */
-static Term *term;
 // static pthread_t fsev_thread;
-static Pane panes[2];
 static Pane *cpane;
-static int pane_idx;
+static Pane panes[2];
+static Term *term;
+static char **sel_files;
 static char *editor[2];
 static char fed[] = "vi"; // TODO rename var
 static char *shell[2];
 static char sh[] = "/bin/sh";
-// static int *sel_indexes;
-// static size_t sel_len = 0;
-// static char **sel_files;
-// static int cont_vmode = 0;
-// static int cont_change = 0;
-static pid_t fork_pid = 0;
-static pid_t main_pid;
+static int *sel_indexes;
+static int cont_change = 0;
+static int cont_vmode = 0;
+static int pane_idx;
+static pid_t fork_pid = 0, main_pid;
+static size_t sel_len = 0;
 //#if defined(_SYS_INOTIFY_H)
 //#define READEVSZ 16
 // static int inotify_fd;
@@ -281,6 +304,90 @@ check_dir(char *path)
 }
 
 static void
+chngf(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+	char *input_og;
+	char *tmp[1];
+
+	input_og = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(input_og, MAX_N,
+		CHFLAG " %s: ", basename(CURSOR(cpane).name)) < 0) {
+		exit_change(0);
+		free(input_og);
+		return;
+	}
+
+	tmp[0] = input_og;
+	if (spawn(chflags_cmd, chflags_cmd_len, tmp, 1, CURSOR(cpane).name,
+		DontWait) < 0) {
+		print_error(strerror(errno));
+		return;
+	}
+
+	free(input_og);
+	exit_change(0);
+}
+
+static void
+chngm(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+	char *input_og;
+	char *tmp[1];
+
+	input_og = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(input_og, MAX_N,
+		"chmod %s: ", basename(CURSOR(cpane).name)) < 0) {
+		exit_change(0);
+		free(input_og);
+		return;
+	}
+
+	tmp[0] = input_og;
+	if (spawn(chmod_cmd, chmod_cmd_len, tmp, 1, CURSOR(cpane).name,
+		DontWait) < 0) {
+		print_error(strerror(errno));
+		return;
+	}
+
+	free(input_og);
+	exit_change(0);
+}
+
+static void
+chngo(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+	char *input_og;
+	char *tmp[1];
+
+	input_og = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(input_og, MAX_N,
+		"OWNER:GROUP %s: ", basename(CURSOR(cpane).name)) < 0) {
+		exit_change(0);
+		free(input_og);
+		return;
+	}
+
+	tmp[0] = input_og;
+	if (spawn(chown_cmd, chown_cmd_len, tmp, 1, CURSOR(cpane).name,
+		DontWait) < 0) {
+		print_error(strerror(errno));
+		return;
+	}
+
+	free(input_og);
+	exit_change(0);
+}
+
+static void
 clear_pane(Pane *pane)
 {
 	int i;
@@ -364,7 +471,7 @@ crnd(const Arg *arg)
 	char *user_input, *path;
 
 	user_input = ecalloc(MAX_USRI, sizeof(char));
-	if (get_usrinput(user_input, MAX_USRI, "new dir") < 0) {
+	if (get_usrinput(user_input, MAX_USRI, "new dir: ") < 0) {
 		free(user_input);
 		return;
 	}
@@ -390,7 +497,7 @@ crnf(const Arg *arg)
 	int rf;
 
 	user_input = ecalloc(MAX_USRI, sizeof(char));
-	if (get_usrinput(user_input, MAX_USRI, "new file") < 0) {
+	if (get_usrinput(user_input, MAX_USRI, "new file: ") < 0) {
 		free(user_input);
 		return;
 	}
@@ -421,7 +528,7 @@ delent(const Arg *arg)
 	char *inp_conf;
 
 	inp_conf = ecalloc(delconf_len, sizeof(char));
-	if ((get_usrinput(inp_conf, delconf_len, "delete files(s) (%s) ?",
+	if ((get_usrinput(inp_conf, delconf_len, "delete files(s) (%s) ? ",
 		 delconf) < 0) ||
 	    (strncmp(inp_conf, delconf, delconf_len) != 0)) {
 		free(inp_conf);
@@ -447,8 +554,8 @@ dupl(const Arg *arg)
 
 	input_name = ecalloc(MAX_N, sizeof(char));
 
-	if (get_usrinput(input_name, MAX_N, "new name: %s",
-		basename(CURSOR(cpane).name)) < 0) {
+	if (get_usrinput(input_name, MAX_N,
+		"new name %s: ", basename(CURSOR(cpane).name)) < 0) {
 		free(input_name);
 		return;
 	}
@@ -468,6 +575,48 @@ dupl(const Arg *arg)
 	}
 
 	free(input_name);
+}
+
+static void
+exit_change(const Arg *arg)
+{
+	cont_change = -1;
+	print_info(cpane, NULL);
+}
+
+static void
+exit_vmode(const Arg *arg)
+{
+	print_dir_entries(cpane);
+	add_hi(cpane, cpane->hdir - 1);
+	cont_vmode = -1;
+}
+
+static void
+free_files(void)
+{
+	size_t i;
+
+	if (sel_files != NULL) {
+		for (i = 0; i < sel_len; i++) {
+			free(sel_files[i]);
+			sel_files[i] = NULL;
+		}
+		free(sel_files);
+		sel_files = NULL;
+	}
+}
+
+static int
+frules(char *ex)
+{
+	size_t c, d;
+
+	for (c = 0; c < LEN(rules); c++)
+		for (d = 0; d < rules[c].exlen; d++)
+			if (strncmp(rules[c].ext[d], ex, MAX_EXT) == 0)
+				return c;
+	return -1;
 }
 
 static void
@@ -540,15 +689,13 @@ static char *
 get_ext(char *str)
 {
 	char *ext;
-	char dot;
 	size_t counter, len, i;
 
-	dot = '.';
 	counter = 0;
 	len = strnlen(str, MAX_N);
 
 	for (i = len - 1; i > 0; i--) {
-		if (str[i] == dot) {
+		if (str[i] == '.') {
 			break;
 		} else {
 			counter++;
@@ -747,8 +894,14 @@ get_usrinput(char *result, size_t max_chars, const char *fmt, ...)
 	uint32_t c = 0;
 	size_t i = 0;
 	char erase[] = "\b \b";
+	char msg[MAX_N];
+	va_list vl;
 
-	clear_status();
+	// print msg
+	va_start(vl, fmt);
+	vsnprintf(msg, MAX_N, fmt, vl);
+	print_status(cprompt, msg);
+	va_end(vl);
 
 	while (1) {
 		c = getkey();
@@ -793,6 +946,22 @@ grabkeys(uint32_t k, Key *key, size_t max_keys)
 		}
 	}
 	print_status(cwarn, "No key binding found for key 0x%x", k);
+}
+
+static void
+init_files(void)
+{
+	size_t i;
+	free_files();
+
+	selcalc();
+	sel_files = ecalloc(sel_len, sizeof(char *));
+
+	for (i = 0; i < sel_len; i++) {
+		sel_files[i] = ecalloc(MAX_P, sizeof(char));
+		strncpy(sel_files[i], cpane->direntry[sel_indexes[i] - 1].name,
+		    MAX_P);
+	}
 }
 
 static int
@@ -863,7 +1032,7 @@ mvfwd(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
-	// int s;
+	int s;
 
 	switch (check_dir(CURSOR(cpane).name)) {
 	case 0:
@@ -875,15 +1044,14 @@ mvfwd(const Arg *arg)
 		// PERROR(listdir(cpane) < 0);
 		listdir(cpane);
 		break;
-	// case 1: /* not a directory open file */
-	//	tb_shutdown();
-	//	s = opnf(CURSOR(cpane).name);
-	//	if (tb_init() != 0)
-	//		die("tb_init");
-	//	t_resize();
-	//	if (s < 0)
-	//		print_error("process failed non-zero exit");
-	//	break;
+	case 1: /* not a directory open file */
+		quit_term();
+		s = opnf(CURSOR(cpane).name);
+		term = init_term();
+		t_resize();
+		if (s < 0)
+			print_error("process failed non-zero exit");
+		break;
 	case -1: /* failed to open directory */
 		print_error(strerror(errno));
 		break;
@@ -931,7 +1099,6 @@ mv_ver(const Arg *arg)
 		return;
 	}
 
-	// if (cpane->hdir - cpane->firstrow >= (term->rows - 4) + arg->i &&
 	if (cpane->hdir - cpane->firstrow >= term->rows - 2 + arg->i &&
 	    arg->i < 0) { /* scroll down */
 		cpane->firstrow = cpane->firstrow - arg->i;
@@ -948,6 +1115,23 @@ mv_ver(const Arg *arg)
 	print_info(cpane, NULL);
 }
 
+static int
+opnf(char *fn)
+{
+	char *ex;
+	int c;
+
+	ex = get_ext(fn);
+	c = frules(ex);
+	free(ex);
+
+	if (c < 0) /* extension not found open in editor */
+		return spawn(editor, 1, NULL, 0, fn, Wait);
+	else
+		return spawn((char **)rules[c].v, rules[c].vlen, NULL, 0, fn,
+		    Wait);
+}
+
 static void
 opnsh(const Arg *arg)
 {
@@ -957,12 +1141,26 @@ opnsh(const Arg *arg)
 	chdir(cpane->dirname);
 	s = spawn(shell, 1, NULL, 0, NULL, Wait);
 	term = init_term();
-	// t_resize();
-	draw_frame(cframe);
-	listdir(&panes[Left]);
-	listdir(&panes[Right]);
+	t_resize();
 	if (s < 0)
 		print_error("process failed non-zero exit");
+}
+
+static void
+paste(const Arg *arg)
+{
+	if (sel_files == NULL) {
+		print_error("nothing to paste");
+		return;
+	}
+
+	if (spawn(cp_cmd, cp_cmd_len, sel_files, sel_len, cpane->dirname,
+		DontWait) < 0)
+		print_error(strerror(errno));
+	else
+		print_status(cprompt, "%zu files are copied", sel_len);
+
+	free_files();
 }
 
 static void
@@ -1044,6 +1242,11 @@ print_info(Pane *pane, char *dirsize)
 static void
 quit(const Arg *arg)
 {
+	if (cont_vmode == -1) { /* check if selection was allocated */
+		free(sel_indexes);
+		if (sel_files != NULL)
+			free_files();
+	}
 	free(panes[Left].direntry);
 	free(panes[Right].direntry);
 	quit_term();
@@ -1064,6 +1267,167 @@ rm_hi(Pane *pane, size_t entpos)
 	move_to((pane->hdir) + 1 - pane->firstrow, pane->x_srt);
 	append_row(pane, entpos, col);
 	termb_write();
+}
+
+static void
+rname(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+	char new_name[MAX_P];
+	char *input_name;
+
+	input_name = ecalloc(MAX_N, sizeof(char));
+
+	if (get_usrinput(input_name, MAX_N,
+		"rename: %s: ", basename(CURSOR(cpane).name)) < 0) {
+		exit_change(0);
+		free(input_name);
+		return;
+	}
+
+	if (snprintf(new_name, MAX_P, "%s/%s", cpane->dirname, input_name) <
+	    0) {
+		free(input_name);
+		print_error(strerror(errno));
+		return;
+	}
+
+	char *rename_cmd[] = { "mv", CURSOR(cpane).name, new_name };
+	if (spawn(rename_cmd, 3, NULL, 0, NULL, DontWait) < 0) {
+		print_error(strerror(errno));
+	}
+
+	free(input_name);
+	exit_change(0);
+}
+
+static void
+selall(const Arg *arg)
+{
+	int i;
+	for (i = 0; i < cpane->dirc; i++) {
+		sel_indexes[i] = i + 1;
+	}
+	selref();
+}
+
+static void
+selcalc(void)
+{
+	int j;
+	sel_len = 0;
+
+	for (j = 0; j < cpane->dirc; j++) { /* calculate used selection size */
+		if (sel_indexes[j] != 0)
+			sel_len++;
+		else
+			break;
+	}
+}
+
+static void
+seldel(const Arg *arg)
+{
+	char *inp_conf;
+
+	inp_conf = ecalloc(delconf_len, sizeof(char));
+	if ((get_usrinput(inp_conf, delconf_len, "delete files(s) (%s) ? ",
+		 delconf) < 0) ||
+	    (strncmp(inp_conf, delconf, delconf_len) != 0)) {
+		free(inp_conf);
+		return; /* canceled by user or wrong inp_conf */
+	}
+	free(inp_conf);
+
+	init_files();
+
+	if (spawn(rm_cmd, rm_cmd_len, sel_files, sel_len, NULL, DontWait) < 0)
+		print_error(strerror(errno));
+	else
+		print_status(cprompt, "%zu files are deleted", sel_len);
+
+	free_files();
+	cont_vmode = -1;
+}
+
+static void
+seldwn(const Arg *arg)
+{
+	mv_ver(arg);
+	int index = abs(cpane->hdir - sel_indexes[0]);
+	print_status(cprompt, "-- VISUAL -- d i=%d", index);
+
+	if (cpane->hdir > sel_indexes[0]) {
+		sel_indexes[index] = cpane->hdir;
+		add_hi(cpane, sel_indexes[index] - 2);
+	} else {
+		sel_indexes[index + 1] = 0;
+	}
+	if (cpane->dirc >= term->rows - 2 ||
+	    cpane->hdir >= cpane->dirc) { /* rehighlight all if scrolling */
+		selref();
+	}
+}
+
+static void
+selmv(const Arg *arg)
+{
+	if (sel_files == NULL) {
+		print_error("nothing to move");
+		return;
+	}
+
+	if (spawn(mv_cmd, mv_cmd_len, sel_files, sel_len, cpane->dirname,
+		DontWait) < 0)
+		print_error(strerror(errno));
+	else
+		print_status(cprompt, "%zu files are moved", sel_len);
+
+	free_files();
+}
+
+static void
+selref(void)
+{
+	int i;
+	for (i = 0; i < cpane->dirc; i++) {
+		if (sel_indexes[i] < (term->rows - 2 + cpane->firstrow) &&
+		    sel_indexes[i] >
+			cpane->firstrow) { /* checks if in the frame of the
+					      directories */
+			add_hi(cpane, sel_indexes[i] - 1);
+		}
+	}
+}
+
+static void
+selup(const Arg *arg)
+{
+	mv_ver(arg);
+	int index = abs(cpane->hdir - sel_indexes[0]);
+	print_status(cprompt, "-- VISUAL -- u i=%d", index);
+
+	if (cpane->hdir < sel_indexes[0]) {
+		sel_indexes[index] = cpane->hdir;
+		add_hi(cpane, sel_indexes[index]);
+	} else if (index < cpane->dirc) {
+		sel_indexes[index + 1] = 0;
+	}
+	if (cpane->dirc >= term->rows - 2 ||
+	    cpane->hdir <= 1) { /* rehighlight all if scrolling */
+		selref();
+	}
+}
+
+static void
+selynk(const Arg *arg)
+{
+	init_files();
+	print_dir_entries(cpane);
+	add_hi(cpane, cpane->hdir - 1);
+	print_status(cprompt, "%zu files are yanked", sel_len);
+	cont_vmode = -1;
 }
 
 static void
@@ -1113,6 +1477,7 @@ sighandler(int signo)
 {
 	switch (signo) {
 	case SIGWINCH:
+		t_resize();
 		// tb_clear();
 		// draw_frame();
 		// print_dir_entries(&panes[Left]);
@@ -1122,24 +1487,26 @@ sighandler(int signo)
 		// tb_present();
 
 		// CLEAR_SCREEN
-		get_term_size(&term->rows, &term->cols);
-		draw_frame(cframe);
+		// get_term_size(&term->rows, &term->cols);
+		// draw_frame(cframe);
 
-		panes[Left].x_end = (term->cols / 2) - 1;
-		panes[Right].x_srt = (term->cols / 2) + 2;
-		panes[Right].x_end = term->cols - 2;
-		panes[Right].width = panes[Right].x_end - panes[Right].x_srt +
-		    1;
-		panes[Left].width = panes[Left].x_end - panes[Left].x_srt + 1;
+		// panes[Left].x_end = (term->cols / 2) - 1;
+		// panes[Right].x_srt = (term->cols / 2) + 2;
+		// panes[Right].x_end = term->cols - 2;
+		// panes[Right].width = panes[Right].x_end - panes[Right].x_srt
+		// +
+		//     1;
+		// panes[Left].width = panes[Left].x_end - panes[Left].x_srt +
+		// 1;
 
-		print_dir_entries(&panes[Left]);
-		print_dir_entries(&panes[Right]);
+		// print_dir_entries(&panes[Left]);
+		// print_dir_entries(&panes[Right]);
 
-		print_status(cdir, "left=%d right=%d", panes[Left].width,
-		    panes[Right].width);
+		// print_status(cdir, "left=%d right=%d", panes[Left].width,
+		//     panes[Right].width);
 
-		if (cpane->dirc > 0)
-			add_hi(cpane, cpane->hdir);
+		// if (cpane->dirc > 0)
+		//	add_hi(cpane, cpane->hdir);
 		break;
 	case SIGUSR1:
 		break;
@@ -1205,14 +1572,50 @@ spawn(const void *com_argv, size_t com_argc, const void *f_argv, size_t f_argc,
 }
 
 static void
+start_change(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+	uint32_t c = 0;
+
+	cont_change = 0;
+	print_status(cprompt, "c [womf]");
+	while (1) {
+		c = getkey();
+		grabkeys(c, ckeys, ckeyslen);
+		if (cont_change == -1)
+			return;
+		break;
+	}
+}
+
+static void
 start_ev(void)
 {
-	uint32_t c;
+	uint32_t c = 0;
 
 	while (1) {
 		c = getkey();
 		grabkeys(c, nkeys, nkeyslen);
 	}
+}
+
+static void
+start_filter(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+	char *user_input;
+	user_input = ecalloc(MAX_USRI, sizeof(char));
+	if (get_usrinput(user_input, MAX_USRI, "filter ") < 0) {
+		free(user_input);
+		return;
+	}
+	cpane->filter = user_input;
+	if (listdir(cpane) < 0)
+		print_error("no match");
+	cpane->filter = NULL;
+	free(user_input);
 }
 
 static int
@@ -1227,6 +1630,33 @@ start_signal(void)
 	sigaction(SIGUSR2, &sa, 0);
 	sigaction(SIGWINCH, &sa, 0);
 	return 0;
+}
+
+static void
+start_vmode(const Arg *arg)
+{
+	uint32_t c = 0;
+
+	if (cpane->dirc < 1) {
+		return;
+	}
+
+	if (sel_indexes != NULL) {
+		free(sel_indexes);
+		sel_indexes = NULL;
+	}
+
+	sel_indexes = ecalloc(cpane->dirc, sizeof(size_t));
+	sel_indexes[0] = cpane->hdir;
+	cont_vmode = 0;
+	print_status(cprompt, "-- VISUAL --");
+
+	while (1) {
+		c = getkey();
+		grabkeys(c, vkeys, vkeyslen);
+		if (cont_vmode == -1)
+			return;
+	}
 }
 
 static void
@@ -1268,6 +1698,43 @@ toggle_df(const Arg *arg)
 		print_error(strerror(errno));
 	if (listdir(&panes[Right]) < 0)
 		print_error(strerror(errno));
+}
+
+static void
+t_resize(void)
+{
+	write(STDOUT_FILENO, "\x1b[2J", 4); // clear screen
+	get_term_size(&term->rows, &term->cols);
+
+	panes[Left].x_end = (term->cols / 2) - 1;
+	panes[Right].x_srt = (term->cols / 2) + 2;
+	panes[Right].x_end = term->cols - 2;
+	panes[Right].width = panes[Right].x_end - panes[Right].x_srt + 1;
+	panes[Left].width = panes[Left].x_end - panes[Left].x_srt + 1;
+
+	// print_status(cdir, "left=%d right=%d", panes[Left].width,
+	//     panes[Right].width);
+
+	// draw_frame(cframe);
+	print_dir_entries(&panes[Left]);
+	print_dir_entries(&panes[Right]);
+	if (cpane->dirc > 0)
+		add_hi(cpane, cpane->hdir - 1);
+	print_info(cpane, NULL);
+}
+
+static void
+yank(const Arg *arg)
+{
+	if (cpane->dirc < 1)
+		return;
+
+	free_files();
+	sel_len = 1;
+	sel_files = ecalloc(sel_len, sizeof(char *));
+	sel_files[0] = ecalloc(MAX_P, sizeof(char));
+	strncpy(sel_files[0], CURSOR(cpane).name, MAX_P);
+	print_status(cprompt, "1 file is yanked", sel_len);
 }
 
 int
