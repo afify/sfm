@@ -51,7 +51,7 @@
 #define MAX_GRPN 32
 #define MAX_DTF 32
 #define CURSOR(x) (x)->direntry[(x)->hdir - 1]
-#define TERM_ROWS term->rows - 3
+#define TERM_ROWS term->rows - 2
 
 /* typedef */
 typedef struct {
@@ -240,9 +240,13 @@ append_row(Pane *pane, size_t entpos, Cpair col)
 		free(rez_pth);
 	}
 
-	result[cpane->width] = '\0';
-	snprintf(buf, MAX_P, "\x1b[%d;48;5;%d;38;5;%dm%*s\x1b[0;0m", col.attr,
-	    col.bg, col.fg, -(cpane->width), result);
+	// result[pane->width] = '\0';
+	snprintf(buf, MAX_P, "\x1b[%d;48;5;%d;38;5;%dm", col.attr, col.bg,
+	    col.fg);
+	buflen = strnlen(buf, MAX_N);
+	termb_append(buf, buflen);
+
+	snprintf(buf, pane->width + 1, "%*s\x1b[0;0m", -(pane->width), result);
 	buflen = strnlen(buf, MAX_N);
 	termb_append(buf, buflen);
 }
@@ -1013,10 +1017,10 @@ mvbtm(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
-	if (cpane->dirc > (term->rows - 2)) { // need to scroll
+	if (cpane->dirc > (TERM_ROWS)) { // need to scroll
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = cpane->dirc;
-		cpane->firstrow = cpane->dirc - (term->rows - 2) + 1;
+		cpane->firstrow = cpane->dirc - (TERM_ROWS) + 1;
 		print_dir_entries(cpane);
 		add_hi(cpane, cpane->hdir - 1);
 	} else { // no need to scroll
@@ -1063,7 +1067,7 @@ mvtop(const Arg *arg)
 {
 	if (cpane->dirc < 1)
 		return;
-	if (cpane->dirc > term->rows - 2) {
+	if (cpane->dirc > TERM_ROWS) {
 		rm_hi(cpane, cpane->hdir - 1);
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
@@ -1099,7 +1103,7 @@ mv_ver(const Arg *arg)
 		return;
 	}
 
-	if (cpane->hdir - cpane->firstrow >= term->rows - 2 + arg->i &&
+	if (cpane->hdir - cpane->firstrow >= TERM_ROWS + arg->i &&
 	    arg->i < 0) { /* scroll down */
 		cpane->firstrow = cpane->firstrow - arg->i;
 		rm_hi(cpane, cpane->hdir - 1);
@@ -1172,7 +1176,7 @@ print_dir_entries(Pane *pane)
 	y = 1;
 	start_from = pane->firstrow;
 	// dyn_max = MIN(pane->dirc, (TERM_ROWS) + pane->firstrow);
-	dyn_max = MIN(pane->dirc, (term->rows - 2 - 1) + pane->firstrow);
+	dyn_max = MIN(pane->dirc, (TERM_ROWS - 1) + pane->firstrow);
 
 	/* print each entry in directory */
 	while (start_from < dyn_max) {
@@ -1194,8 +1198,8 @@ print_dir_entries(Pane *pane)
 	// printf_tb(pane->x_srt, 0, pane->dircol, " %.*s", hwidth,
 	// pane->dirname);
 
-	twrite(pane->x_srt, 0, pane->dirname, strlen(pane->dirname),
-	    pane->dircol);
+	// twrite(pane->x_srt, 0, pane->dirname, strlen(pane->dirname),
+	//     pane->dircol); // TODO strlen
 }
 
 static void
@@ -1364,7 +1368,7 @@ seldwn(const Arg *arg)
 	} else {
 		sel_indexes[index + 1] = 0;
 	}
-	if (cpane->dirc >= term->rows - 2 ||
+	if (cpane->dirc >= TERM_ROWS ||
 	    cpane->hdir >= cpane->dirc) { /* rehighlight all if scrolling */
 		selref();
 	}
@@ -1392,7 +1396,7 @@ selref(void)
 {
 	int i;
 	for (i = 0; i < cpane->dirc; i++) {
-		if (sel_indexes[i] < (term->rows - 2 + cpane->firstrow) &&
+		if (sel_indexes[i] < (TERM_ROWS + cpane->firstrow) &&
 		    sel_indexes[i] >
 			cpane->firstrow) { /* checks if in the frame of the
 					      directories */
@@ -1414,7 +1418,7 @@ selup(const Arg *arg)
 	} else if (index < cpane->dirc) {
 		sel_indexes[index + 1] = 0;
 	}
-	if (cpane->dirc >= term->rows - 2 ||
+	if (cpane->dirc >= TERM_ROWS ||
 	    cpane->hdir <= 1) { /* rehighlight all if scrolling */
 		selref();
 	}
@@ -1478,35 +1482,6 @@ sighandler(int signo)
 	switch (signo) {
 	case SIGWINCH:
 		t_resize();
-		// tb_clear();
-		// draw_frame();
-		// print_dir_entries(&panes[Left]);
-		// print_dir_entries(&panes[Right]);
-		// if (cpane->dirc > 0)
-		//	add_hi(cpane, cpane->hdir);
-		// tb_present();
-
-		// CLEAR_SCREEN
-		// get_term_size(&term->rows, &term->cols);
-		// draw_frame(cframe);
-
-		// panes[Left].x_end = (term->cols / 2) - 1;
-		// panes[Right].x_srt = (term->cols / 2) + 2;
-		// panes[Right].x_end = term->cols - 2;
-		// panes[Right].width = panes[Right].x_end - panes[Right].x_srt
-		// +
-		//     1;
-		// panes[Left].width = panes[Left].x_end - panes[Left].x_srt +
-		// 1;
-
-		// print_dir_entries(&panes[Left]);
-		// print_dir_entries(&panes[Right]);
-
-		// print_status(cdir, "left=%d right=%d", panes[Left].width,
-		//     panes[Right].width);
-
-		// if (cpane->dirc > 0)
-		//	add_hi(cpane, cpane->hdir);
 		break;
 	case SIGUSR1:
 		break;
@@ -1707,15 +1682,16 @@ t_resize(void)
 	get_term_size(&term->rows, &term->cols);
 
 	panes[Left].x_end = (term->cols / 2) - 1;
+	panes[Left].width = panes[Left].x_end - panes[Left].x_srt + 1;
+
 	panes[Right].x_srt = (term->cols / 2) + 2;
 	panes[Right].x_end = term->cols - 2;
 	panes[Right].width = panes[Right].x_end - panes[Right].x_srt + 1;
-	panes[Left].width = panes[Left].x_end - panes[Left].x_srt + 1;
 
 	// print_status(cdir, "left=%d right=%d", panes[Left].width,
 	//     panes[Right].width);
 
-	// draw_frame(cframe);
+	draw_frame(cframe);
 	print_dir_entries(&panes[Left]);
 	print_dir_entries(&panes[Right]);
 	if (cpane->dirc > 0)

@@ -2,17 +2,13 @@
 
 #include <sys/ioctl.h>
 
-#include <ctype.h>
-#include <errno.h>
 #include <stdarg.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
-#include <wchar.h>
 
 #include "term.h"
 #include "util.h"
@@ -45,6 +41,7 @@ draw_frame(Cpair cframe)
 	snprintf(buf, nterm.cols, "\x1b[%d;48;5;%d;38;5;%dm%s\x1b[0;0m",
 	    cframe.attr, cframe.bg, cframe.fg, "  ");
 	buflen = strnlen(buf, 64);
+	write(STDOUT_FILENO, "\x1b[H", 3);
 
 	for (y = 0; y < nterm.cols; y++) {
 		termb_append(buf, buflen);
@@ -77,33 +74,26 @@ getkey(void)
 }
 
 void
-twrite(int x, int y, char *str, size_t len, Cpair col)
-{
-	if (x > nterm.cols || y > nterm.rows)
-		return;
-	char buf[nterm.cols];
-	size_t buflen;
-
-	snprintf(buf, nterm.cols,
-	    "\x1b[%d;%df\x1b[%d;48;5;%d;38;5;%dm%s\x1b[0;0m", y, x, col.attr,
-	    col.bg, col.fg, str);
-	buflen = strlen(buf);
-	write(STDOUT_FILENO, buf, buflen);
-}
-
-void
 print_status(Cpair col, const char *fmt, ...)
 {
-	char buf[1000];
-	size_t buflen;
+	char buf[nterm.cols];
 	va_list vl;
 	va_start(vl, fmt);
-	(void)vsnprintf(buf, 1000, fmt, vl);
+	(void)vsnprintf(buf, nterm.cols, fmt, vl);
 	va_end(vl);
-	buflen = strlen(buf);
 
-	clear_status();
-	twrite(1, nterm.rows, buf, buflen, col);
+	char result[1024];
+	size_t resultlen;
+
+	snprintf(result, 1024,
+	    "\x1b[%d;1f"	       // moves cursor to last line, column 1
+	    "\x1b[2K"		       // erase the entire line
+	    "\x1b[%d;48;5;%d;38;5;%dm" // set string colors
+	    "%s"
+	    "\x1b[0;0m", // reset colors
+	    nterm.rows, col.attr, col.bg, col.fg, buf);
+	resultlen = strlen(result);
+	write(STDOUT_FILENO, result, resultlen);
 }
 
 void
@@ -111,8 +101,7 @@ clear_status(void)
 {
 	write(STDOUT_FILENO,
 	    "\x1b[999;1f" // moves cursor to line 999, column 1
-	    "\x1b[2K"	  // erase the entire line
-	    ,
+	    "\x1b[2K",	  // erase the entire line
 	    12);
 }
 
@@ -169,8 +158,8 @@ set_term(void)
 	// nterm.term.c_cc[VMIN] = 0;
 	// nterm.term.c_cc[VTIME] = 1;
 
-	// if (tcsetattr(STDIN_FILENO, TCSANOW, &nterm.term) < 0)
 	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &nterm.term) < 0)
+		// if (tcsetattr(STDIN_FILENO, TCSANOW, &nterm.term) < 0)
 		die("tcsetattr:");
 
 	write(STDOUT_FILENO,
@@ -214,18 +203,20 @@ termb_free(void)
 void
 termb_append(const char *s, int len)
 {
-	char *new = erealloc(ab.b, ab.len + len);
-	if (new == NULL)
-		return;
-	memcpy(&new[ab.len], s, len);
-	ab.b = new;
-	ab.len += len;
+	printf("%s", s);
+	// char *new = erealloc(ab.b, ab.len + len);
+	// if (new == NULL)
+	//	return;
+	// memcpy(&new[ab.len], s, len);
+	// ab.b = new;
+	// ab.len += len;
 }
 
 void
 termb_write(void)
 {
-	write(STDOUT_FILENO, ab.b, ab.len);
-	write(STDOUT_FILENO, "\x1b[0;0m", 6); // reset colors
-	termb_free();
+	fflush(stdout);
+	// write(STDOUT_FILENO, ab.b, ab.len);
+	//  write(STDOUT_FILENO, "\x1b[0;0m", 6); // reset colors
+	// termb_free();
 }
