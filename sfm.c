@@ -56,7 +56,6 @@
 /* typedef */
 typedef struct {
 	char name[MAX_N];
-	char real[MAX_P]; // real dir name cwd
 	gid_t group;
 	mode_t mode;
 	off_t size;
@@ -102,7 +101,6 @@ typedef struct {
 
 /* function declarations */
 static void add_hi(Pane *, size_t);
-static void append_row(Pane *, size_t, Cpair);
 static void bkmrk(const Arg *arg);
 static void calcdir(const Arg *arg);
 static int check_dir(char *);
@@ -144,6 +142,8 @@ static int opnf(char *);
 static void opnsh(const Arg *arg);
 static void paste(const Arg *arg);
 static void print_dir_entries(Pane *);
+static void print_entry(Pane *, size_t, Cpair);
+static void print_dirname(Pane *);
 static void print_error(char *);
 static void print_info(Pane *, char *);
 static void quit(const Arg *arg);
@@ -217,38 +217,8 @@ add_hi(Pane *pane, size_t entpos)
 	get_hicol(&col, pane->direntry[entpos].mode);
 	col.attr = RVS;
 	move_to((pane->hdir) + 1 - pane->firstrow, pane->x_srt);
-	append_row(pane, entpos, col);
+	print_entry(pane, entpos, col);
 	termb_write();
-}
-
-static void
-append_row(Pane *pane, size_t entpos, Cpair col)
-{
-	char *result, *rez_pth;
-	char lnk_full[MAX_N];
-	char buf[MAX_P];
-	size_t buflen = 0;
-
-	result = basename(pane->direntry[entpos].name);
-
-	if (S_ISLNK(pane->direntry[entpos].mode) != 0) {
-		rez_pth = ecalloc(MAX_P, sizeof(char));
-		if (realpath(pane->direntry[entpos].name, rez_pth) != NULL) {
-			snprintf(lnk_full, MAX_N, "%s -> %s", result, rez_pth);
-			result = lnk_full;
-		}
-		free(rez_pth);
-	}
-
-	// result[pane->width] = '\0';
-	snprintf(buf, MAX_P, "\x1b[%d;48;5;%d;38;5;%dm", col.attr, col.bg,
-	    col.fg);
-	buflen = strnlen(buf, MAX_N);
-	termb_append(buf, buflen);
-
-	snprintf(buf, pane->width + 1, "%*s\x1b[0;0m", -(pane->width), result);
-	buflen = strnlen(buf, MAX_N);
-	termb_append(buf, buflen);
 }
 
 static void
@@ -399,6 +369,7 @@ clear_pane(Pane *pane)
 	char buf[64];
 	size_t buflen;
 
+	// print outer frame
 	snprintf(buf, term->cols, "\x1b[%d;48;5;%d;38;5;%dm%s\x1b[0;0m",
 	    cframe.attr, cframe.bg, cframe.fg, "  ");
 	buflen = strnlen(buf, 64);
@@ -459,14 +430,11 @@ create_dir_entries(Pane *pane, DIR *dir, char *filter)
 			pane->direntry[i].user = status.st_uid;
 			pane->direntry[i].dt = status.st_mtime;
 		}
-		if (S_ISLNK(status.st_mode) != 0) {
-			realpath(tmpfull, pane->direntry[i].real);
-		}
 		i++;
 		free(tmpfull);
 	}
 
-	pane->dirc = i;
+	// pane->dirc = i;
 }
 
 static void
@@ -977,7 +945,6 @@ listdir(Pane *pane)
 	if (dir == NULL)
 		return -1;
 
-	clear_pane(pane);
 	create_dir_entries(pane, dir, NULL); /* create array of entries */
 	qsort(pane->direntry, pane->dirc, sizeof(Entry), sort_name);
 	print_dir_entries(pane);
@@ -1173,6 +1140,7 @@ print_dir_entries(Pane *pane)
 	size_t y, dyn_max, start_from;
 	Cpair col;
 
+	clear_pane(pane);
 	y = 1;
 	start_from = pane->firstrow;
 	// dyn_max = MIN(pane->dirc, (TERM_ROWS) + pane->firstrow);
@@ -1182,24 +1150,86 @@ print_dir_entries(Pane *pane)
 	while (start_from < dyn_max) {
 		get_hicol(&col, pane->direntry[start_from].mode);
 		move_to(y + 1, pane->x_srt);
-		append_row(pane, start_from, col);
+		print_entry(pane, start_from, col);
 		start_from++;
 		y++;
 	}
+
+	if (pane->dirc > 0)
+		print_info(pane, NULL);
+	else
+		clear_status();
+
+	print_dirname(pane);
 	termb_write();
+}
 
-	// if (pane->dirc > 0)
-	//         print_info(pane, NULL);
-	// else
-	//         clear_status();
+static void
+print_entry(Pane *pane, size_t entpos, Cpair col)
+{
+	char *result, *rez_pth;
+	char lnk_full[MAX_N];
+	char buf[MAX_P];
+	size_t buflen = 0;
 
-	// /* print current directory title */
-	// pane->dircol.fg |= TB_BOLD;
-	// printf_tb(pane->x_srt, 0, pane->dircol, " %.*s", hwidth,
-	// pane->dirname);
+	result = basename(pane->direntry[entpos].name);
 
-	// twrite(pane->x_srt, 0, pane->dirname, strlen(pane->dirname),
-	//     pane->dircol); // TODO strlen
+	if (S_ISLNK(pane->direntry[entpos].mode) != 0) {
+		rez_pth = ecalloc(MAX_P, sizeof(char));
+		if (realpath(pane->direntry[entpos].name, rez_pth) == NULL)
+			col = cbrlnk;
+		snprintf(lnk_full, MAX_N, "%s -> %s", result, rez_pth);
+		result = lnk_full;
+		free(rez_pth);
+	}
+
+	/* set colors */
+	snprintf(buf, MAX_P, "\x1b[%d;48;5;%d;38;5;%dm", col.attr, col.bg,
+	    col.fg);
+	buflen = strnlen(buf, MAX_N);
+	termb_append(buf, buflen);
+
+	/* set name */
+	snprintf(buf, pane->width + 1, "%*s", -(pane->width), result);
+	buflen = strnlen(buf, MAX_N);
+	termb_append(buf, buflen);
+
+	/* reset color */
+	termb_append("\x1b[0;0m", 6);
+}
+
+static void
+print_dirname(Pane *pane)
+{
+	char buf[MAX_P];
+	size_t buflen;
+
+	if (pane->x_srt == 3) { // left pane
+		snprintf(buf, MAX_P,
+		    "\x1b[1;%df" // moves cursor to first line, x_end
+		    "\x1b[1K"	 // erase start of line to the cursor
+		    "\x1b[1;%df" // moves cursor to first line, x_srt
+		    "\x1b[%d;48;5;%d;38;5;%dm" // set string colors
+		    "\b\b  ",		       // top left corner
+		    pane->x_end, pane->x_srt, cpanell.attr, cpanell.bg,
+		    cpanell.fg);
+		buflen = strnlen(buf, MAX_N);
+		termb_append(buf, buflen);
+
+	} else { // right pane
+		snprintf(buf, MAX_P,
+		    "\x1b[1;%df" // moves cursor to first line, pane->x_srt
+		    "\x1b[0K"	 // erase from cursor to end of line
+		    "\x1b[%d;48;5;%d;38;5;%dm", // set string colors
+		    pane->x_srt, cpanelr.attr, cpanelr.bg, cpanelr.fg);
+		buflen = strnlen(buf, MAX_N);
+		termb_append(buf, buflen);
+	}
+
+	snprintf(buf, pane->width + 1, "%*s\x1b[0;0m", -(pane->width),
+	    pane->dirname);
+	buflen = strnlen(buf, MAX_N);
+	termb_append(buf, buflen);
 }
 
 static void
@@ -1269,7 +1299,7 @@ rm_hi(Pane *pane, size_t entpos)
 	Cpair col;
 	get_hicol(&col, pane->direntry[entpos].mode);
 	move_to((pane->hdir) + 1 - pane->firstrow, pane->x_srt);
-	append_row(pane, entpos, col);
+	print_entry(pane, entpos, col);
 	termb_write();
 }
 

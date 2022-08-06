@@ -43,19 +43,22 @@ draw_frame(Cpair cframe)
 	buflen = strnlen(buf, 64);
 	write(STDOUT_FILENO, "\x1b[H", 3);
 
-	for (y = 0; y < nterm.cols; y++) {
-		termb_append(buf, buflen);
-	}
+	// for (y = 0; y < nterm.cols; y++) {
+	//	termb_append(buf, buflen);
+	// }
 
+	// middle line
 	for (y = 0; y < nterm.rows - 2; y++) {
-		termb_append(buf, buflen);
+		// termb_append(buf, buflen);
 		move_to_col(nterm.cols / 2);
 		termb_append(buf, buflen);
-		move_to_col(nterm.cols - 1);
-		termb_append(buf, buflen);
+		// move_to_col(nterm.cols - 1);
+		// termb_append(buf, buflen);
 		termb_append("\r\n", 2);
 	}
 
+	// bottom line
+	move_to(nterm.rows - 1, 1);
 	for (y = 0; y < nterm.cols; y++) {
 		termb_append(buf, buflen);
 	}
@@ -203,20 +206,20 @@ termb_free(void)
 void
 termb_append(const char *s, int len)
 {
-	printf("%s", s);
-	// char *new = erealloc(ab.b, ab.len + len);
-	// if (new == NULL)
-	//	return;
-	// memcpy(&new[ab.len], s, len);
-	// ab.b = new;
-	// ab.len += len;
+	// printf("%s", s);
+	char *new = erealloc(ab.b, ab.len + len);
+	if (new == NULL)
+		return;
+	memcpy(&new[ab.len], s, len);
+	ab.b = new;
+	ab.len += len;
 }
 
 void
 termb_write(void)
 {
-	fflush(stdout);
-	// write(STDOUT_FILENO, ab.b, ab.len);
-	//  write(STDOUT_FILENO, "\x1b[0;0m", 6); // reset colors
-	// termb_free();
+	// fflush(stdout);
+	write(STDOUT_FILENO, ab.b, ab.len);
+	// write(STDOUT_FILENO, "\x1b[0;0m", 6); // reset colors
+	termb_free();
 }

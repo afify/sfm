@@ -4,27 +4,30 @@
 #define TERM_H
 
 /* macros */
-#define NORM 0
-#define BOLD 1
-#define RVS 7
-
-#define XK_CTRL(k) ((k)&0x1f)
-#define XK_ALT(k) (k)1b
-#define XK_UP 0x415b1b
-#define XK_DOWN 0x425b1b
-#define XK_RIGHT 0x435b1b
-#define XK_LEFT 0x445b1b
-#define XK_HOME 0x485b1b
-#define XK_END 0x7e345b1b
-#define XK_PGUP 0x7e355b1b
-#define XK_PGDOWN 0x7e365b1b
-
-//#define XK_BACKSPACE 0x08
+#define NORM         0X0
+#define BOLD         0X1
+#define DIM          0X2
+#define ITALIC       0X3
+#define UNDERL       0X4
+#define BLINK        0X5
+#define RVS          0X7
+#define HIDDEN       0X8
+#define STRIKE       0X9
+#define XK_CTRL(k)   ((k)&0x1f)
+#define XK_ALT(k)    (k)1b
+#define XK_UP        0x415b1b
+#define XK_DOWN      0x425b1b
+#define XK_RIGHT     0x435b1b
+#define XK_LEFT      0x445b1b
+#define XK_HOME      0x485b1b
+#define XK_END       0x7e345b1b
+#define XK_PGUP      0x7e355b1b
+#define XK_PGDOWN    0x7e365b1b
 #define XK_BACKSPACE 0x7f
-#define XK_TAB 0x09
-#define XK_ENTER 0x0D
-#define XK_ESC 0x1B
-#define XK_SPACE 0x20
+#define XK_TAB       0x09
+#define XK_ENTER     0x0D
+#define XK_ESC       0x1B
+#define XK_SPACE     0x20
 
 /* typedef */
 typedef struct {
