@@ -64,7 +64,6 @@ typedef struct {
 } Entry;
 
 typedef struct {
-	// int pane_id;
 	char dirname[MAX_P];
 	char *filter;
 	Entry *direntry;
@@ -77,8 +76,8 @@ typedef struct {
 	// int parent_firstrow;
 	// int parent_row; // FIX
 	Cpair dircol;
-	// int inotify_wd;
-	// int event_fd;
+	int inotify_wd;
+	int event_fd;
 } Pane;
 
 typedef struct {
@@ -101,6 +100,7 @@ typedef struct {
 
 /* function declarations */
 static void add_hi(Pane *, size_t);
+static int addwatch(Pane *pane);
 static void bkmrk(const Arg *arg);
 static void calcdir(const Arg *arg);
 static int check_dir(char *);
@@ -117,6 +117,8 @@ static void exit_change(const Arg *arg);
 static void exit_vmode(const Arg *arg);
 static void free_files(void);
 static int frules(char *);
+static int fsev_init(void);
+static void fsev_shdn(void);
 static void get_dirp(char *);
 static void get_dirsize(char *, off_t *);
 static void get_editor(void);
@@ -142,13 +144,16 @@ static int opnf(char *);
 static void opnsh(const Arg *arg);
 static void paste(const Arg *arg);
 static void print_dir_entries(Pane *);
-static void print_entry(Pane *, size_t, Cpair);
 static void print_dirname(Pane *);
+static void print_entry(Pane *, size_t, Cpair);
 static void print_error(char *);
 static void print_info(Pane *, char *);
 static void quit(const Arg *arg);
+static int read_events(void);
+static void *read_th(void *arg);
 static void refresh(const Arg *arg);
 static void rm_hi(Pane *, size_t);
+static void rmwatch(Pane *);
 static void rname(const Arg *arg);
 static void selall(const Arg *arg);
 static void selcalc(void);
@@ -174,7 +179,7 @@ static void t_resize(void);
 static void yank(const Arg *arg);
 
 /* global variables */
-// static pthread_t fsev_thread;
+static pthread_t fsev_thread;
 static Pane *cpane;
 static Pane panes[2];
 static Term *term;
@@ -189,16 +194,16 @@ static int cont_vmode = 0;
 static int pane_idx;
 static pid_t fork_pid = 0, main_pid;
 static size_t sel_len = 0;
-//#if defined(_SYS_INOTIFY_H)
-//#define READEVSZ 16
-// static int inotify_fd;
-//#elif defined(_SYS_EVENT_H_)
-//#define READEVSZ 0
-// static int kq;
-// struct kevent evlist[2]; /* events we want to monitor */
-// struct kevent chlist[2]; /* events that were triggered */
-// static struct timespec gtimeout;
-//#endif
+#if defined(_SYS_INOTIFY_H)
+#define READEVSZ 16
+static int inotify_fd;
+#elif defined(_SYS_EVENT_H_)
+#define READEVSZ 0
+static int kq;
+struct kevent evlist[2]; /* events we want to monitor */
+struct kevent chlist[2]; /* events that were triggered */
+static struct timespec gtimeout;
+#endif
 #if defined(__linux__) || defined(__FreeBSD__)
 #define OFF_T "%ld"
 #elif defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
@@ -219,6 +224,26 @@ add_hi(Pane *pane, size_t entpos)
 	move_to((pane->hdir) + 1 - pane->firstrow, pane->x_srt);
 	print_entry(pane, entpos, col);
 	termb_write();
+}
+
+static int
+addwatch(Pane *pane)
+{
+#if defined(_SYS_INOTIFY_H)
+	return pane->inotify_wd = inotify_add_watch(inotify_fd, pane->dirname,
+		   IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
+		       IN_ATTRIB | IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
+#elif defined(_SYS_EVENT_H_)
+	pane->event_fd = open(pane->dirn, O_RDONLY);
+	if (pane->event_fd < 0)
+		return pane->event_fd;
+	EV_SET(&evlist[pane->pane_id], pane->event_fd, EVFILT_VNODE,
+	    EV_ADD | EV_CLEAR,
+	    NOTE_DELETE | NOTE_EXTEND | NOTE_LINK | NOTE_RENAME | NOTE_ATTRIB |
+		NOTE_REVOKE | NOTE_WRITE,
+	    0, NULL);
+	return 0;
+#endif
 }
 
 static void
@@ -591,6 +616,37 @@ frules(char *ex)
 	return -1;
 }
 
+static int
+fsev_init(void)
+{
+#if defined(_SYS_INOTIFY_H)
+	inotify_fd = inotify_init();
+	if (inotify_fd < 0)
+		return -1;
+#elif defined(_SYS_EVENT_H_)
+	gtimeout.tv_sec = 1;
+	kq = kqueue();
+	if (kq < 0)
+		return -1;
+#endif
+	return 0;
+}
+static void
+fsev_shdn(void)
+{
+	pthread_cancel(fsev_thread);
+#if defined(__linux__)
+	pthread_join(fsev_thread, NULL);
+#endif
+	rmwatch(&panes[Left]);
+	rmwatch(&panes[Right]);
+#if defined(_SYS_INOTIFY_H)
+	close(inotify_fd);
+#elif defined(_SYS_EVENT_H_)
+	close(kq);
+#endif
+}
+
 static void
 get_dirp(char *cdir)
 {
@@ -949,6 +1005,9 @@ listdir(Pane *pane)
 	qsort(pane->direntry, pane->dirc, sizeof(Entry), sort_name);
 	print_dir_entries(pane);
 
+	if (addwatch(pane) < 0)
+		print_error("can't add watch");
+
 	if (pane == cpane && pane->dirc > 0)
 		add_hi(pane, pane->hdir - 1);
 
@@ -974,7 +1033,8 @@ mvbk(const Arg *arg)
 	// cpane->firstrow = cpane->parent_firstrow;
 	// cpane->hdir = cpane->parent_row;
 	cpane->hdir = 1;
-	listdir(cpane);
+	if (listdir(cpane) < 0)
+		print_error(strerror(errno));
 	// cpane->parent_firstrow = 0;
 	// cpane->parent_row = 1;
 }
@@ -1012,8 +1072,8 @@ mvfwd(const Arg *arg)
 		// cpane->parent_firstrow = cpane->firstrow;
 		cpane->hdir = 1;
 		cpane->firstrow = 0;
-		// PERROR(listdir(cpane) < 0);
-		listdir(cpane);
+		if (listdir(cpane) < 0)
+			print_error(strerror(errno));
 		break;
 	case 1: /* not a directory open file */
 		quit_term();
@@ -1165,40 +1225,6 @@ print_dir_entries(Pane *pane)
 }
 
 static void
-print_entry(Pane *pane, size_t entpos, Cpair col)
-{
-	char *result, *rez_pth;
-	char lnk_full[MAX_N];
-	char buf[MAX_P];
-	size_t buflen = 0;
-
-	result = basename(pane->direntry[entpos].name);
-
-	if (S_ISLNK(pane->direntry[entpos].mode) != 0) {
-		rez_pth = ecalloc(MAX_P, sizeof(char));
-		if (realpath(pane->direntry[entpos].name, rez_pth) == NULL)
-			col = cbrlnk;
-		snprintf(lnk_full, MAX_N, "%s -> %s", result, rez_pth);
-		result = lnk_full;
-		free(rez_pth);
-	}
-
-	/* set colors */
-	snprintf(buf, MAX_P, "\x1b[%d;48;5;%d;38;5;%dm", col.attr, col.bg,
-	    col.fg);
-	buflen = strnlen(buf, MAX_N);
-	termb_append(buf, buflen);
-
-	/* set name */
-	snprintf(buf, pane->width + 1, "%*s", -(pane->width), result);
-	buflen = strnlen(buf, MAX_N);
-	termb_append(buf, buflen);
-
-	/* reset color */
-	termb_append("\x1b[0;0m", 6);
-}
-
-static void
 print_dirname(Pane *pane)
 {
 	char buf[MAX_P];
@@ -1230,6 +1256,40 @@ print_dirname(Pane *pane)
 	    pane->dirname);
 	buflen = strnlen(buf, MAX_N);
 	termb_append(buf, buflen);
+}
+
+static void
+print_entry(Pane *pane, size_t entpos, Cpair col)
+{
+	char *result, *rez_pth;
+	char lnk_full[MAX_N];
+	char buf[MAX_P];
+	size_t buflen = 0;
+
+	result = basename(pane->direntry[entpos].name);
+
+	if (S_ISLNK(pane->direntry[entpos].mode) != 0) {
+		rez_pth = ecalloc(MAX_P, sizeof(char));
+		if (realpath(pane->direntry[entpos].name, rez_pth) == NULL)
+			col = cbrlnk;
+		snprintf(lnk_full, MAX_N, "%s -> %s", result, rez_pth);
+		result = lnk_full;
+		free(rez_pth);
+	}
+
+	/* set colors */
+	snprintf(buf, MAX_P, "\x1b[%d;48;5;%d;38;5;%dm", col.attr, col.bg,
+	    col.fg);
+	buflen = strnlen(buf, MAX_N);
+	termb_append(buf, buflen);
+
+	/* set name */
+	snprintf(buf, pane->width + 1, "%*s", -(pane->width), result);
+	buflen = strnlen(buf, MAX_N);
+	termb_append(buf, buflen);
+
+	/* reset color */
+	termb_append("\x1b[0;0m", 6);
 }
 
 static void
@@ -1281,10 +1341,62 @@ quit(const Arg *arg)
 		if (sel_files != NULL)
 			free_files();
 	}
+	fsev_shdn();
 	free(panes[Left].direntry);
 	free(panes[Right].direntry);
 	quit_term();
 	exit(EXIT_SUCCESS);
+}
+
+static int
+read_events(void)
+{
+#if defined(_SYS_INOTIFY_H)
+	char *p;
+	ssize_t r;
+	struct inotify_event *event;
+	const size_t events = 32;
+	const size_t evbuflen = events *
+	    (sizeof(struct inotify_event) + MAX_N + 1);
+	char buf[evbuflen];
+
+	if (cpane->inotify_wd < 0)
+		return -1;
+	r = read(inotify_fd, buf, evbuflen);
+	print_status(cerr, "START CATCH = %d", buf);
+	if (r <= 0)
+		return r;
+
+	for (p = buf; p < buf + r;) {
+		event = (struct inotify_event *)p;
+		if (!event->wd)
+			break;
+		if (event->mask) {
+			return r;
+		}
+
+		p += sizeof(struct inotify_event) + event->len;
+	}
+#elif defined(_SYS_EVENT_H_)
+	return kevent(kq, evlist, 2, chlist, 2, &gtimeout);
+#endif
+	return -1;
+}
+
+static void *
+read_th(void *arg)
+{
+	struct timespec tim;
+	tim.tv_sec = 0;
+	tim.tv_nsec = 50000000L; /* 0.05 sec */
+
+	while (1) {
+		if (read_events() > READEVSZ) {
+			kill(main_pid, SIGUSR1);
+			nanosleep(&tim, NULL);
+		}
+	}
+	return arg;
 }
 
 static void
@@ -1301,6 +1413,17 @@ rm_hi(Pane *pane, size_t entpos)
 	move_to((pane->hdir) + 1 - pane->firstrow, pane->x_srt);
 	print_entry(pane, entpos, col);
 	termb_write();
+}
+
+static void
+rmwatch(Pane *pane)
+{
+#if defined(_SYS_INOTIFY_H)
+	if (pane->inotify_wd >= 0)
+		inotify_rm_watch(inotify_fd, pane->inotify_wd);
+#elif defined(_SYS_EVENT_H_)
+	close(pane->event_fd);
+#endif
 }
 
 static void
@@ -1481,7 +1604,6 @@ set_panes(void)
 	pane_idx = Left; /* cursor pane */
 	cpane = &panes[pane_idx];
 
-	// panes[Left].pane_id = 0;
 	panes[Left].x_srt = 3;
 	panes[Left].x_end = (term->cols / 2) - 1;
 	panes[Left].width = panes[Left].x_end - panes[Left].x_srt + 1;
@@ -1490,10 +1612,9 @@ set_panes(void)
 	panes[Left].direntry = ecalloc(0, sizeof(Entry));
 	strncpy(panes[Left].dirname, cwd, MAX_P);
 	panes[Left].hdir = 1;
-	// panes[Left].inotify_wd = -1;
+	panes[Left].inotify_wd = -1;
 	// panes[Left].parent_row = 1;
 
-	// panes[Right].pane_id = 1;
 	panes[Right].x_srt = (term->cols / 2) + 2;
 	panes[Right].x_end = term->cols - 2;
 	panes[Right].width = panes[Right].x_end - panes[Right].x_srt + 1;
@@ -1502,7 +1623,7 @@ set_panes(void)
 	panes[Right].direntry = ecalloc(0, sizeof(Entry));
 	strncpy(panes[Right].dirname, home, MAX_P);
 	panes[Right].hdir = 1;
-	// panes[Right].inotify_wd = -1;
+	panes[Right].inotify_wd = -1;
 	// panes[Right].parent_row = 1;
 }
 
@@ -1514,6 +1635,13 @@ sighandler(int signo)
 		t_resize();
 		break;
 	case SIGUSR1:
+		if (fork_pid > 0) /* while forking don't listdir() */
+			return;
+		if (listdir(&panes[Left]) < 0)
+			print_error(strerror(errno));
+		if (listdir(&panes[Right]) < 0)
+			print_error(strerror(errno));
+		t_resize();
 		break;
 	case SIGUSR2:
 		break;
@@ -1673,11 +1801,13 @@ start(void)
 	get_editor();
 	get_shell();
 	start_signal();
-
-	listdir(&panes[Left]);
-	listdir(&panes[Right]);
-
-	//  pthread_create(&fsev_thread, NULL, read_th, NULL);
+	if (fsev_init() < 0)
+		die("fsev_init");
+	if (listdir(&panes[Left]) < 0)
+		print_error(strerror(errno));
+	if (listdir(&panes[Right]) < 0)
+		print_error(strerror(errno));
+	pthread_create(&fsev_thread, NULL, read_th, NULL);
 	start_ev();
 }
 
