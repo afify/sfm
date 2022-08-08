@@ -95,7 +95,7 @@ typedef struct {
 typedef struct {
 	char *b;
 	int len;
-} Tbuf;
+} Termbuf;
 
 typedef struct {
 	char name[MAX_N];
@@ -230,7 +230,6 @@ static void start_ev(void);
 static void start_filter(const Arg *);
 static int start_signal(void);
 static void start_vmode(const Arg *);
-static void start(void);
 static void switch_pane(const Arg *);
 static void termb_append(const char *, int);
 static void termb_free(void);
@@ -242,10 +241,8 @@ static void yank(const Arg *);
 /* global variables */
 static Pane *cpane;
 static Pane panes[2];
-static Tbuf ab;
-static Term *term;
-static Term nterm;
-static Term oterm;
+static Termbuf ab;
+static Term *term, oterm, nterm;
 static char **sel_files;
 static char *editor[2];
 static char *shell[2];
@@ -2067,25 +2064,6 @@ start_vmode(const Arg *arg)
 }
 
 static void
-start(void)
-{
-	term = init_term();
-	draw_frame(cframe);
-	set_panes();
-	get_editor();
-	get_shell();
-	start_signal();
-	if (fsev_init() < 0)
-		die("fsev_init");
-	if (listdir(&panes[Left]) < 0)
-		print_error(strerror(errno));
-	if (listdir(&panes[Right]) < 0)
-		print_error(strerror(errno));
-	pthread_create(&fsev_thread, NULL, read_th, NULL);
-	start_ev();
-}
-
-static void
 switch_pane(const Arg *arg)
 {
 	if (cpane->dirc > 0)
@@ -2184,11 +2162,25 @@ main(int argc, char *argv[])
 		NULL) == -1)
 		die("pledge");
 #endif /* __OpenBSD__ */
-	if (argc == 1)
-		start();
-	else if (argc == 2 && strncmp("-v", argv[1], 2) == 0)
+	if (argc == 1) {
+		term = init_term();
+		draw_frame(cframe);
+		set_panes();
+		get_editor();
+		get_shell();
+		start_signal();
+		if (fsev_init() < 0)
+			die("fsev_init");
+		if (listdir(&panes[Left]) < 0)
+			print_error(strerror(errno));
+		if (listdir(&panes[Right]) < 0)
+			print_error(strerror(errno));
+		pthread_create(&fsev_thread, NULL, read_th, NULL);
+		start_ev();
+	} else if (argc == 2 && strncmp("-v", argv[1], 2) == 0) {
 		die("sfm-" VERSION);
-	else
+	} else {
 		die("usage: sfm [-v]");
+	}
 	return 0;
 }
