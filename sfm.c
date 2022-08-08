@@ -39,44 +39,44 @@
 #include <unistd.h>
 
 /* macros */
-#define NORM 0X0
-#define BOLD 0X1
-#define DIM 0X2
-#define ITALIC 0X3
-#define UNDERL 0X4
-#define BLINK 0X5
-#define RVS 0X7
-#define HIDDEN 0X8
-#define STRIKE 0X9
-#define XK_CTRL(k) ((k)&0x1f)
-#define XK_ALT(k) (k)1b
-#define XK_UP 0x415b1b
-#define XK_DOWN 0x425b1b
-#define XK_RIGHT 0x435b1b
-#define XK_LEFT 0x445b1b
-#define XK_HOME 0x485b1b
-#define XK_END 0x7e345b1b
-#define XK_PGUP 0x7e355b1b
-#define XK_PGDOWN 0x7e365b1b
-#define XK_BACKSPACE 0x7f
-#define XK_TAB 0x09
-#define XK_ENTER 0x0D
-#define XK_ESC 0x1B
-#define XK_SPACE 0x20
-#define MAX_P 4096
-#define MAX_N 255
-#define MAX_USRI 32
-#define MAX_EXT 4
-#define MAX_STATUS 255
-#define MAX_LINE 4096
-#define MAX_USRN 32
-#define MAX_GRPN 32
-#define MAX_DTF 32
-#define CURSOR(x) (x)->direntry[(x)->hdir - 1]
-#define TERM_ROWS term->rows - 2
-#define MAX(A, B) ((A) > (B) ? (A) : (B))
-#define MIN(A, B) ((A) < (B) ? (A) : (B))
-#define LEN(A) (sizeof(A) / sizeof(A[0]))
+#define NORM		 0X0
+#define BOLD		 0X1
+#define DIM		 0X2
+#define ITALIC		 0X3
+#define UNDERL		 0X4
+#define BLINK		 0X5
+#define RVS		 0X7
+#define HIDDEN		 0X8
+#define STRIKE		 0X9
+#define XK_CTRL(k)	 ((k)&0x1f)
+#define XK_ALT(k)	 (k)1b
+#define XK_UP		 0x415b1b
+#define XK_DOWN		 0x425b1b
+#define XK_RIGHT	 0x435b1b
+#define XK_LEFT		 0x445b1b
+#define XK_HOME		 0x485b1b
+#define XK_END		 0x7e345b1b
+#define XK_PGUP		 0x7e355b1b
+#define XK_PGDOWN	 0x7e365b1b
+#define XK_BACKSPACE	 0x7f
+#define XK_TAB		 0x09
+#define XK_ENTER	 0x0D
+#define XK_ESC		 0x1B
+#define XK_SPACE	 0x20
+#define MAX_P		 4096
+#define MAX_N		 255
+#define MAX_USRI	 32
+#define MAX_EXT		 4
+#define MAX_STATUS	 255
+#define MAX_LINE	 4096
+#define MAX_USRN	 32
+#define MAX_GRPN	 32
+#define MAX_DTF		 32
+#define CURSOR(x)	 (x)->direntry[(x)->hdir - 1]
+#define TERM_ROWS	 term->rows - 2
+#define MAX(A, B)	 ((A) > (B) ? (A) : (B))
+#define MIN(A, B)	 ((A) < (B) ? (A) : (B))
+#define LEN(A)		 (sizeof(A) / sizeof(A[0]))
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
 
 /* typedef */
@@ -144,27 +144,27 @@ typedef struct {
 
 /* function declarations */
 static void add_hi(Pane *, size_t);
-static int addwatch(Pane *pane);
+static int addwatch(Pane *);
 static void backup_term(void);
-static void bkmrk(const Arg *arg);
-static void calcdir(const Arg *arg);
+static void bkmrk(const Arg *);
+static void calcdir(const Arg *);
 static int check_dir(char *);
-static void chngf(const Arg *arg);
-static void chngm(const Arg *arg);
-static void chngo(const Arg *arg);
+static void chngf(const Arg *);
+static void chngm(const Arg *);
+static void chngo(const Arg *);
 static void clear_pane(Pane *);
 static void clear_status(void);
 static void create_dir_entries(Pane *, DIR *, char *);
-static void crnd(const Arg *arg);
-static void crnf(const Arg *arg);
-static void delent(const Arg *arg);
-static void die(const char *fmt, ...);
+static void crnd(const Arg *);
+static void crnf(const Arg *);
+static void delent(const Arg *);
+static void die(const char *, ...);
 static void draw_frame(Cpair);
-static void dupl(const Arg *arg);
+static void dupl(const Arg *);
 static void *ecalloc(size_t, size_t);
 static void *erealloc(void *, size_t);
-static void exit_change(const Arg *arg);
-static void exit_vmode(const Arg *arg);
+static void exit_change(const Arg *);
+static void exit_vmode(const Arg *);
 static void free_files(void);
 static int frules(char *);
 static int fsev_init(void);
@@ -190,54 +190,54 @@ static Term *init_term(void);
 static int listdir(Pane *);
 static void move_to_col(int);
 static void move_to(int, int);
-static void mvbk(const Arg *arg);
-static void mvbtm(const Arg *arg);
-static void mvfwd(const Arg *arg);
-static void mvtop(const Arg *arg);
-static void mv_ver(const Arg *arg);
+static void mvbk(const Arg *);
+static void mvbtm(const Arg *);
+static void mvfwd(const Arg *);
+static void mvtop(const Arg *);
+static void mv_ver(const Arg *);
 static int opnf(char *);
-static void opnsh(const Arg *arg);
-static void paste(const Arg *arg);
+static void opnsh(const Arg *);
+static void paste(const Arg *);
 static void print_dir_entries(Pane *);
 static void print_dirname(Pane *);
 static void print_entry(Pane *, size_t, Cpair);
 static void print_error(char *);
 static void print_info(Pane *, char *);
 static void print_status(Cpair, const char *, ...);
-static void quit(const Arg *arg);
+static void quit(const Arg *);
 static void quit_term(void);
 static int read_events(void);
-static void *read_th(void *arg);
-static void refresh(const Arg *arg);
+static void *read_th(void *);
+static void refresh(const Arg *);
 static void rm_hi(Pane *, size_t);
 static void rmwatch(Pane *);
-static void rname(const Arg *arg);
-static void selall(const Arg *arg);
+static void rname(const Arg *);
+static void selall(const Arg *);
 static void selcalc(void);
-static void seldel(const Arg *arg);
-static void seldwn(const Arg *arg);
-static void selmv(const Arg *arg);
+static void seldel(const Arg *);
+static void seldwn(const Arg *);
+static void selmv(const Arg *);
 static void selref(void);
-static void selup(const Arg *arg);
-static void selynk(const Arg *arg);
+static void selup(const Arg *);
+static void selynk(const Arg *);
 static void set_panes(void);
 static void set_term(void);
 static void sighandler(int);
 static int sort_name(const void *const, const void *const);
 static int spawn(const void *, size_t, const void *, size_t, char *, int);
-static void start_change(const Arg *arg);
+static void start_change(const Arg *);
 static void start_ev(void);
-static void start_filter(const Arg *arg);
+static void start_filter(const Arg *);
 static int start_signal(void);
-static void start_vmode(const Arg *arg);
+static void start_vmode(const Arg *);
 static void start(void);
-static void switch_pane(const Arg *arg);
-static void termb_append(const char *s, int len);
+static void switch_pane(const Arg *);
+static void termb_append(const char *, int);
 static void termb_free(void);
 static void termb_write(void);
-static void toggle_df(const Arg *arg);
+static void toggle_df(const Arg *);
 static void t_resize(void);
-static void yank(const Arg *arg);
+static void yank(const Arg *);
 
 /* global variables */
 static Pane *cpane;
@@ -511,7 +511,6 @@ create_dir_entries(Pane *pane, DIR *dir, char *filter)
 	i = 0;
 	pane->dirc = 0;
 	while ((entry = readdir(dir)) != NULL) {
-
 		if (show_dotfiles == 1) {
 			if (entry->d_name[0] == '.' &&
 			    (entry->d_name[1] == '\0' ||
@@ -1313,7 +1312,6 @@ mvtop(const Arg *arg)
 static void
 mv_ver(const Arg *arg)
 {
-
 	if (cpane->dirc < 1)
 		return;
 	if (cpane->hdir - arg->i < 1) /* first line */
