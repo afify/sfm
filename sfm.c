@@ -76,6 +76,7 @@ typedef struct {
 	// int parent_firstrow;
 	// int parent_row; // FIX
 	Cpair dircol;
+	int pane_id;
 	int inotify_wd;
 	int event_fd;
 } Pane;
@@ -234,7 +235,7 @@ addwatch(Pane *pane)
 		   IN_MODIFY | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE |
 		       IN_ATTRIB | IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF);
 #elif defined(_SYS_EVENT_H_)
-	pane->event_fd = open(pane->dirn, O_RDONLY);
+	pane->event_fd = open(pane->dirname, O_RDONLY);
 	if (pane->event_fd < 0)
 		return pane->event_fd;
 	EV_SET(&evlist[pane->pane_id], pane->event_fd, EVFILT_VNODE,
@@ -1023,6 +1024,7 @@ mvbk(const Arg *arg)
 	    cpane->dirname[1] == '\0') { /* cwd = / */
 		return;
 	}
+	rmwatch(cpane);
 
 	get_dirp(cpane->dirname);
 	if (check_dir(cpane->dirname) < 0) {
@@ -1065,6 +1067,7 @@ mvfwd(const Arg *arg)
 		return;
 	int s;
 
+	rmwatch(cpane);
 	switch (check_dir(CURSOR(cpane).name)) {
 	case 0:
 		strncpy(cpane->dirname, CURSOR(cpane).name, MAX_P);
@@ -1388,7 +1391,7 @@ read_th(void *arg)
 {
 	struct timespec tim;
 	tim.tv_sec = 0;
-	tim.tv_nsec = 50000000L; /* 0.05 sec */
+	tim.tv_nsec = 500000000L; /* 0.05 sec */
 
 	while (1) {
 		if (read_events() > READEVSZ) {
@@ -1604,6 +1607,7 @@ set_panes(void)
 	pane_idx = Left; /* cursor pane */
 	cpane = &panes[pane_idx];
 
+	panes[Left].pane_id = 0;
 	panes[Left].x_srt = 3;
 	panes[Left].x_end = (term->cols / 2) - 1;
 	panes[Left].width = panes[Left].x_end - panes[Left].x_srt + 1;
@@ -1615,6 +1619,7 @@ set_panes(void)
 	panes[Left].inotify_wd = -1;
 	// panes[Left].parent_row = 1;
 
+	panes[Right].pane_id = 1;
 	panes[Right].x_srt = (term->cols / 2) + 2;
 	panes[Right].x_end = term->cols - 2;
 	panes[Right].width = panes[Right].x_end - panes[Right].x_srt + 1;
