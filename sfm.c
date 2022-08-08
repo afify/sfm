@@ -8,6 +8,7 @@
 #define __BSD_VISIBLE 1
 #endif
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -37,10 +38,31 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "term.h"
-#include "util.h"
-
 /* macros */
+#define NORM 0X0
+#define BOLD 0X1
+#define DIM 0X2
+#define ITALIC 0X3
+#define UNDERL 0X4
+#define BLINK 0X5
+#define RVS 0X7
+#define HIDDEN 0X8
+#define STRIKE 0X9
+#define XK_CTRL(k) ((k)&0x1f)
+#define XK_ALT(k) (k)1b
+#define XK_UP 0x415b1b
+#define XK_DOWN 0x425b1b
+#define XK_RIGHT 0x435b1b
+#define XK_LEFT 0x445b1b
+#define XK_HOME 0x485b1b
+#define XK_END 0x7e345b1b
+#define XK_PGUP 0x7e355b1b
+#define XK_PGDOWN 0x7e365b1b
+#define XK_BACKSPACE 0x7f
+#define XK_TAB 0x09
+#define XK_ENTER 0x0D
+#define XK_ESC 0x1B
+#define XK_SPACE 0x20
 #define MAX_P 4096
 #define MAX_N 255
 #define MAX_USRI 32
@@ -52,8 +74,29 @@
 #define MAX_DTF 32
 #define CURSOR(x) (x)->direntry[(x)->hdir - 1]
 #define TERM_ROWS term->rows - 2
+#define MAX(A, B) ((A) > (B) ? (A) : (B))
+#define MIN(A, B) ((A) < (B) ? (A) : (B))
+#define LEN(A) (sizeof(A) / sizeof(A[0]))
+#define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
 
 /* typedef */
+typedef struct {
+	int rows;
+	int cols;
+	struct termios term;
+} Term;
+
+typedef struct {
+	uint16_t fg;
+	uint16_t bg;
+	uint8_t attr;
+} Cpair;
+
+typedef struct {
+	char *b;
+	int len;
+} Tbuf;
+
 typedef struct {
 	char name[MAX_N];
 	gid_t group;
@@ -102,6 +145,7 @@ typedef struct {
 /* function declarations */
 static void add_hi(Pane *, size_t);
 static int addwatch(Pane *pane);
+static void backup_term(void);
 static void bkmrk(const Arg *arg);
 static void calcdir(const Arg *arg);
 static int check_dir(char *);
@@ -109,11 +153,16 @@ static void chngf(const Arg *arg);
 static void chngm(const Arg *arg);
 static void chngo(const Arg *arg);
 static void clear_pane(Pane *);
+static void clear_status(void);
 static void create_dir_entries(Pane *, DIR *, char *);
 static void crnd(const Arg *arg);
 static void crnf(const Arg *arg);
 static void delent(const Arg *arg);
+static void die(const char *fmt, ...);
+static void draw_frame(Cpair);
 static void dupl(const Arg *arg);
+static void *ecalloc(size_t, size_t);
+static void *erealloc(void *, size_t);
 static void exit_change(const Arg *arg);
 static void exit_vmode(const Arg *arg);
 static void free_files(void);
@@ -131,11 +180,16 @@ static char *get_fsize(off_t);
 static char *get_fullpath(char *, char *);
 static char *get_fusr(uid_t);
 static void get_hicol(Cpair *, mode_t);
+static uint32_t getkey(void);
 static void get_shell(void);
+static int get_term_size(int *, int *);
 static int get_usrinput(char *, size_t, const char *, ...);
 static void grabkeys(uint32_t, Key *, size_t);
 static void init_files(void);
+static Term *init_term(void);
 static int listdir(Pane *);
+static void move_to_col(int);
+static void move_to(int, int);
 static void mvbk(const Arg *arg);
 static void mvbtm(const Arg *arg);
 static void mvfwd(const Arg *arg);
@@ -149,7 +203,9 @@ static void print_dirname(Pane *);
 static void print_entry(Pane *, size_t, Cpair);
 static void print_error(char *);
 static void print_info(Pane *, char *);
+static void print_status(Cpair, const char *, ...);
 static void quit(const Arg *arg);
+static void quit_term(void);
 static int read_events(void);
 static void *read_th(void *arg);
 static void refresh(const Arg *arg);
@@ -165,6 +221,7 @@ static void selref(void);
 static void selup(const Arg *arg);
 static void selynk(const Arg *arg);
 static void set_panes(void);
+static void set_term(void);
 static void sighandler(int);
 static int sort_name(const void *const, const void *const);
 static int spawn(const void *, size_t, const void *, size_t, char *, int);
@@ -175,25 +232,31 @@ static int start_signal(void);
 static void start_vmode(const Arg *arg);
 static void start(void);
 static void switch_pane(const Arg *arg);
+static void termb_append(const char *s, int len);
+static void termb_free(void);
+static void termb_write(void);
 static void toggle_df(const Arg *arg);
 static void t_resize(void);
 static void yank(const Arg *arg);
 
 /* global variables */
-static pthread_t fsev_thread;
 static Pane *cpane;
 static Pane panes[2];
+static Tbuf ab;
 static Term *term;
+static Term nterm;
+static Term oterm;
 static char **sel_files;
 static char *editor[2];
-static char fed[] = "vi"; // TODO rename var
 static char *shell[2];
+static char fed[] = "vi"; // TODO rename var
 static char sh[] = "/bin/sh";
 static int *sel_indexes;
 static int cont_change = 0;
 static int cont_vmode = 0;
 static int pane_idx;
 static pid_t fork_pid = 0, main_pid;
+static pthread_t fsev_thread;
 static size_t sel_len = 0;
 #if defined(_SYS_INOTIFY_H)
 #define READEVSZ 16
@@ -245,6 +308,13 @@ addwatch(Pane *pane)
 	    0, NULL);
 	return 0;
 #endif
+}
+
+static void
+backup_term(void)
+{
+	if (tcgetattr(STDIN_FILENO, &oterm.term) < 0)
+		die("tcgetattr:");
 }
 
 static void
@@ -421,6 +491,15 @@ clear_pane(Pane *pane)
 	termb_write();
 }
 
+void
+clear_status(void)
+{
+	write(STDOUT_FILENO,
+	    "\x1b[999;1f" // moves cursor to line 999, column 1
+	    "\x1b[2K",	  // erase the entire line
+	    12);
+}
+
 static void
 create_dir_entries(Pane *pane, DIR *dir, char *filter)
 {
@@ -542,6 +621,60 @@ delent(const Arg *arg)
 	}
 }
 
+void
+die(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	(void)vfprintf(stderr, fmt, ap);
+	va_end(ap);
+
+	if (fmt[0] != '\0' && fmt[strlen(fmt) - 1] == ':') {
+		(void)fputc(' ', stderr);
+		perror(NULL);
+	} else {
+		(void)fputc('\n', stderr);
+	}
+
+	exit(EXIT_FAILURE);
+}
+
+void
+draw_frame(Cpair cframe)
+{
+	int y;
+	char buf[64];
+	size_t buflen;
+
+	snprintf(buf, nterm.cols, "\x1b[%d;48;5;%d;38;5;%dm%s\x1b[0;0m",
+	    cframe.attr, cframe.bg, cframe.fg, "  ");
+	buflen = strnlen(buf, 64);
+	write(STDOUT_FILENO, "\x1b[H", 3);
+
+	// for (y = 0; y < nterm.cols; y++) {
+	//	termb_append(buf, buflen);
+	// }
+
+	// middle line
+	for (y = 0; y < nterm.rows - 2; y++) {
+		// termb_append(buf, buflen);
+		move_to_col(nterm.cols / 2);
+		termb_append(buf, buflen);
+		// move_to_col(nterm.cols - 1);
+		// termb_append(buf, buflen);
+		termb_append("\r\n", 2);
+	}
+
+	// bottom line
+	move_to(nterm.rows - 1, 1);
+	for (y = 0; y < nterm.cols; y++) {
+		termb_append(buf, buflen);
+	}
+
+	termb_write();
+}
+
 static void
 dupl(const Arg *arg)
 {
@@ -573,6 +706,23 @@ dupl(const Arg *arg)
 	}
 
 	free(input_name);
+}
+
+void *
+ecalloc(size_t nmemb, size_t size)
+{
+	void *p;
+	if ((p = calloc(nmemb, size)) == NULL)
+		die("calloc:");
+	return p;
+}
+
+void *
+erealloc(void *p, size_t len)
+{
+	if ((p = realloc(p, len)) == NULL)
+		die("realloc: %s\n", strerror(errno));
+	return p;
 }
 
 static void
@@ -907,6 +1057,16 @@ get_hicol(Cpair *col, mode_t mode)
 	}
 }
 
+uint32_t
+getkey(void)
+{
+	uint32_t r = 0;
+
+	if ((read(STDIN_FILENO, &r, sizeof(uint32_t))) < 0)
+		die("read:");
+	return r;
+}
+
 static void
 get_shell(void)
 {
@@ -915,6 +1075,17 @@ get_shell(void)
 
 	if (shell[0] == NULL)
 		shell[0] = sh;
+}
+
+int
+get_term_size(int *rows, int *cols)
+{
+	struct winsize ws;
+	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0)
+		return -1;
+	*cols = ws.ws_col;
+	*rows = ws.ws_row;
+	return 0;
 }
 
 static int
@@ -993,6 +1164,14 @@ init_files(void)
 	}
 }
 
+Term *
+init_term()
+{
+	backup_term();
+	set_term();
+	return &nterm;
+}
+
 static int
 listdir(Pane *pane)
 {
@@ -1015,6 +1194,26 @@ listdir(Pane *pane)
 	if (closedir(dir) < 0)
 		return -1;
 	return 0;
+}
+
+void
+move_to_col(int y)
+{
+	char buf[16];
+	size_t buflen;
+	snprintf(buf, 16, "\x1b[%dG", y);
+	buflen = strlen(buf);
+	termb_append(buf, buflen);
+}
+
+void
+move_to(int x, int y)
+{
+	char buf[16];
+	size_t buflen;
+	snprintf(buf, 16, "\x1b[%d;%df", x, y);
+	buflen = strlen(buf);
+	termb_append(buf, buflen);
 }
 
 static void
@@ -1336,6 +1535,29 @@ print_info(Pane *pane, char *dirsize)
 	free(sz);
 }
 
+void
+print_status(Cpair col, const char *fmt, ...)
+{
+	char buf[nterm.cols];
+	va_list vl;
+	va_start(vl, fmt);
+	(void)vsnprintf(buf, nterm.cols, fmt, vl);
+	va_end(vl);
+
+	char result[1024];
+	size_t resultlen;
+
+	snprintf(result, 1024,
+	    "\x1b[%d;1f"	       // moves cursor to last line, column 1
+	    "\x1b[2K"		       // erase the entire line
+	    "\x1b[%d;48;5;%d;38;5;%dm" // set string colors
+	    "%s"
+	    "\x1b[0;0m", // reset colors
+	    nterm.rows, col.attr, col.bg, col.fg, buf);
+	resultlen = strlen(result);
+	write(STDOUT_FILENO, result, resultlen);
+}
+
 static void
 quit(const Arg *arg)
 {
@@ -1349,6 +1571,23 @@ quit(const Arg *arg)
 	free(panes[Right].direntry);
 	quit_term();
 	exit(EXIT_SUCCESS);
+}
+
+void
+quit_term(void)
+{
+	setvbuf(stdout, NULL, _IOLBF, 0);
+	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &oterm.term) < 0)
+		die("tcsetattr:");
+	write(STDOUT_FILENO,
+	    "\033[u"	  // restores the cursor to the last saved position
+	    "\033[?47l"	  // restore screen
+	    "\033[?1049l" // disables the alternative buffer
+	    "\033[?7h"	  // enable line wrapping
+	    //"\033[?25h"   // unhide cursor
+	    //"\033[r"      // reset scroll region
+	    ,
+	    23);
 }
 
 static int
@@ -1633,6 +1872,38 @@ set_panes(void)
 }
 
 static void
+set_term(void)
+{
+	setvbuf(stdout, NULL, _IOFBF, 0);
+
+	nterm = oterm;
+	if (get_term_size(&nterm.rows, &nterm.cols) == -1)
+		die("get_term_size:");
+	nterm.term.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+	nterm.term.c_oflag &= ~(OPOST);
+	nterm.term.c_cflag |= (CS8);
+	nterm.term.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+	// nterm.term.c_cc[VMIN] = 0;
+	// nterm.term.c_cc[VTIME] = 1;
+
+	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &nterm.term) < 0)
+		// if (tcsetattr(STDIN_FILENO, TCSANOW, &nterm.term) < 0)
+		die("tcsetattr:");
+
+	write(STDOUT_FILENO,
+	    "\033[s"	  // save cursor position
+	    "\033[?47h"	  // save screen
+	    "\033[H"	  // go home
+	    "\033[?1049h" // enables the alternative buffer
+	    "\033[?7l"	  // disable line wrapping
+	    //"\033[?25l"   // hide cursor
+	    //"\033[2J"     // clear screen
+	    //	"\033[2;%dr", // limit scrolling to our rows
+	    ,
+	    25);
+}
+
+static void
 sighandler(int signo)
 {
 	switch (signo) {
@@ -1828,6 +2099,35 @@ switch_pane(const Arg *arg)
 	} else {
 		clear_status();
 	}
+}
+
+void
+termb_append(const char *s, int len)
+{
+	// printf("%s", s);
+	char *new = erealloc(ab.b, ab.len + len);
+	if (new == NULL)
+		return;
+	memcpy(&new[ab.len], s, len);
+	ab.b = new;
+	ab.len += len;
+}
+
+void
+termb_free(void)
+{
+	free(ab.b);
+	ab.b = NULL;
+	ab.len = 0;
+}
+
+void
+termb_write(void)
+{
+	// fflush(stdout);
+	write(STDOUT_FILENO, ab.b, ab.len);
+	// write(STDOUT_FILENO, "\x1b[0;0m", 6); // reset colors
+	termb_free();
 }
 
 static void
