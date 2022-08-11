@@ -3,13 +3,14 @@
 
 include config.mk
 
-SRC = sfm.c
+BIN = sfm
+SRC = ${BIN}.c
 OBJ = ${SRC:.c=.o}
 
-all: options sfm
+all: options ${BIN}
 
 options:
-	@echo sfm build options:
+	@echo ${BIN} build options:
 	@echo "CFLAGS   = ${CFLAGS}"
 	@echo "LDFLAGS  = ${LDFLAGS}"
 	@echo "CC       = ${CC}"
@@ -22,30 +23,30 @@ ${OBJ}: config.h config.mk
 config.h:
 	cp config.def.h $@
 
-sfm: ${OBJ}
+${BIN}: ${OBJ}
 	${CC} ${LDFLAGS} -o $@ ${OBJ}
 
 clean:
-	rm -f sfm ${OBJ} sfm-${VERSION}.tar.gz
+	rm -f ${BIN} ${OBJ} ${BIN}-${VERSION}.tar.gz
 
 dist: clean
-	mkdir -p sfm-${VERSION}
+	mkdir -p ${BIN}-${VERSION}
 	cp -R LICENSE Makefile README.md config.def.h config.mk\
-		sfm.1 sfm.png termbox.h util.h ${SRC} sfm-${VERSION}
-	tar -cf sfm-${VERSION}.tar sfm-${VERSION}
-	gzip sfm-${VERSION}.tar
-	rm -rf sfm-${VERSION}
+		${BIN}.1 ${BIN}.png ${SRC} ${BIN}-${VERSION}
+	tar -cf ${BIN}-${VERSION}.tar ${BIN}-${VERSION}
+	gzip ${BIN}-${VERSION}.tar
+	rm -rf ${BIN}-${VERSION}
 
-install: sfm
+install: ${BIN}
 	mkdir -p ${DESTDIR}${PREFIX}/bin
-	cp -f sfm ${DESTDIR}${PREFIX}/bin
-	chmod 755 ${DESTDIR}${PREFIX}/bin/sfm
+	cp -f ${BIN} ${DESTDIR}${PREFIX}/bin
+	chmod 755 ${DESTDIR}${PREFIX}/bin/${BIN}
 	mkdir -p ${DESTDIR}${MANPREFIX}/man1
-	sed "s/VERSION/${VERSION}/g" < sfm.1 > ${DESTDIR}${MANPREFIX}/man1/sfm.1
-	chmod 644 ${DESTDIR}${MANPREFIX}/man1/sfm.1
+	sed "s/VERSION/${VERSION}/g" < ${BIN}.1 > ${DESTDIR}${MANPREFIX}/man1/${BIN}.1
+	chmod 644 ${DESTDIR}${MANPREFIX}/man1/${BIN}.1
 
 uninstall:
-	rm -f ${DESTDIR}${PREFIX}/bin/sfm\
-		${DESTDIR}${MANPREFIX}/man1/sfm.1
+	rm -f ${DESTDIR}${PREFIX}/bin/${BIN}\
+		${DESTDIR}${MANPREFIX}/man1/${BIN}.1
 
 .PHONY: all options clean dist install uninstall
