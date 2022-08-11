@@ -236,5 +236,4 @@ static struct timespec gtimeout;
 enum { Left, Right };	 /* panes */
 enum { Wait, DontWait }; /* spawn forks */
 
-
 #endif /* SFM_H */
