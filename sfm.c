@@ -1919,8 +1919,10 @@ yank(const Arg *arg)
 }
 
 int
-main(int argc, char *argv[])
+main(int argc, char **argv)
 {
+	int opt;
+
 #if defined(__OpenBSD__)
 	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath",
 		NULL) == -1)
@@ -1941,10 +1943,16 @@ main(int argc, char *argv[])
 			print_error(strerror(errno));
 		pthread_create(&fsev_thread, NULL, read_th, NULL);
 		start_ev();
-	} else if (argc == 2 && strncmp("-v", argv[1], 2) == 0) {
-		die("sfm-" VERSION);
 	} else {
-		die("usage: sfm [-v]");
+		while ((opt = getopt(argc, argv, "v")) != EOF) {
+			switch (opt) {
+			case 'v':
+				die("sfm-" VERSION);
+				break;
+			default:
+				die("usage: sfm [-v]");
+			}
+		}
 	}
 	return 0;
 }
