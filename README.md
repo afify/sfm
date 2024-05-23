@@ -4,8 +4,6 @@
 
 [![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/afify/sfm.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/afify/sfm/context:cpp)
 [![Build status](https://ci.appveyor.com/api/projects/status/goq88ahjyvtjrui2?svg=true)](https://ci.appveyor.com/project/afify/sfm)
-[![code-inspector](https://www.code-inspector.com/project/19656/score/svg)](https://frontend.code-inspector.com/public/project/19656/sfm/dashboard)
-[![code-inspector](https://www.code-inspector.com/project/19656/status/svg)](https://frontend.code-inspector.com/public/project/19656/sfm/dashboard)
 
 Description
 ------------
@@ -20,8 +18,7 @@ sfm is a simple file manager for unix-like systems.
 * vim-like key bindings.
 * filter.
 * no dependencies.
-* c99 static linking.
-* based on [termbox](https://github.com/nsf/termbox).
+* c99.
 * Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
 * Follows the suckless [philosophy](https://suckless.org/philosophy/).
 
@@ -51,7 +48,7 @@ Installation
 
 **current**
 ```sh
-git clone git://git.afify.dev/sfm
+git clone https://git.afify.dev/sfm.git
 cd sfm/
 make
 make install

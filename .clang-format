@@ -7,7 +7,7 @@ AlignConsecutiveDeclarations: false
 AlignConsecutiveMacros: false
 AlignEscapedNewlines: Left
 AlignOperands: false
-AlignTrailingComments: false
+AlignTrailingComments: true
 AllowAllParametersOfDeclarationOnNextLine: false
 AllowShortBlocksOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: false
@@ -39,7 +39,7 @@ Language: Cpp
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
 PenaltyBreakBeforeFirstCallParameter: 1000
-PenaltyBreakComment: 10
+PenaltyBreakComment: 100
 PointerAlignment: Right
 ReflowComments: false
 SortIncludes: true
