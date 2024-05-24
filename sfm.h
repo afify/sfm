@@ -8,37 +8,37 @@
 #include <stdint.h>
 
 /* macros */
-#define NORM 0
-#define BOLD 1
-#define DIM 2
-#define ITALIC 3
-#define UNDERL 4
-#define BLINK 5
-#define RVS 7
-#define HIDDEN 8
-#define STRIKE 9
+#define NORM        0
+#define BOLD        1
+#define DIM         2
+#define ITALIC      3
+#define UNDERL      4
+#define BLINK       5
+#define RVS         7
+#define HIDDEN      8
+#define STRIKE      9
 #define BUFFER_SIZE 10240
 
-#define XK_CTRL(k) ((k) & 0x1f)
-#define XK_ALT(k) (k)1b
-#define XK_UP 0x415b1b
-#define XK_DOWN 0x425b1b
-#define XK_RIGHT 0x435b1b
-#define XK_LEFT 0x445b1b
-#define XK_HOME 0x485b1b
-#define XK_END 0x7e345b1b
-#define XK_PGUP 0x7e355b1b
-#define XK_PGDOWN 0x7e365b1b
+#define XK_CTRL(k)   ((k) & 0x1f)
+#define XK_ALT(k)    (k)1b
+#define XK_UP        0x415b1b
+#define XK_DOWN      0x425b1b
+#define XK_RIGHT     0x435b1b
+#define XK_LEFT      0x445b1b
+#define XK_HOME      0x485b1b
+#define XK_END       0x7e345b1b
+#define XK_PGUP      0x7e355b1b
+#define XK_PGDOWN    0x7e365b1b
 #define XK_BACKSPACE 0x7f
-#define XK_TAB 0x09
-#define XK_ENTER 0x0D
-#define XK_ESC 0x1B
-#define XK_SPACE 0x20
+#define XK_TAB       0x09
+#define XK_ENTER     0x0D
+#define XK_ESC       0x1B
+#define XK_SPACE     0x20
 
-#define UINT8_LEN 3
+#define UINT8_LEN  3
 #define UINT16_LEN 5
-#define MAX_DTF 20
-#define MAX_GRPN 32
+#define MAX_DTF    20
+#define MAX_GRPN   32
 
 typedef struct {
 	char *buffer;
@@ -103,7 +103,8 @@ static char *get_fsize(off_t);
 static void print_info(void);
 static int should_skip_entry(const struct dirent *);
 static void get_fullpath(char *, char *, char *);
-static void termb_print_at(uint16_t, uint16_t, ColorPair, int, const char *, ...);
+static void termb_print_at(
+	uint16_t, uint16_t, ColorPair, int, const char *, ...);
 static void set_panes(void);
 
 #endif // SFM_H

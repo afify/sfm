@@ -394,7 +394,7 @@ get_entry_owner_group(uid_t uid, gid_t gid)
 	//struct passwd *pw = getpwuid(uid);
 	//LOG("user name = %s", pw->pw_name);
 	//LOG("pass name = %s", pw->pw_passwd);
-    //return buffer;
+	//return buffer;
 }
 
 static char *
@@ -483,7 +483,9 @@ print_info(void)
 	//dt = ecalloc(MAX_DTF, sizeof(char));
 
 	//prm = get_fperm(current_pane->entries[current_pane->current_index].st.st_mode);
-	get_entry_owner_group(current_pane->entries[current_pane->current_index].st.st_uid, current_pane->entries[current_pane->current_index].st.st_gid);
+	get_entry_owner_group(
+		current_pane->entries[current_pane->current_index].st.st_uid,
+		current_pane->entries[current_pane->current_index].st.st_gid);
 	//gr = get_fgrp(pane->entries[pane->current_index].st.st_gid);
 
 	// if (get_fdt(dt, pane->entries[pane->current_index].st.st_mtime) < 0)
@@ -609,9 +611,9 @@ termb_print_at(
 
 	char result[max_result_size];
 	result_len = snprintf(result, max_result_size,
-		"\x1b[%hu;%huf"		      // Move cursor to x y positions
+		"\x1b[%hu;%huf"               // Move cursor to x y positions
 		"\x1b[%hu;38;5;%hu;48;5;%hum" // Set string colors
-		"%s%*s"	     // String with padding to 'end' position
+		"%s%*s"      // String with padding to 'end' position
 		"\x1b[0;0m", // Reset colors
 		x, y, col.attr, col.fg, col.bg, buf, padding_len, "");
 
@@ -654,7 +656,7 @@ main()
 {
 	enable_raw_mode();
 	get_term_size(&rows, &cols);
-	LOG("size = %d", rows*cols);
+	LOG("size = %d", rows * cols);
 	set_panes();
 	list_dir(&panes[Left]);
 	list_dir(&panes[Right]);
@@ -671,4 +673,3 @@ main()
 
 	return 0;
 }
-
