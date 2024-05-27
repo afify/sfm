@@ -368,7 +368,7 @@ display_entry_details(void)
 	sz = get_file_size(st.st_size);
 
 	print_status(color_status, "%02d/%02d %s %s:%s %s %s",
-		current_pane->current_index, current_pane->entry_count, prm, ur,
+		current_pane->current_index+1, current_pane->entry_count, prm, ur,
 		gr, dt, sz);
 
 	free(prm);
@@ -511,22 +511,40 @@ handle_keypress(char c)
 void
 move_cursor(const Arg *arg)
 {
+	if (current_pane->entry_count == 0)
+		return;
+
 	current_pane->current_index += arg->i;
 
-	// Ensure the cursor stays within the bounds of the entry count
 	if (current_pane->current_index < 0) {
 		current_pane->current_index = 0;
 	} else if (current_pane->current_index >= current_pane->entry_count) {
 		current_pane->current_index = current_pane->entry_count - 1;
 	}
 
-	// Ensure the current index stays within the visible range by adjusting the start index
 	if (current_pane->current_index < current_pane->start_index) {
 		current_pane->start_index = current_pane->current_index;
 	} else if (current_pane->current_index >=
-		current_pane->start_index + rows - 3) {
+		current_pane->start_index + rows - 2) {
 		current_pane->start_index =
 			current_pane->current_index - (rows - 3);
+	}
+}
+
+void
+move_top(const Arg *arg)
+{
+	current_pane->current_index = 0;
+	current_pane->start_index = 0;
+}
+
+void
+move_bottom(const Arg *arg)
+{
+	current_pane->current_index = current_pane->entry_count - 1;
+	current_pane->start_index = current_pane->entry_count - (rows - 2);
+	if (current_pane->start_index < 0) {
+		current_pane->start_index = 0;
 	}
 }
 

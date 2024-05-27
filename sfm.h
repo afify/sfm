@@ -94,6 +94,8 @@ static void display_entry_details();
 static void print_status(ColorPair, const char *, ...);
 static void handle_keypress(char);
 static void move_cursor(const Arg *);
+static void move_top(const Arg *);
+static void move_bottom(const Arg *);
 static void switch_pane(const Arg *);
 static void quit(const Arg *);
 static void grabkeys(uint32_t, Key *, size_t);
