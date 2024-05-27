@@ -37,8 +37,10 @@
 
 #define UINT8_LEN  3
 #define UINT16_LEN 5
-#define MAX_DTF    20
-#define MAX_GRPN   32
+
+#define GROUP_MAX    32
+#define USER_MAX     32
+#define DATETIME_MAX 20
 
 typedef struct {
 	char *buffer;
@@ -88,7 +90,7 @@ static void get_entry_color(ColorPair *, mode_t);
 static void termb_append(const char *, size_t);
 static void termb_write(void);
 static void display_entries(Pane *, int, int, int);
-static void display_entry_details(Pane *, int, int);
+static void display_entry_details();
 static void print_status(ColorPair, const char *, ...);
 static void handle_keypress(char);
 static void move_cursor(const Arg *);
@@ -96,11 +98,11 @@ static void switch_pane(const Arg *);
 static void quit(const Arg *);
 static void grabkeys(uint32_t, Key *, size_t);
 static void update_screen(void);
-static int get_fdt(char *, time_t);
-static void get_entry_owner_group(uid_t, gid_t);
-static char *get_fperm(mode_t);
-static char *get_fsize(off_t);
-static void print_info(void);
+static char *get_entry_datetime(time_t);
+static char *get_entry_owner(uid_t);
+static char *get_entry_group(gid_t);
+static char *get_entry_permission(mode_t);
+static char *get_file_size(off_t);
 static int should_skip_entry(const struct dirent *);
 static void get_fullpath(char *, char *, char *);
 static void termb_print_at(

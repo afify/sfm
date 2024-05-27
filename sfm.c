@@ -16,13 +16,14 @@
 #include "sfm.h"
 #include "config.h"
 
-static int debug = 1;
-#define LOG(format, ...)                                                    \
-	{                                                                   \
-		if (debug)                                                  \
-			log_to_file(                                        \
-				__func__, __LINE__, format, ##__VA_ARGS__); \
-	};
+#ifdef DEBUG
+#define LOG(format, ...)                                                \
+	{                                                               \
+		log_to_file(__func__, __LINE__, format, ##__VA_ARGS__); \
+	}
+#else
+#define LOG(format, ...) /* No-op */
+#endif
 
 struct termios orig_termios, new_termios;
 static Pane *current_pane;
@@ -349,56 +350,49 @@ print_status(ColorPair color, const char *fmt, ...)
 }
 
 void
-display_entry_details(Pane *pane, int cols, int rows)
+display_entry_details(void)
 {
-	if (pane->current_index < pane->entry_count) {
-		char *size_str = NULL;
-		if (S_ISREG(pane->entries[pane->current_index].st.st_mode)) {
-			size_str = get_fsize(
-				pane->entries[pane->current_index].st.st_size);
-		}
+	char *sz, *ur, *gr, *dt, *prm;
+	struct stat st;
 
-		print_info();
-		if (size_str) {
-			free(size_str);
-		}
-	} else {
+	if (current_pane->entry_count < 1) {
 		print_status(color_err, "No entry details available.");
+		return;
 	}
-}
 
-static int
-get_fdt(char *result, time_t status)
-{
-	struct tm lt;
-	localtime_r(&status, &lt);
-	return strftime(result, MAX_DTF, "%Y-%m-%d %H:%M", &lt);
-}
+	st = current_pane->entries[current_pane->current_index].st;
+	prm = get_entry_permission(st.st_mode);
+	ur = get_entry_owner(st.st_uid);
+	gr = get_entry_group(st.st_gid);
+	dt = get_entry_datetime(st.st_mtim.tv_sec);
+	sz = get_file_size(st.st_size);
 
-static void
-get_entry_owner_group(uid_t uid, gid_t gid)
-{
+	print_status(color_status, "%02d/%02d %s %s:%s %s %s",
+		current_pane->current_index, current_pane->entry_count, prm, ur,
+		gr, dt, sz);
 
-	struct group grp;
-	struct group *result;
-	char *buffer;
-	int s;
-
-	buffer = ecalloc(NAME_MAX, sizeof(char));
-	s = getgrgid_r(gid, &grp, buffer, NAME_MAX, &result);
-	LOG("uid = %d", uid);
-	LOG("gid = %d", gid);
-	LOG("group name = %s", result->gr_name);
-	LOG("s = %d", s);
-	free(buffer);
-	//struct passwd *pw = getpwuid(uid);
-	//LOG("user name = %s", pw->pw_name);
-	//LOG("pass name = %s", pw->pw_passwd);
-	//return buffer;
+	free(prm);
+	free(ur);
+	free(gr);
+	free(dt);
+	free(sz);
 }
 
 static char *
-get_fperm(mode_t mode)
+get_entry_datetime(time_t status)
+{
+	char *result;
+	struct tm lt;
+
+	result = ecalloc(DATETIME_MAX, sizeof(char));
+	localtime_r(&status, &lt);
+	strftime(result, DATETIME_MAX, "%Y-%m-%d %H:%M", &lt);
+	result[DATETIME_MAX - 1] = '\0';
+	return result;
+}
+
+static char *
+get_entry_permission(mode_t mode)
 {
 	char *buf;
 	size_t i;
@@ -432,15 +426,15 @@ get_fperm(mode_t mode)
 }
 
 static char *
-get_fsize(off_t size)
+get_file_size(off_t size)
 {
-	char *result; /* need to be freed */
+	char *result;
 	char unit;
 	int result_len;
 	int counter;
 
 	counter = 0;
-	result_len = 6; /* 9999X/0 */
+	result_len = 6;
 	result = ecalloc(result_len, sizeof(char));
 
 	while (size >= 1000) {
@@ -474,43 +468,38 @@ get_fsize(off_t size)
 	return result;
 }
 
-static void
-print_info(void)
+static char *
+get_entry_owner(uid_t status)
 {
-	//char *sz, *ur, *gr, *dt, *prm;
-	//char *ur, *gr, *dt, *prm;
+	char *result;
+	struct passwd *pw;
 
-	//dt = ecalloc(MAX_DTF, sizeof(char));
+	result = ecalloc(USER_MAX, sizeof(char));
+	pw = getpwuid(status);
+	if (pw == NULL)
+		(void)snprintf(result, USER_MAX, "%u", status);
+	else
+		strncpy(result, pw->pw_name, USER_MAX);
 
-	//prm = get_fperm(current_pane->entries[current_pane->current_index].st.st_mode);
-	get_entry_owner_group(
-		current_pane->entries[current_pane->current_index].st.st_uid,
-		current_pane->entries[current_pane->current_index].st.st_gid);
-	//gr = get_fgrp(pane->entries[pane->current_index].st.st_gid);
+	result[USER_MAX - 1] = '\0';
+	return result;
+}
 
-	// if (get_fdt(dt, pane->entries[pane->current_index].st.st_mtime) < 0)
-	// 	*dt = '\0';
+static char *
+get_entry_group(gid_t status)
+{
+	char *result;
+	struct group *gr;
 
-	// if (S_ISREG(pane->entries[pane->current_index].st.st_mode)) {
-	// 	sz = get_fsize(pane->entries[pane->current_index].st.st_size);
-	// } else {
-	// 	if (dirsize == NULL) {
-	// 		sz = ecalloc(1, sizeof(char));
-	// 		*sz = '\0';
-	// 	} else {
-	// 		sz = dirsize;
-	// 	}
-	// }
+	result = ecalloc(GROUP_MAX, sizeof(char));
+	gr = getgrgid(status);
+	if (gr == NULL)
+		(void)snprintf(result, GROUP_MAX, "%u", status);
+	else
+		strncpy(result, gr->gr_name, GROUP_MAX);
 
-	//print_status(color_file, "%02d/%02d %s %s:%s %s",
-	//	pane->current_index + 1, pane->entry_count, prm, ur, gr, dt
-	//	);
-
-	// free(prm);
-	// free(ur);
-	// free(gr);
-	// free(dt);
-	//free(sz);
+	result[GROUP_MAX - 1] = '\0';
+	return result;
 }
 
 void
@@ -583,8 +572,8 @@ update_screen()
 	display_entries(&panes[Left], rows, cols, 0);
 	display_entries(&panes[Right], rows, cols, cols / 2);
 
-	display_entry_details(current_pane, cols, rows);
 	termb_write();
+	display_entry_details();
 }
 
 static void
@@ -628,7 +617,7 @@ set_panes(void)
 
 	home = getenv("HOMEs");
 	if (home == NULL)
-		home = "/";
+		home = "/home/hassan/A";
 	if ((getcwd(cwd, sizeof(cwd)) == NULL))
 		strncpy(cwd, home, PATH_MAX - 1);
 	strncpy(cwd, "/etc", PATH_MAX - 1);
