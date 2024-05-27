@@ -16,14 +16,10 @@
 #include "sfm.h"
 #include "config.h"
 
-#ifdef DEBUG
 #define LOG(format, ...)                                                \
 	{                                                               \
 		log_to_file(__func__, __LINE__, format, ##__VA_ARGS__); \
 	}
-#else
-#define LOG(format, ...) /* No-op */
-#endif
 
 struct termios orig_termios, new_termios;
 static Pane *current_pane;
@@ -286,8 +282,8 @@ termb_append(const char *str, size_t len)
 	if (term_buffer_len + len < BUFFER_SIZE) {
 		strcpy(&term_buffer[term_buffer_len], str);
 		term_buffer_len += len;
-		int left = BUFFER_SIZE - term_buffer_len;
-		LOG("buffer size = %d| left=%d", term_buffer_len, left);
+		//int left = BUFFER_SIZE - term_buffer_len;
+		//LOG("buffer size = %d| left=%d", term_buffer_len, left);
 	}
 }
 
@@ -368,8 +364,8 @@ display_entry_details(void)
 	sz = get_file_size(st.st_size);
 
 	print_status(color_status, "%02d/%02d %s %s:%s %s %s",
-		current_pane->current_index+1, current_pane->entry_count, prm, ur,
-		gr, dt, sz);
+		current_pane->current_index + 1, current_pane->entry_count, prm,
+		ur, gr, dt, sz);
 
 	free(prm);
 	free(ur);
@@ -546,6 +542,34 @@ move_bottom(const Arg *arg)
 	if (current_pane->start_index < 0) {
 		current_pane->start_index = 0;
 	}
+}
+
+void
+cd_to_parent(const Arg *arg)
+{
+	char parent_path[PATH_MAX];
+	char *last_slash;
+
+	if (current_pane->path[0] == '/' && current_pane->path[1] == '\0')
+		return;
+
+	strncpy(parent_path, current_pane->path, PATH_MAX);
+	last_slash = strrchr(parent_path, '/');
+	if (last_slash != NULL)
+		*last_slash = '\0';
+
+	if (strnlen(parent_path, PATH_MAX) == 0) {
+		strncpy(parent_path, "/", PATH_MAX);
+	}
+
+	strncpy(current_pane->path, parent_path, PATH_MAX);
+
+	if (current_pane->entries != NULL)
+		free(current_pane->entries);
+	list_dir(current_pane);
+
+	current_pane->current_index = 0;
+	current_pane->start_index = 0;
 }
 
 void

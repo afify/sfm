@@ -97,6 +97,7 @@ static void move_cursor(const Arg *);
 static void move_top(const Arg *);
 static void move_bottom(const Arg *);
 static void switch_pane(const Arg *);
+static void cd_to_parent(const Arg *);
 static void quit(const Arg *);
 static void grabkeys(uint32_t, Key *, size_t);
 static void update_screen(void);
