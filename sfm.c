@@ -1,7 +1,29 @@
+#if defined(__linux__)
+#define _GNU_SOURCE
+#elif defined(__APPLE__)
+#define _DARWIN_C_SOURCE
+#elif defined(__FreeBSD__)
+#define __BSD_VISIBLE 1
+#endif
+#if defined(__linux__)
+#include <sys/inotify.h>
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
+	defined(__APPLE__)
+#include <sys/event.h>
+#endif
+#if defined(__linux__) || defined(__FreeBSD__)
+#define OFF_T "%ld"
+#elif defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+#define OFF_T "%lld"
+#endif
+#include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
+#include <ctype.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
@@ -29,12 +51,18 @@ char term_buffer[BUFFER_SIZE];
 int term_buffer_len = 0;
 char status_message[BUFFER_SIZE] = "";
 static int rows, cols;
-enum { Left, Right }; /* panes */
+char *editor[2] = { default_editor, NULL };
+char *shell[2] = { default_shell, NULL };
+char *home = default_home;
+
+enum { Left, Right };    /* panes */
+enum { Wait, DontWait }; /* spawn forks */
 
 void
 log_to_file(const char *function, int line, const char *format, ...)
 {
 	static int file_initialized = 0;
+	pid_t pid = getpid(); // Get the current process ID
 
 	if (!file_initialized) {
 		remove("sfm.log");
@@ -53,7 +81,8 @@ log_to_file(const char *function, int line, const char *format, ...)
 	strftime(time_str, sizeof(time_str), "%F %R:%S", localtime(&now));
 
 	// Write the log message with the specified format
-	fprintf(file, "[%s] %s() %d: ", time_str, function, line);
+	fprintf(file, "[%s] [PID: %d] %s() %d: ", time_str, pid, function,
+		line);
 
 	va_list args;
 	va_start(args, format);
@@ -458,7 +487,7 @@ get_file_size(off_t size)
 		unit = '?';
 	}
 
-	if (snprintf(result, result_len, "%ld%c", size, unit) < 0)
+	if (snprintf(result, result_len, OFF_T "%c", size, unit) < 0)
 		strncat(result, "???", result_len);
 
 	return result;
@@ -654,15 +683,10 @@ termb_print_at(
 static void
 set_panes(void)
 {
-	char *home;
 	char cwd[PATH_MAX];
 
-	home = getenv("HOMEs");
-	if (home == NULL)
-		home = "/home/hassan/A";
 	if ((getcwd(cwd, sizeof(cwd)) == NULL))
 		strncpy(cwd, home, PATH_MAX - 1);
-	strncpy(cwd, "/etc", PATH_MAX - 1);
 
 	strncpy(panes[Left].path, cwd, PATH_MAX - 1);
 	panes[Left].entries = NULL;
@@ -682,12 +706,220 @@ set_panes(void)
 	current_pane = &panes[pane_idx];
 }
 
-int
-main()
+void
+open_current_dir(const Arg *arg)
+{
+	if (current_pane->entry_count < 1)
+		return;
+
+	int s;
+	Entry *current_entry =
+		&current_pane->entries[current_pane->current_index];
+
+	switch (check_dir(current_entry->fullpath)) {
+	case 0: /* directory */
+		LOG("opening: %s", current_entry->fullpath);
+		strncpy(current_pane->path, current_entry->fullpath, PATH_MAX);
+		list_dir(current_pane);
+		current_pane->current_index = 0;
+		current_pane->start_index = 0;
+		break;
+	case 1: /* not a directory open file */
+		if (S_ISREG(current_entry->st.st_mode)) {
+			LOG("opening file: %s", current_entry->fullpath);
+			disable_raw_mode();
+			s = open_file(current_entry->fullpath);
+			// get_term_size(&rows, &cols);
+			// list_dir(&panes[Left]);
+			// list_dir(&panes[Right]);
+			// update_screen();
+			LOG("end of opening file = %s",
+				current_entry->fullpath);
+			LOG("s = %s", s);
+			enable_raw_mode();
+			get_term_size(&rows, &cols);
+
+			list_dir(&panes[Left]);
+			list_dir(&panes[Right]);
+
+			if (write(STDOUT_FILENO, "\x1b[2J", 4) <
+				0) // clear screen
+				die("write:");
+			update_screen();
+		}
+		break;
+	case -1: /* failed to open directory */
+		print_status(color_err, strerror(errno));
+	}
+	LOG("end of open_current_dir = %s", current_entry->fullpath);
+}
+
+char *
+get_file_extensioni(char *filename)
+{
+	const char *dot = strrchr(filename, '.');
+	if (!dot || dot == filename)
+		return NULL;
+
+	size_t len = strlen(dot + 1);
+	char *ext = ecalloc(len + 1, sizeof(char));
+	for (size_t i = 0; i < len; i++) {
+		ext[i] = tolower((unsigned char)dot[i + 1]);
+	}
+	ext[len] = '\0';
+	return ext;
+}
+
+static char *
+get_file_extension(char *str)
+{
+	char *ext;
+	char *dot;
+
+	if (!str)
+		return NULL;
+
+	dot = strrchr(str, '.');
+	if (!dot || dot == str)
+		return NULL;
+
+	ext = ecalloc(EXTENTION_MAX + 1, sizeof(char));
+	strncpy(ext, dot + 1, EXTENTION_MAX);
+
+	for (char *p = ext; *p; p++)
+		*p = tolower((unsigned char)*p);
+
+	return ext;
+}
+
+static int
+check_rule(char *ex)
+{
+	size_t c, d;
+
+	for (c = 0; c < LEN(rules); c++)
+		for (d = 0; d < rules[c].exlen; d++)
+			if (strncmp(rules[c].ext[d], ex, EXTENTION_MAX) == 0)
+				return c;
+	return -1;
+}
+
+static int
+check_dir(char *path)
+{
+	DIR *dir;
+	dir = opendir(path);
+
+	if (dir == NULL) {
+		if (errno == ENOTDIR) {
+			return 1;
+		} else {
+			return -1;
+		}
+	}
+
+	if (closedir(dir) < 0)
+		return -1;
+
+	return 0;
+}
+
+static int
+execute_command(Command *cmd)
+{
+	size_t argc;
+	pid_t fork_pid;
+
+	argc = cmd->command_count + cmd->source_count + 2;
+	char *argv[argc];
+
+	memcpy(argv, cmd->command,
+		cmd->command_count * sizeof(char *)); /* command */
+	memcpy(&argv[cmd->command_count], cmd->source_paths,
+		cmd->source_count * sizeof(char *)); /* files */
+
+	argv[argc - 2] = cmd->target;
+	argv[argc - 1] = NULL;
+
+	// Log the complete command to be executed
+	char command_log[1024] = { 0 }; // Adjust the size as needed
+	for (size_t i = 0; argv[i] != NULL; i++) {
+		strcat(command_log, argv[i]);
+		strcat(command_log, " ");
+	}
+	LOG("argv[0]= %s", argv[0]);
+	LOG("argv[1]= %s", argv[1]);
+	LOG("Executing command: %s", command_log);
+
+	fork_pid = fork();
+	switch (fork_pid) {
+	case -1:
+		return -1;
+	case 0:
+		execvp(argv[0], argv);
+		exit(EXIT_SUCCESS);
+	default:
+		if (cmd->wait_for_completion == Wait) {
+			int status;
+			waitpid(fork_pid, &status, 0);
+		}
+		// if (waiting == Wait) {
+		// 	while ((r = waitpid(fork_pid, &ws, 0)) == -1 &&
+		// 		errno == EINTR)
+		// 		continue;
+		// 	if (r == -1)
+		// 		return -1;
+		// 	if ((WIFEXITED(ws) != 0) && (WEXITSTATUS(ws) != 0))
+		// 		return -1;
+		// }
+	}
+	return 0;
+}
+
+static int
+open_file(char *file)
+{
+	char *ext;
+	int rule_index;
+	Command cmd;
+
+	ext = get_file_extension(file);
+
+	LOG("ext = %s", ext);
+	if (ext != NULL) {
+		rule_index = check_rule(ext);
+		LOG("rule_index = %d", rule_index);
+		LOG("ex = %s", ext);
+		free(ext);
+	}
+
+	if (rule_index < 0) {
+		cmd.source_paths = NULL;
+		cmd.source_count = 0;
+		cmd.command = editor;
+		cmd.command_count = 1;
+		cmd.target = file;
+		cmd.wait_for_completion = Wait;
+	} else {
+		cmd.source_paths = NULL;
+		cmd.source_count = 0;
+		cmd.command = (char **)rules[rule_index].v;
+		cmd.command_count = rules[rule_index].vlen;
+		cmd.target = file;
+		cmd.wait_for_completion = DontWait;
+	}
+
+	execute_command(&cmd);
+	return 0;
+}
+
+void
+start(void)
 {
 	enable_raw_mode();
 	get_term_size(&rows, &cols);
 	LOG("size = %d", rows * cols);
+	get_env();
 	set_panes();
 	list_dir(&panes[Left]);
 	list_dir(&panes[Right]);
@@ -701,6 +933,41 @@ main()
 		handle_keypress(c);
 		update_screen();
 	}
+}
 
+static void
+get_env(void)
+{
+	char *env_editor;
+	char *env_shell;
+	char *env_home;
+
+	env_editor = getenv("EDITOR");
+	if (env_editor != NULL)
+		editor[0] = env_editor;
+
+	env_shell = getenv("SHELL");
+	if (env_shell != NULL)
+		shell[0] = env_shell;
+
+	env_home = getenv("HOME");
+	if (env_home != NULL)
+		home = env_home;
+}
+
+int
+main(int argc, char *argv[])
+{
+#if defined(__OpenBSD__)
+	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath",
+		    NULL) == -1)
+		die("pledge");
+#endif /* __OpenBSD__ */
+	if (argc == 1)
+		start();
+	else if (argc == 2 && strncmp("-v", argv[1], 2) == 0)
+		die("sfm-" VERSION);
+	else
+		die("usage: sfm [-v]");
 	return 0;
 }

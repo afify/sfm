@@ -38,9 +38,15 @@
 #define UINT8_LEN  3
 #define UINT16_LEN 5
 
-#define GROUP_MAX    32
-#define USER_MAX     32
-#define DATETIME_MAX 20
+#define GROUP_MAX     32
+#define USER_MAX      32
+#define DATETIME_MAX  20
+#define EXTENTION_MAX 4
+
+#define MAX(A, B)        ((A) > (B) ? (A) : (B))
+#define MIN(A, B)        ((A) < (B) ? (A) : (B))
+#define LEN(A)           (sizeof(A) / sizeof(A[0]))
+#define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
 
 typedef struct {
 	char *buffer;
@@ -78,6 +84,22 @@ typedef struct {
 	const Arg arg;
 } Key;
 
+typedef struct {
+	const char **ext;
+	size_t exlen;
+	const void *v;
+	size_t vlen;
+} Rule;
+
+typedef struct {
+	char **source_paths;     // Source file paths
+	size_t source_count;     // Number of source files
+	char **command;          // Command and its arguments
+	size_t command_count;    // Command arg count
+	char *target;            // Single file path or destination path
+	int wait_for_completion; // Flag to wait for command completion
+} Command;
+
 static void die(const char *, ...);
 static void *ecalloc(size_t, size_t);
 static void enable_raw_mode(void);
@@ -111,5 +133,12 @@ static void get_fullpath(char *, char *, char *);
 static void termb_print_at(
 	uint16_t, uint16_t, ColorPair, int, const char *, ...);
 static void set_panes(void);
+static int execute_command(Command *);
+static char *get_file_extension(char *);
+static void open_current_dir(const Arg *);
+static int open_file(char *);
+static int check_dir(char *);
+static void get_env(void);
+
 
 #endif // SFM_H
