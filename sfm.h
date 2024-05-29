@@ -17,7 +17,6 @@
 #define RVS         7
 #define HIDDEN      8
 #define STRIKE      9
-#define BUFFER_SIZE 10240
 
 #define XK_CTRL(k)   ((k) & 0x1f)
 #define XK_ALT(k)    (k)1b
@@ -49,9 +48,15 @@
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
 
 typedef struct {
+	struct termios orig;
+	struct termios new;
+	int rows;
+	int cols;
 	char *buffer;
-	size_t size;
-} TermBuffer;
+	unsigned long buffer_size;
+	unsigned long buffer_left;
+	ssize_t buffer_index;
+} Terminal;
 
 typedef struct {
 	uint8_t fg;
@@ -92,53 +97,58 @@ typedef struct {
 } Rule;
 
 typedef struct {
-	char **source_paths;     // Source file paths
-	size_t source_count;     // Number of source files
-	char **command;          // Command and its arguments
-	size_t command_count;    // Command arg count
-	char *target;            // Single file path or destination path
-	int wait_for_completion; // Flag to wait for command completion
+	char **source_paths;     /* Source file paths */
+	size_t source_count;     /* Number of source files */
+	char **command;          /* Command and its arguments */
+	size_t command_count;    /* Command arg count */
+	char *target;            /* Single file path or destination path */
+	int wait_for_completion; /* Flag to wait for command completion */
 } Command;
 
-static void die(const char *, ...);
-static void *ecalloc(size_t, size_t);
+static void start(void);
+static void init_term(void);
 static void enable_raw_mode(void);
-static void disable_raw_mode(void);
-static void get_term_size(int *, int *);
-static int count_entries(const char *);
-static int entry_compare(const void *const, const void *const);
+static void get_term_size(void);
+static void get_env(void);
+static void set_panes(void);
 static void list_dir(Pane *);
-static void get_entry_color(ColorPair *, mode_t);
-static void termb_append(const char *, size_t);
-static void termb_write(void);
-static void display_entries(Pane *, int, int, int);
-static void display_entry_details();
-static void print_status(ColorPair, const char *, ...);
-static void handle_keypress(char);
-static void move_cursor(const Arg *);
-static void move_top(const Arg *);
-static void move_bottom(const Arg *);
-static void switch_pane(const Arg *);
-static void cd_to_parent(const Arg *);
-static void quit(const Arg *);
-static void grabkeys(uint32_t, Key *, size_t);
-static void update_screen(void);
-static char *get_entry_datetime(time_t);
-static char *get_entry_owner(uid_t);
-static char *get_entry_group(gid_t);
-static char *get_entry_permission(mode_t);
-static char *get_file_size(off_t);
+static int count_entries(const char *);
 static int should_skip_entry(const struct dirent *);
 static void get_fullpath(char *, char *, char *);
+static int entry_compare(const void *const, const void *const);
+static void update_screen(void);
+static void disable_raw_mode(void);
+static void display_entries(Pane *, int);
+static void handle_keypress(char);
+static void grabkeys(uint32_t, Key *, size_t);
+static void print_status(ColorPair, const char *, ...);
+static void display_entry_details(void);
+static void get_entry_color(ColorPair *, mode_t);
+static char *get_entry_datetime(time_t);
+static char *get_entry_permission(mode_t);
+static char *get_file_size(off_t);
+static char *get_entry_owner(uid_t);
+static char *get_entry_group(gid_t);
+static int check_dir(char *);
+static int open_file(char *);
+static char *get_file_extension(char *);
+static int check_rule(char *);
+static int execute_command(Command *);
+static void termb_append(const char *, size_t);
+static void termb_write(void);
 static void termb_print_at(
 	uint16_t, uint16_t, ColorPair, int, const char *, ...);
-static void set_panes(void);
-static int execute_command(Command *);
-static char *get_file_extension(char *);
-static void open_current_dir(const Arg *);
-static int open_file(char *);
-static int check_dir(char *);
-static void get_env(void);
-
+static void cd_to_parent(const Arg *);
+static void move_bottom(const Arg *);
+static void move_cursor(const Arg *);
+static void move_top(const Arg *);
+static void open_entry(const Arg *);
+static void quit(const Arg *);
+static void switch_pane(const Arg *);
+static void toggle_dotfiles(const Arg *);
+static void die(const char *, ...);
+static void *ecalloc(size_t, size_t);
+static void *erealloc(void *, size_t);
+static void log_to_file(const char *, int, const char *, ...);
 
 #endif // SFM_H

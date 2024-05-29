@@ -62,13 +62,16 @@ static Key nkeys[] = {
 	{ XK_UP,               move_cursor,      { .i = -1 } },
 	{ XK_CTRL('u'),        move_cursor,      { .i = -5 } },
 	{ XK_CTRL('d'),        move_cursor,      { .i = +5 } },
-	{ 'l',                 open_current_dir, { 0 }       },
+	{ 'l',                 open_entry,       { 0 }       },
 	{ 'h',                 cd_to_parent,     { 0 }       },
 	{ 'q',                 quit,             { 0 }       },
 	{ 'G',                 move_bottom,      { 0 }       },
 	{ 'g',                 move_top,         { 0 }       },
 	{ XK_SPACE,            switch_pane,      { 0 }       },
+	{ '.',                 toggle_dotfiles,  { 0 }       },
 };
+
+static const size_t nkeyslen = LEN(nkeys);
 
 static int show_dotfiles = 1;
 static char default_home[] = "/";

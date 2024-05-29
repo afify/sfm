@@ -47,6 +47,9 @@ TabWidth: 8
 IncludeCategories:
   - Regex: '^<sys/types.*>'
     Priority: -2
+    SortPriority: -4
+  - Regex: '^<sys/time.*>'
+    Priority: -2
     SortPriority: -3
   - Regex: '^<sys/.*>'
     Priority: -2
