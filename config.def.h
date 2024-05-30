@@ -69,6 +69,7 @@ static Key nkeys[] = {
 	{ 'g',                 move_top,         { 0 }       },
 	{ XK_SPACE,            switch_pane,      { 0 }       },
 	{ '.',                 toggle_dotfiles,  { 0 }       },
+	{ XK_CTRL('r'),        refresh,          { 0 }       },
 };
 
 static const size_t nkeyslen = LEN(nkeys);

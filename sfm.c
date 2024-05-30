@@ -12,11 +12,17 @@
 #include <sys/time.h>
 #include <sys/event.h>
 #endif
-#if defined(__linux__) || defined(__FreeBSD__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
 #define OFF_T "%ld"
-#elif defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+#elif defined(__OpenBSD__) || defined(__APPLE__)
 #define OFF_T "%lld"
 #endif
+#if defined(__APPLE__)
+#define M_TIME st_mtimespec
+#else
+#define M_TIME st_mtim
+#endif
+
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -28,6 +34,7 @@
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,6 +59,7 @@ static int pane_idx;
 char *editor[2] = { default_editor, NULL };
 char *shell[2] = { default_shell, NULL };
 char *home = default_home;
+static pid_t fork_pid, main_pid;
 
 enum { Left, Right };    /* panes */
 enum { Wait, DontWait }; /* spawn forks */
@@ -63,8 +71,7 @@ start(void)
 	enable_raw_mode();
 	get_env();
 	set_panes();
-	list_dir(&panes[Left]);
-	list_dir(&panes[Right]);
+	start_signal();
 
 	termb_append("\033[2J", 4);
 	update_screen();
@@ -129,6 +136,42 @@ get_env(void)
 		home = env_home;
 }
 
+static int
+start_signal(void)
+{
+	struct sigaction sa;
+	main_pid = getpid();
+	sa.sa_handler = sighandler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
+	sigaction(SIGUSR1, &sa, 0);
+	sigaction(SIGUSR2, &sa, 0);
+	sigaction(SIGWINCH, &sa, 0);
+	return 0;
+}
+
+static void
+sighandler(int signo)
+{
+	switch (signo) {
+	case SIGWINCH:
+		LOG("----SIGWINCH");
+		termb_resize();
+		break;
+	case SIGUSR1:
+		// if (fork_pid > 0) /* while forking don't listdir() */
+		// 	return;
+		// if (list_dir(&panes[Left]) < 0)
+		// 	print_error(strerror(errno));
+		// if (listdir(&panes[Right]) < 0)
+		// 	print_error(strerror(errno));
+		// term_resize();
+		break;
+	case SIGUSR2:
+		break;
+	}
+}
+
 static void
 set_panes(void)
 {
@@ -153,10 +196,13 @@ set_panes(void)
 
 	pane_idx = Left; /* cursor pane */
 	current_pane = &panes[pane_idx];
+
+	set_pane_entries(&panes[Left]);
+	set_pane_entries(&panes[Right]);
 }
 
 static void
-list_dir(Pane *pane)
+set_pane_entries(Pane *pane)
 {
 	int fd, i;
 	DIR *dir;
@@ -294,8 +340,8 @@ update_screen(void)
 	termb_print_at(
 		1, term.cols / 2, color_panelr, term.cols, panes[Right].path);
 
-	display_entries(&panes[Left], 0);
-	display_entries(&panes[Right], term.cols / 2);
+	append_entries(&panes[Left], 0);
+	append_entries(&panes[Right], term.cols / 2);
 	termb_write();
 
 	display_entry_details();
@@ -310,7 +356,7 @@ disable_raw_mode(void)
 }
 
 static void
-display_entries(Pane *pane, int col_offset)
+append_entries(Pane *pane, int col_offset)
 {
 	int i;
 	ColorPair col;
@@ -329,10 +375,18 @@ display_entries(Pane *pane, int col_offset)
 			pane->start_index + i == pane->current_index) {
 			col.attr = col.attr | RVS;
 		}
+
+		// Truncate string based on byte length
+		size_t max_len = (term.cols / 2);
+		char truncated_name[max_len + 1];
+		strncpy(truncated_name,
+			pane->entries[pane->start_index + i].name, max_len);
+		truncated_name[max_len - 1] = '.';
+		truncated_name[max_len] = '\0';
+
 		index += snprintf(buffer + index, term.buffer_size - index,
 			"\x1b[%dG\x1b[%d;38;5;%dm%s\x1b[0m\r\n", col_offset,
-			col.attr, col.fg,
-			pane->entries[pane->start_index + i].name);
+			col.attr, col.fg, truncated_name);
 	}
 	termb_append(buffer, index);
 	free(buffer);
@@ -402,7 +456,7 @@ display_entry_details(void)
 	prm = get_entry_permission(st.st_mode);
 	ur = get_entry_owner(st.st_uid);
 	gr = get_entry_group(st.st_gid);
-	dt = get_entry_datetime(st.st_mtim.tv_sec);
+	dt = get_entry_datetime(st.M_TIME.tv_sec);
 	sz = get_file_size(st.st_size);
 
 	print_status(color_status, "%02d/%02d %s %s:%s %s %s",
@@ -669,7 +723,6 @@ static int
 execute_command(Command *cmd)
 {
 	size_t argc;
-	pid_t fork_pid;
 
 	argc = cmd->command_count + cmd->source_count + 2;
 	char *argv[argc];
@@ -776,6 +829,14 @@ termb_print_at(
 }
 
 static void
+termb_resize(void)
+{
+	termb_append("\033[2J", 4);
+	get_term_size();
+	update_screen();
+}
+
+static void
 cd_to_parent(const Arg *arg)
 {
 	char parent_path[PATH_MAX];
@@ -797,7 +858,7 @@ cd_to_parent(const Arg *arg)
 
 	if (current_pane->entries != NULL)
 		free(current_pane->entries);
-	list_dir(current_pane);
+	set_pane_entries(current_pane);
 
 	current_pane->current_index = 0;
 	current_pane->start_index = 0;
@@ -812,6 +873,7 @@ move_bottom(const Arg *arg)
 	if (current_pane->start_index < 0) {
 		current_pane->start_index = 0;
 	}
+	update_screen();
 }
 
 static void
@@ -844,6 +906,7 @@ move_top(const Arg *arg)
 {
 	current_pane->current_index = 0;
 	current_pane->start_index = 0;
+	update_screen();
 }
 
 static void
@@ -860,7 +923,7 @@ open_entry(const Arg *arg)
 	case 0: /* directory */
 		//LOG("opening: %s", current_entry->fullpath);
 		strncpy(current_pane->path, current_entry->fullpath, PATH_MAX);
-		list_dir(current_pane);
+		set_pane_entries(current_pane);
 		current_pane->current_index = 0;
 		current_pane->start_index = 0;
 		update_screen();
@@ -875,8 +938,8 @@ open_entry(const Arg *arg)
 			//	current_entry->fullpath);
 			//LOG("s = %s", s);
 			//get_term_size();
-			//list_dir(&panes[Left]);
-			//list_dir(&panes[Right]);
+			//set_pane_entries(&panes[Left]);
+			//set_pane_entries(&panes[Right]);
 			if (s < 0)
 				print_status(color_err, strerror(errno));
 		}
@@ -898,6 +961,12 @@ quit(const Arg *arg)
 }
 
 static void
+refresh(const Arg *arg)
+{
+	kill(main_pid, SIGWINCH);
+}
+
+static void
 switch_pane(const Arg *arg)
 {
 	current_pane = &panes[pane_idx ^= 1];
@@ -908,11 +977,10 @@ static void
 toggle_dotfiles(const Arg *arg)
 {
 	show_dotfiles ^= 1;
-	list_dir(&panes[Left]);
-	list_dir(&panes[Right]);
+	set_pane_entries(&panes[Left]);
+	set_pane_entries(&panes[Right]);
 	update_screen();
 }
-
 
 static void
 die(const char *fmt, ...)
