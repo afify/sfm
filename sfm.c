@@ -9,8 +9,11 @@
 #include <sys/inotify.h>
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
 	defined(__APPLE__)
+#include <sys/types.h>
 #include <sys/time.h>
 #include <sys/event.h>
+
+#include <fcntl.h>
 #endif
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
 #define OFF_T "%ld"
@@ -33,6 +36,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <pthread.h>
 #include <pwd.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -72,6 +76,9 @@ start(void)
 	get_env();
 	set_panes();
 	start_signal();
+
+	add_watch(&left_watcher, panes[Left].path);
+	add_watch(&right_watcher, panes[Right].path);
 
 	termb_append("\033[2J", 4);
 	update_screen();
@@ -159,6 +166,11 @@ sighandler(int signo)
 		termb_resize();
 		break;
 	case SIGUSR1:
+		LOG("----SIGUSR1");
+		// set_pane_entries(&panes[Left]);
+		// set_pane_entries(&panes[Right]);
+		// update_screen();
+		// break;
 		// if (fork_pid > 0) /* while forking don't listdir() */
 		// 	return;
 		// if (list_dir(&panes[Left]) < 0)
@@ -860,6 +872,14 @@ cd_to_parent(const Arg *arg)
 		free(current_pane->entries);
 	set_pane_entries(current_pane);
 
+	if (current_pane == &panes[Left]) {
+		remove_watch(&left_watcher);
+		add_watch(&left_watcher, current_pane->path);
+	} else {
+		remove_watch(&right_watcher);
+		add_watch(&right_watcher, current_pane->path);
+	}
+
 	current_pane->current_index = 0;
 	current_pane->start_index = 0;
 	update_screen();
@@ -921,25 +941,26 @@ open_entry(const Arg *arg)
 
 	switch (check_dir(current_entry->fullpath)) {
 	case 0: /* directory */
-		//LOG("opening: %s", current_entry->fullpath);
 		strncpy(current_pane->path, current_entry->fullpath, PATH_MAX);
 		set_pane_entries(current_pane);
+
+		if (current_pane == &panes[Left]) {
+			remove_watch(&left_watcher);
+			add_watch(&left_watcher, current_pane->path);
+		} else {
+			remove_watch(&right_watcher);
+			add_watch(&right_watcher, current_pane->path);
+		}
+
 		current_pane->current_index = 0;
 		current_pane->start_index = 0;
 		update_screen();
 		break;
 	case 1: /* not a directory open file */
 		if (S_ISREG(current_entry->st.st_mode)) {
-			//LOG("opening file: %s", current_entry->fullpath);
 			disable_raw_mode();
 			s = open_file(current_entry->fullpath);
 			enable_raw_mode();
-			//LOG("end of opening file = %s",
-			//	current_entry->fullpath);
-			//LOG("s = %s", s);
-			//get_term_size();
-			//set_pane_entries(&panes[Left]);
-			//set_pane_entries(&panes[Right]);
 			if (s < 0)
 				print_status(color_err, strerror(errno));
 		}
@@ -947,7 +968,6 @@ open_entry(const Arg *arg)
 	case -1: /* failed to open directory */
 		print_status(color_err, strerror(errno));
 	}
-	//LOG("end of open_current_dir = %s", current_entry->fullpath);
 }
 
 static void
@@ -1023,11 +1043,11 @@ log_to_file(const char *function, int line, const char *format, ...)
 	pid_t pid = getpid(); // Get the current process ID
 
 	if (!file_initialized) {
-		remove("sfm.log");
+		remove("/tmp/sfm.log");
 		file_initialized = 1;
 	}
 
-	FILE *file = fopen("sfm.log", "a");
+	FILE *file = fopen("/tmp/sfm.log", "a");
 	if (file == NULL) {
 		perror("Failed to open log file");
 		exit(EXIT_FAILURE);
@@ -1050,6 +1070,146 @@ log_to_file(const char *function, int line, const char *format, ...)
 	fprintf(file, "\n");
 
 	fclose(file);
+}
+
+void
+handle_sigusr1(int sig)
+{
+	LOG("Received SIGUSR1 signal (%d)");
+}
+
+#if defined(__linux__)
+void *
+watch_directory(void *arg)
+{
+    Watcher *args = (Watcher *)arg;
+    char buffer[EVENT_BUFFER_LENGTH];
+
+    while (1) {
+        int length = read(args->inotify_fd, buffer, EVENT_BUFFER_LENGTH);
+        if (length < 0) {
+            perror("read");
+        } else {
+            struct inotify_event *event = (struct inotify_event *)buffer;
+            if (event->mask & (IN_MODIFY | IN_CREATE | IN_DELETE)) {
+                kill(main_pid, SIGUSR1);
+            }
+        }
+    }
+
+    pthread_exit(NULL);
+}
+
+
+void
+add_watch(Watcher *args, const char *directory)
+{
+	args->inotify_fd = inotify_init();
+	if (args->inotify_fd < 0) {
+		perror("inotify_init");
+		exit(EXIT_FAILURE);
+	}
+
+	args->watch_descriptor = inotify_add_watch(
+		args->inotify_fd, directory, IN_MODIFY | IN_CREATE | IN_DELETE);
+	if (args->watch_descriptor < 0) {
+		perror("inotify_add_watch");
+		close(args->inotify_fd);
+		exit(EXIT_FAILURE);
+	}
+
+	strncpy(args->directory, directory, PATH_MAX);
+
+	if (pthread_create(&args->watcher_thread, NULL, watch_directory,
+		    (void *)args) != 0) {
+		perror("pthread_create");
+		close(args->inotify_fd);
+		exit(EXIT_FAILURE);
+	}
+
+	LOG("ADDING WATCH -> %s", directory);
+	pthread_detach(args->watcher_thread);
+}
+
+void
+remove_watch(Watcher *args)
+{
+	if (inotify_rm_watch(args->inotify_fd, args->watch_descriptor) < 0) {
+		perror("inotify_rm_watch");
+	}
+	close(args->inotify_fd);
+}
+
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
+	defined(__APPLE__)
+void *
+watch_directory(void *arg)
+{
+    Watcher *args = (Watcher *)arg;
+    struct kevent change;
+    struct kevent event;
+
+    EV_SET(&change, args->directory_fd, EVFILT_VNODE, EV_ADD | EV_CLEAR,
+        NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_LINK |
+        NOTE_RENAME | NOTE_REVOKE,
+        0, 0);
+
+    while (1) {
+        int nev = kevent(args->kq, &change, 1, &event, 1, NULL);
+        if (nev == -1) {
+            perror("kevent");
+        } else if (nev > 0) {
+            if (event.filter == EVFILT_VNODE) {
+                kill(main_pid, SIGUSR1);
+            }
+        }
+    }
+
+    pthread_exit(NULL);
+}
+
+void
+add_watch(Watcher *args, const char *directory)
+{
+	args->directory_fd = open(directory, O_RDONLY);
+	if (args->directory_fd < 0) {
+		perror("open");
+		exit(EXIT_FAILURE);
+	}
+
+	args->kq = kqueue();
+	if (args->kq == -1) {
+		perror("kqueue");
+		close(args->directory_fd);
+		exit(EXIT_FAILURE);
+	}
+
+	strncpy(args->directory, directory, PATH_MAX);
+
+	if (pthread_create(&args->watcher_thread, NULL, watch_directory,
+		    (void *)args) != 0) {
+		perror("pthread_create");
+		close(args->kq);
+		close(args->directory_fd);
+		exit(EXIT_FAILURE);
+	}
+
+	pthread_detach(args->watcher_thread);
+}
+
+void
+remove_watch(Watcher *args)
+{
+	close(args->kq);
+	close(args->directory_fd);
+}
+#endif
+
+void
+end_pthread(Watcher *args)
+{
+	pthread_cancel(args->watcher_thread);
+	pthread_join(args->watcher_thread, NULL);
 }
 
 int

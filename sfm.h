@@ -105,6 +105,41 @@ typedef struct {
 	int wait_for_completion; /* Flag to wait for command completion */
 } Command;
 
+
+
+
+
+
+
+
+
+#define EVENT_SIZE (sizeof(struct inotify_event))
+#define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
+
+typedef struct {
+#if defined(__linux__)
+    int inotify_fd;
+    int watch_descriptor;
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
+    int kq;
+    int directory_fd;
+#endif
+    char directory[PATH_MAX];
+    pthread_t watcher_thread;
+} Watcher;
+
+void *watch_directory(void *arg);
+void add_watch(Watcher*args, const char *directory);
+void remove_watch(Watcher*args);
+void end_pthread(Watcher*args);
+void handle_sigusr1(int sig);
+static void *read_thread(void *arg);
+
+
+static Watcher left_watcher;
+static Watcher right_watcher;
+
+
 static void start(void);
 static void init_term(void);
 static void enable_raw_mode(void);
