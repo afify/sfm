@@ -8,15 +8,15 @@
 #include <stdint.h>
 
 /* macros */
-#define NORM        0
-#define BOLD        1
-#define DIM         2
-#define ITALIC      3
-#define UNDERL      4
-#define BLINK       5
-#define RVS         7
-#define HIDDEN      8
-#define STRIKE      9
+#define NORM   0
+#define BOLD   1
+#define DIM    2
+#define ITALIC 3
+#define UNDERL 4
+#define BLINK  5
+#define RVS    7
+#define HIDDEN 8
+#define STRIKE 9
 
 #define XK_CTRL(k)   ((k) & 0x1f)
 #define XK_ALT(k)    (k)1b
@@ -71,11 +71,25 @@ typedef struct {
 } Entry;
 
 typedef struct {
+	char directory[PATH_MAX];
+	pthread_t watcher_thread;
+#if defined(__linux__)
+	int inotify_fd;
+	int watch_descriptor;
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
+	defined(__APPLE__)
+	int directory_fd;
+	int kq;
+#endif
+} Watcher;
+
+typedef struct {
 	char path[PATH_MAX];
 	Entry *entries;
 	int entry_count;
 	int start_index;
 	int current_index;
+	Watcher watcher;
 } Pane;
 
 typedef union {
@@ -105,40 +119,16 @@ typedef struct {
 	int wait_for_completion; /* Flag to wait for command completion */
 } Command;
 
-
-
-
-
-
-
-
-
-#define EVENT_SIZE (sizeof(struct inotify_event))
+#define EVENT_SIZE          (sizeof(struct inotify_event))
 #define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
 
-typedef struct {
-#if defined(__linux__)
-    int inotify_fd;
-    int watch_descriptor;
-#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
-    int kq;
-    int directory_fd;
-#endif
-    char directory[PATH_MAX];
-    pthread_t watcher_thread;
-} Watcher;
-
-void *watch_directory(void *arg);
-void add_watch(Watcher*args, const char *directory);
-void remove_watch(Watcher*args);
-void end_pthread(Watcher*args);
-void handle_sigusr1(int sig);
-static void *read_thread(void *arg);
-
-
-static Watcher left_watcher;
-static Watcher right_watcher;
-
+void filesystem_event_init(void);
+void filesystem_event_quit(void);
+void start_watcher_threads(void);
+void stop_watcher_threads(void);
+void add_watch(Pane *);
+void remove_watch(Pane *);
+void *watch_directory(void *);
 
 static void start(void);
 static void init_term(void);
