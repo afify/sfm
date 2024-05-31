@@ -72,13 +72,12 @@ typedef struct {
 
 typedef struct {
 	char directory[PATH_MAX];
-	pthread_t watcher_thread;
+	pthread_t thread;
+	int fd;
 #if defined(__linux__)
-	int inotify_fd;
-	int watch_descriptor;
+	int descriptor;
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
 	defined(__APPLE__)
-	int directory_fd;
 	int kq;
 #endif
 } Watcher;
@@ -119,16 +118,11 @@ typedef struct {
 	int wait_for_completion; /* Flag to wait for command completion */
 } Command;
 
-#define EVENT_SIZE          (sizeof(struct inotify_event))
-#define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
-
-void filesystem_event_init(void);
-void filesystem_event_quit(void);
-void start_watcher_threads(void);
-void stop_watcher_threads(void);
-void add_watch(Pane *);
-void remove_watch(Pane *);
-void *watch_directory(void *);
+static void filesystem_event_init(void);
+static void *event_handler(void *arg);
+static void add_watch(Pane *pane);
+static void remove_watch(Pane *pane);
+static void cleanup_filesystem_events(void);
 
 static void start(void);
 static void init_term(void);

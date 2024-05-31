@@ -50,11 +50,6 @@
 #include "sfm.h"
 #include "config.h"
 
-#define LOG(format, ...)                                                \
-	{                                                               \
-		log_to_file(__func__, __LINE__, format, ##__VA_ARGS__); \
-	}
-
 /* global variables */
 static Terminal term;
 static Pane *current_pane;
@@ -64,6 +59,10 @@ char *editor[2] = { default_editor, NULL };
 char *shell[2] = { default_shell, NULL };
 char *home = default_home;
 static pid_t fork_pid, main_pid;
+static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t event_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define EVENT_SIZE          (sizeof(struct inotify_event))
+#define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
 
 enum { Left, Right };    /* panes */
 enum { Wait, DontWait }; /* spawn forks */
@@ -76,15 +75,14 @@ start(void)
 	get_env();
 	set_panes();
 	start_signal();
-	filesystem_event_init();
-	start_watcher_threads();
 
 	termb_append("\033[2J", 4);
 	update_screen();
 
+	filesystem_event_init();
 	while (1) {
-		LOG("----GETCHAR");
 		char c = getchar();
+		//LOG("----GETCHAR (%c)", c);
 		handle_keypress(c);
 	}
 }
@@ -166,12 +164,12 @@ sighandler(int signo)
 		termb_resize();
 		break;
 	case SIGUSR1:
-		LOG("----SIGUSR1");
+		//LOG("----SIGUSR1");
 		set_pane_entries(&panes[Left]);
 		// update_screen();
 		break;
 	case SIGUSR2:
-		LOG("----SIGUSR2");
+		//LOG("----SIGUSR2");
 		set_pane_entries(&panes[Right]);
 		break;
 	}
@@ -240,8 +238,8 @@ set_pane_entries(Pane *pane)
 			continue;
 		}
 		get_fullpath(tmpfull, pane->path, entry->d_name);
-		strncpy(pane->entries[i].fullpath, tmpfull, PATH_MAX);
-		strncpy(pane->entries[i].name, entry->d_name, NAME_MAX);
+		strncpy(pane->entries[i].fullpath, tmpfull, PATH_MAX - 1);
+		strncpy(pane->entries[i].name, entry->d_name, NAME_MAX - 1);
 		pane->entries[i].fullpath[PATH_MAX - 1] = '\0';
 		pane->entries[i].name[NAME_MAX - 1] = '\0';
 
@@ -491,8 +489,8 @@ display_entry_details(void)
 	sz = get_file_size(st.st_size);
 
 	print_status(color_status, "%02d/%02d %s %s: %s %s",
-		current_pane->current_index + 1, current_pane->entry_count, prm, ur, dt,
-		sz);
+		current_pane->current_index + 1, current_pane->entry_count, prm,
+		ur, dt, sz);
 
 	free(prm);
 	free(ur);
@@ -887,6 +885,7 @@ cd_to_parent(const Arg *arg)
 
 	strncpy(current_pane->path, parent_path, PATH_MAX);
 
+	//log_to_file(__func__, __LINE__,"BBB->%s", current_pane->path);
 	remove_watch(current_pane);
 	set_pane_entries(current_pane);
 	add_watch(current_pane);
@@ -947,11 +946,13 @@ open_entry(const Arg *arg)
 		return;
 
 	int s;
-	Entry *current_entry = &current_pane->entries[current_pane->current_index];
+	Entry *current_entry =
+		&current_pane->entries[current_pane->current_index];
 
 	switch (check_dir(current_entry->fullpath)) {
 	case 0: /* directory */
 		strncpy(current_pane->path, current_entry->fullpath, PATH_MAX);
+		//log_to_file(__func__, __LINE__,"AAA->%s", current_pane->path);
 		remove_watch(current_pane);
 		set_pane_entries(current_pane);
 		add_watch(current_pane);
@@ -978,8 +979,7 @@ open_entry(const Arg *arg)
 static void
 quit(const Arg *arg)
 {
-	filesystem_event_quit();
-	stop_watcher_threads();
+	cleanup_filesystem_events();
 	free(term.buffer);
 	free(panes[Left].entries);
 	free(panes[Right].entries);
@@ -1044,7 +1044,7 @@ erealloc(void *p, size_t len)
 }
 
 static void
-log_to_file(const char *function, int line, const char *format, ...)
+log_to_fileo(const char *function, int line, const char *format, ...)
 {
 	static int file_initialized = 0;
 	pid_t pid = getpid();           // Get the current process ID
@@ -1080,187 +1080,296 @@ log_to_file(const char *function, int line, const char *format, ...)
 	fclose(file);
 }
 
-void
-filesystem_event_init(void)
+static void
+log_to_file(const char *func, int line, const char *format, ...)
 {
-	panes[Left].watcher.inotify_fd = inotify_init();
-	if (panes[Left].watcher.inotify_fd < 0) {
-		LOG("inotify_init error for left pane");
-		exit(EXIT_FAILURE);
+	static int file_initialized = 0;
+	if (!file_initialized) {
+		remove("/tmp/sfm.log");
+		file_initialized = 1;
 	}
+	FILE *log_file = fopen("/tmp/sfm.log", "a");
+	if (!log_file)
+		return;
 
-	panes[Right].watcher.inotify_fd = inotify_init();
-	if (panes[Right].watcher.inotify_fd < 0) {
-		LOG("inotify_init error for right pane");
-		exit(EXIT_FAILURE);
-	}
+	pthread_mutex_lock(&log_mutex);
 
-	add_watch(&panes[Left]);
-	add_watch(&panes[Right]);
-}
+	va_list args;
+	va_start(args, format);
+	fprintf(log_file, "[%s:%d] ", func, line);
+	vfprintf(log_file, format, args);
+	fprintf(log_file, "\n");
+	va_end(args);
 
-void
-filesystem_event_quit(void)
-{
-	remove_watch(&panes[Left]);
-	remove_watch(&panes[Right]);
-
-	close(panes[Left].watcher.inotify_fd);
-	panes[Left].watcher.inotify_fd = -1;
-
-	close(panes[Right].watcher.inotify_fd);
-	panes[Right].watcher.inotify_fd = -1;
-}
-
-void
-start_watcher_threads(void)
-{
-	if (pthread_create(&panes[Left].watcher.watcher_thread, NULL,
-		    watch_directory, (void *)&panes[Left].watcher) != 0) {
-		LOG("pthread_create for left pane");
-		exit(EXIT_FAILURE);
-	}
-
-	if (pthread_create(&panes[Right].watcher.watcher_thread, NULL,
-		    watch_directory, (void *)&panes[Right].watcher) != 0) {
-		LOG("pthread_create for right pane");
-		exit(EXIT_FAILURE);
-	}
-}
-
-void
-stop_watcher_threads(void)
-{
-	pthread_cancel(panes[Left].watcher.watcher_thread);
-	pthread_cancel(panes[Right].watcher.watcher_thread);
-
-	pthread_join(panes[Left].watcher.watcher_thread, NULL);
-	pthread_join(panes[Right].watcher.watcher_thread, NULL);
+	pthread_mutex_unlock(&log_mutex);
+	fclose(log_file);
 }
 
 #if defined(__linux__)
+
+static void *
+event_handler(void *arg)
+{
+	Pane *pane = (Pane *)arg;
+	char buffer[EVENT_BUFFER_LENGTH];
+	int length, i;
+
+	pane->watcher.fd = inotify_init();
+	if (pane->watcher.fd < 0) {
+		//log_to_file(__func__, __LINE__,
+		//	"inotify_init error for pane: %s", strerror(errno));
+		pthread_exit(NULL);
+	}
+	//log_to_file(__func__, __LINE__, "inotify_init success for pane");
+
+	add_watch(pane);
+
+	while (1) {
+		length = read(pane->watcher.fd, buffer, EVENT_BUFFER_LENGTH);
+		if (length < 0) {
+			if (errno == EINTR) {
+				//log_to_file(__func__, __LINE__,
+				//	"read interrupted by signal, retrying...");
+				continue; // Retry if interrupted by signal
+			}
+			//log_to_file(__func__, __LINE__, "read error: %s",
+			//	strerror(errno));
+			perror("read");
+			break;
+		}
+
+		if (length == 0) {
+			//log_to_file(__func__, __LINE__,
+			//	"read returned 0, possibly end of file or no events, skipping...");
+			continue;
+		}
+
+		if (length < (int)sizeof(struct inotify_event)) {
+			//log_to_file(__func__, __LINE__,
+			//	"read length (%d) is less than size of inotify_event (%zu), skipping...",
+			//	length, sizeof(struct inotify_event));
+			continue;
+		}
+
+		//log_to_file(__func__, __LINE__, "read length: %d", length);
+
+		i = 0;
+		while (i < length) {
+			struct inotify_event *event =
+				(struct inotify_event *)&buffer[i];
+			//log_to_file(__func__, __LINE__,
+			//	"Processing event at index %d, event size: %zu",
+			//	i, sizeof(struct inotify_event));
+
+			if ((i + sizeof(struct inotify_event)) <= length &&
+				(i + sizeof(struct inotify_event) +
+					event->len) <= length) {
+				//log_to_file(__func__, __LINE__,
+				//	"Event valid: wd=%d, mask=%u, len=%u",
+				//	event->wd, event->mask, event->len);
+				pthread_mutex_lock(&event_mutex);
+				if (event->mask & IN_CREATE) {
+					//log_to_file(__func__, __LINE__,
+					//	"The file %s was created.",
+					//	event->name);
+				} else if (event->mask & IN_DELETE) {
+					//log_to_file(__func__, __LINE__,
+					//	"The file %s was deleted.",
+					//	event->name);
+				} else if (event->mask & IN_MODIFY) {
+					//log_to_file(__func__, __LINE__,
+					//	"The file %s was modified.",
+					//	event->name);
+				}
+				pthread_mutex_unlock(&event_mutex);
+			} else {
+				//log_to_file(__func__, __LINE__,
+				//	"Invalid event detected, skipping...");
+			}
+			i += sizeof(struct inotify_event) + event->len;
+		}
+	}
+
+	close(pane->watcher.fd);
+	return NULL;
+}
+
 void
 add_watch(Pane *pane)
 {
-	pane->watcher.watch_descriptor =
-		inotify_add_watch(pane->watcher.inotify_fd, pane->path,
-			IN_MODIFY | IN_CREATE | IN_DELETE);
-	if (pane->watcher.watch_descriptor < 0) {
-		LOG("inotify_add_watch error");
-		exit(EXIT_FAILURE);
+	pane->watcher.descriptor = inotify_add_watch(pane->watcher.fd,
+		pane->path, IN_MODIFY | IN_CREATE | IN_DELETE);
+	if (pane->watcher.descriptor < 0) {
+		//log_to_file(__func__, __LINE__,
+		//	"inotify_add_watch error for %s: %s", pane->path,
+		//	strerror(errno));
+	} else {
+		//log_to_file(__func__, __LINE__,
+		//	"inotify_add_watch success for %s", pane->path);
 	}
 }
 
 void
 remove_watch(Pane *pane)
 {
-	if (inotify_rm_watch(pane->watcher.inotify_fd,
-		    pane->watcher.watch_descriptor) < 0) {
-		LOG("inotify_rm_watch error");
+	if (inotify_rm_watch(pane->watcher.fd, pane->watcher.descriptor) < 0) {
+		//log_to_file(__func__, __LINE__,
+		//	"inotify_rm_watch error for %s: %s", pane->path,
+		//	strerror(errno));
+	} else {
+		//log_to_file(__func__, __LINE__,
+		//	"inotify_rm_watch success for %s", pane->path);
 	}
 }
 
-void *
-watch_directory(void *arg)
+void
+cleanup_filesystem_events(void)
 {
-	Watcher *watcher = (Watcher *)arg;
-	char buffer[EVENT_BUFFER_LENGTH];
+	remove_watch(&panes[Left]);
+	pthread_cancel(panes[Left].watcher.thread);
+	pthread_join(panes[Left].watcher.thread, NULL);
 
-	while (1) {
-		int length =
-			read(watcher->inotify_fd, buffer, EVENT_BUFFER_LENGTH);
-		if (length < 0) {
-			LOG("read error");
-			break;
-		}
+	remove_watch(&panes[Right]);
+	pthread_cancel(panes[Right].watcher.thread);
+	pthread_join(panes[Right].watcher.thread, NULL);
 
-		int i = 0;
-		while (i < length) {
-			struct inotify_event *event =
-				(struct inotify_event *)&buffer[i];
-			if (event->mask & (IN_MODIFY | IN_CREATE | IN_DELETE)) {
-				if (event->wd ==
-					panes[Left].watcher.watch_descriptor) {
-					kill(main_pid, SIGUSR1);
-				} else if (event->wd ==
-					panes[Right].watcher.watch_descriptor) {
-					kill(main_pid, SIGUSR2);
-				}
-			}
-			i += EVENT_SIZE + event->len;
-		}
-	}
+	close(panes[Left].watcher.fd);
+	close(panes[Right].watcher.fd);
+}
 
-	pthread_exit(NULL);
+void
+filesystem_event_init(void)
+{
+	pthread_create(
+		&panes[Left].watcher.thread, NULL, event_handler, &panes[Left]);
+	pthread_create(&panes[Right].watcher.thread, NULL, event_handler,
+		&panes[Right]);
 }
 
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
 	defined(__APPLE__)
 
+static void *
+event_handler(void *arg)
+{
+	Pane *pane = (Pane *)arg;
+	struct kevent event;
+	struct timespec timeout = { 5, 0 };
+	int nev;
+
+	pane->watcher.kq = kqueue();
+	if (pane->watcher.kq < 0) {
+		log_to_file(__func__, __LINE__, "kqueue error for pane: %s",
+			strerror(errno));
+		pthread_exit(NULL);
+	}
+	log_to_file(__func__, __LINE__, "kqueue success for pane");
+
+	add_watch(pane);
+
+	while (1) {
+		nev = kevent(pane->watcher.kq, NULL, 0, &event, 1, &timeout);
+		if (nev < 0) {
+			if (errno == EINTR) {
+				log_to_file(__func__, __LINE__,
+					"kevent interrupted by signal, retrying...");
+				continue;
+			}
+			log_to_file(__func__, __LINE__, "kevent error: %s",
+				strerror(errno));
+			perror("kevent");
+			break;
+		}
+		if (nev == 0) {
+			log_to_file(__func__, __LINE__,
+				"kevent timeout, no events");
+			continue;
+		}
+
+		if (event.filter == EVFILT_VNODE) {
+			pthread_mutex_lock(&event_mutex);
+			if (event.fflags & NOTE_WRITE) {
+				log_to_file(__func__, __LINE__,
+					"The file was modified.");
+			} else if (event.fflags & NOTE_DELETE) {
+				log_to_file(__func__, __LINE__,
+					"The file was deleted.");
+			} else if (event.fflags & NOTE_RENAME) {
+				log_to_file(__func__, __LINE__,
+					"The file was renamed.");
+			}
+			pthread_mutex_unlock(&event_mutex);
+		}
+	}
+
+	close(pane->watcher.kq);
+	return NULL;
+}
+
 void
 add_watch(Pane *pane)
 {
-	pane->watcher.directory_fd = open(pane->path, O_RDONLY);
-	if (pane->watcher.directory_fd < 0) {
-		LOG("open error");
-		exit(EXIT_FAILURE);
+	int wd = open(pane->path, O_RDONLY);
+	if (wd < 0) {
+		log_to_file(__func__, __LINE__, "open error for %s: %s",
+			pane->path, strerror(errno));
+		return;
 	}
-
-	pane->watcher.kq = kqueue();
-	if (pane->watcher.kq == -1) {
-		LOG("kqueue error");
-		close(pane->watcher.directory_fd);
-		exit(EXIT_FAILURE);
-	}
-
 	struct kevent change;
-	EV_SET(&change, pane->watcher.directory_fd, EVFILT_VNODE,
-		EV_ADD | EV_CLEAR,
+	EV_SET(&change, wd, EVFILT_VNODE, EV_ADD | EV_ENABLE | EV_CLEAR,
 		NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_LINK |
-			NOTE_RENAME | NOTE_REVOKE,
+			NOTE_RENAME | NOTE_DELETE,
 		0, 0);
-
-	if (kevent(pane->watcher.kq, &change, 1, NULL, 0, NULL) == -1) {
-		LOG("kevent error");
-		close(pane->watcher.directory_fd);
-		exit(EXIT_FAILURE);
+	if (kevent(pane->watcher.kq, &change, 1, NULL, 0, NULL) < 0) {
+		log_to_file(__func__, __LINE__,
+			"kevent add watch error for %s: %s", pane->path,
+			strerror(errno));
+		close(wd);
+	} else {
+		log_to_file(__func__, __LINE__,
+			"kevent add watch success for %s", pane->path);
+		pane->watcher.fd = wd;
 	}
 }
 
 void
 remove_watch(Pane *pane)
 {
-	close(pane->watcher.directory_fd);
-	pane->watcher.directory_fd = -1;
-	close(pane->watcher.kq);
-	pane->watcher.kq = -1;
+	struct kevent change;
+	EV_SET(&change, pane->watcher.fd, EVFILT_VNODE, EV_DELETE, 0, 0, 0);
+	if (kevent(pane->watcher.kq, &change, 1, NULL, 0, NULL) < 0) {
+		log_to_file(__func__, __LINE__,
+			"kevent remove watch error for %s: %s", pane->path,
+			strerror(errno));
+	} else {
+		log_to_file(__func__, __LINE__,
+			"kevent remove watch success for %s", pane->path);
+	}
+	close(pane->watcher.fd);
 }
 
-void *
-watch_directory(void *arg)
+void
+cleanup_filesystem_events(void)
 {
-	Watcher *watcher = (Watcher *)arg;
-	struct kevent event;
+	remove_watch(&panes[Left]);
+	pthread_cancel(panes[Left].watcher.thread);
+	pthread_join(panes[Left].watcher.thread, NULL);
 
-	while (1) {
-		int nev = kevent(watcher->kq, NULL, 0, &event, 1, NULL);
-		if (nev == -1) {
-			LOG("kevent error");
-			break;
-		} else if (nev > 0) {
-			if (event.filter == EVFILT_VNODE) {
-				if (event.ident ==
-					panes[Left].watcher.directory_fd) {
-					kill(main_pid, SIGUSR1);
-				} else if (event.ident ==
-					panes[Right].watcher.directory_fd) {
-					kill(main_pid, SIGUSR2);
-				}
-			}
-		}
-	}
+	remove_watch(&panes[Right]);
+	pthread_cancel(panes[Right].watcher.thread);
+	pthread_join(panes[Right].watcher.thread, NULL);
 
-	pthread_exit(NULL);
+	close(panes[Left].watcher.kq);
+	close(panes[Right].watcher.kq);
+}
+
+void
+filesystem_event_init(void)
+{
+	pthread_create(
+		&panes[Left].watcher.thread, NULL, event_handler, &panes[Left]);
+	pthread_create(&panes[Right].watcher.thread, NULL, event_handler,
+		&panes[Right]);
 }
 
 #endif
