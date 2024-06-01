@@ -61,6 +61,7 @@ char *home = default_home;
 static pid_t fork_pid, main_pid;
 static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t event_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t directory_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define EVENT_SIZE          (sizeof(struct inotify_event))
 #define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
 
@@ -220,14 +221,21 @@ set_pane_entries(Pane *pane)
 
 	fd = open(pane->path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (fd < 0) {
-		die("open:");
+		log_to_file(__func__, __LINE__, "open error for %s: %s",
+			pane->path, strerror(errno));
+		exit(EXIT_FAILURE);
 	}
 
 	dir = fdopendir(fd);
 	if (!dir) {
 		close(fd);
-		die("fdopendir:");
+		log_to_file(__func__, __LINE__, "fdopendir error for %s: %s",
+			pane->path, strerror(errno));
+		exit(EXIT_FAILURE);
 	}
+
+	log_to_file(__func__, __LINE__, "before lock");
+	pthread_mutex_lock(&directory_mutex);
 
 	pane->entry_count = count_entries(pane->path);
 	pane->entries = ecalloc(pane->entry_count, sizeof(Entry));
@@ -238,16 +246,34 @@ set_pane_entries(Pane *pane)
 			continue;
 		}
 		get_fullpath(tmpfull, pane->path, entry->d_name);
-		strncpy(pane->entries[i].fullpath, tmpfull, PATH_MAX - 1);
-		strncpy(pane->entries[i].name, entry->d_name, NAME_MAX - 1);
-		pane->entries[i].fullpath[PATH_MAX - 1] = '\0';
-		pane->entries[i].name[NAME_MAX - 1] = '\0';
+		if (lstat(tmpfull, &status) != 0) {
+			log_to_file(__func__, __LINE__,
+				"lstat error for %s: %s", tmpfull,
+				strerror(errno));
+			continue;
+		}
 
-		if (lstat(tmpfull, &status) == 0)
-			pane->entries[i].st = status;
+		size_t fullpath_len = strlen(tmpfull);
+		size_t name_len = strlen(entry->d_name);
+
+		memcpy(pane->entries[i].fullpath, tmpfull, fullpath_len);
+		pane->entries[i].fullpath[fullpath_len] = '\0';
+
+		log_to_file(__func__, __LINE__, "memcpy %s",
+			pane->entries[i].fullpath);
+
+		memcpy(pane->entries[i].name, entry->d_name, name_len);
+		log_to_file(
+			__func__, __LINE__, "memcpy %s", pane->entries[i].name);
+
+		pane->entries[i].name[name_len] = '\0';
+		pane->entries[i].st = status;
 		i++;
 	}
 
+	pthread_mutex_unlock(&directory_mutex);
+
+	log_to_file(__func__, __LINE__, "after Unlock");
 	closedir(dir); // Ensure the directory stream is closed
 	close(fd);
 	qsort(pane->entries, pane->entry_count, sizeof(Entry), entry_compare);
@@ -263,13 +289,17 @@ count_entries(const char *path)
 	count = 0;
 	fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (fd < 0) {
-		die("open:");
+		log_to_file(__func__, __LINE__, "open error for %s: %s", path,
+			strerror(errno));
+		exit(EXIT_FAILURE);
 	}
 
 	dir = fdopendir(fd);
 	if (!dir) {
 		close(fd);
-		die("fdopendir:");
+		log_to_file(__func__, __LINE__, "fdopendir error for %s: %s",
+			path, strerror(errno));
+		exit(EXIT_FAILURE);
 	}
 
 	while ((entry = readdir(dir)) != NULL) {
@@ -293,15 +323,6 @@ should_skip_entry(const struct dirent *entry)
 		if (show_dotfiles != 1)
 			return 1;
 	}
-
-	// if (show_dotfiles != 1 && entry->d_name[0] == '.')
-	// 	return 1;
-
-	// if (entry->d_name[0] == '.' &&
-	// 	(entry->d_name[1] == '\0' ||
-	// 		(entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
-	// 	return 1;
-
 	return 0;
 }
 
@@ -1173,6 +1194,7 @@ event_handler(void *arg)
 					//	"The file %s was created.",
 					//	event->name);
 				} else if (event->mask & IN_DELETE) {
+					//kill(main_pid, SIGUSR1);
 					//log_to_file(__func__, __LINE__,
 					//	"The file %s was deleted.",
 					//	event->name);
