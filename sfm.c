@@ -1057,8 +1057,6 @@ event_handler(void *arg)
 				(struct inotify_event *)&buffer[i];
 			if (event->mask) {
 				kill(main_pid, pane->watcher.signal);
-				print_status(color_err, "Directory Modified");
-				sleep(1);
 			}
 			i += sizeof(struct inotify_event) + event->len;
 		}
