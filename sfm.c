@@ -59,8 +59,6 @@ char *editor[2] = { default_editor, NULL };
 char *shell[2] = { default_shell, NULL };
 char *home = default_home;
 static pid_t fork_pid, main_pid;
-static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t event_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t directory_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define EVENT_SIZE          (sizeof(struct inotify_event))
 #define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
@@ -83,7 +81,6 @@ start(void)
 	filesystem_event_init();
 	while (1) {
 		char c = getchar();
-		//LOG("----GETCHAR (%c)", c);
 		handle_keypress(c);
 	}
 }
@@ -96,7 +93,6 @@ init_term(void)
 	term.buffer = ecalloc(term.buffer_size, sizeof(char));
 	term.buffer_left = term.buffer_size;
 	term.buffer_index = 0;
-	//LOG("term size = %d", term.buffer_size);
 }
 
 static void
@@ -161,17 +157,15 @@ sighandler(int signo)
 {
 	switch (signo) {
 	case SIGWINCH:
-		//LOG("----SIGWINCH");
 		termb_resize();
 		break;
 	case SIGUSR1:
-		//LOG("----SIGUSR1");
 		set_pane_entries(&panes[Left]);
-		// update_screen();
+		update_screen();
 		break;
 	case SIGUSR2:
-		//LOG("----SIGUSR2");
 		set_pane_entries(&panes[Right]);
+		update_screen();
 		break;
 	}
 }
@@ -195,8 +189,6 @@ set_panes(void)
 	panes[Right].entry_count = 0;
 	panes[Right].start_index = 0;
 	panes[Right].current_index = 0;
-	//LOG("home=%s", home);
-	//LOG("cwd=%s", cwd);
 
 	pane_idx = Left; /* cursor pane */
 	current_pane = &panes[pane_idx];
@@ -220,38 +212,28 @@ set_pane_entries(Pane *pane)
 	}
 
 	fd = open(pane->path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (fd < 0) {
-		log_to_file(__func__, __LINE__, "open error for %s: %s",
-			pane->path, strerror(errno));
-		exit(EXIT_FAILURE);
-	}
+	if (fd < 0)
+		die("open:");
 
 	dir = fdopendir(fd);
 	if (!dir) {
 		close(fd);
-		log_to_file(__func__, __LINE__, "fdopendir error for %s: %s",
-			pane->path, strerror(errno));
-		exit(EXIT_FAILURE);
+		die("fdopendir:");
 	}
-
-	log_to_file(__func__, __LINE__, "before lock");
-	pthread_mutex_lock(&directory_mutex);
 
 	pane->entry_count = count_entries(pane->path);
 	pane->entries = ecalloc(pane->entry_count, sizeof(Entry));
 
 	i = 0;
+	//pthread_mutex_lock(&directory_mutex);
 	while ((entry = readdir(dir)) != NULL) {
 		if (should_skip_entry(entry)) {
 			continue;
 		}
 		get_fullpath(tmpfull, pane->path, entry->d_name);
-		if (lstat(tmpfull, &status) != 0) {
-			log_to_file(__func__, __LINE__,
-				"lstat error for %s: %s", tmpfull,
-				strerror(errno));
+		if (lstat(tmpfull, &status) !=
+			0) /* file removed while reading */
 			continue;
-		}
 
 		size_t fullpath_len = strlen(tmpfull);
 		size_t name_len = strlen(entry->d_name);
@@ -259,24 +241,17 @@ set_pane_entries(Pane *pane)
 		memcpy(pane->entries[i].fullpath, tmpfull, fullpath_len);
 		pane->entries[i].fullpath[fullpath_len] = '\0';
 
-		log_to_file(__func__, __LINE__, "memcpy %s",
-			pane->entries[i].fullpath);
-
 		memcpy(pane->entries[i].name, entry->d_name, name_len);
-		log_to_file(
-			__func__, __LINE__, "memcpy %s", pane->entries[i].name);
-
 		pane->entries[i].name[name_len] = '\0';
+
 		pane->entries[i].st = status;
 		i++;
 	}
 
-	pthread_mutex_unlock(&directory_mutex);
-
-	log_to_file(__func__, __LINE__, "after Unlock");
-	closedir(dir); // Ensure the directory stream is closed
+	closedir(dir);
 	close(fd);
 	qsort(pane->entries, pane->entry_count, sizeof(Entry), entry_compare);
+	//pthread_mutex_lock(&directory_mutex);
 }
 
 static int
@@ -288,18 +263,13 @@ count_entries(const char *path)
 
 	count = 0;
 	fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (fd < 0) {
-		log_to_file(__func__, __LINE__, "open error for %s: %s", path,
-			strerror(errno));
-		exit(EXIT_FAILURE);
-	}
+	if (fd < 0)
+		die("open:");
 
 	dir = fdopendir(fd);
 	if (!dir) {
 		close(fd);
-		log_to_file(__func__, __LINE__, "fdopendir error for %s: %s",
-			path, strerror(errno));
-		exit(EXIT_FAILURE);
+		die("fdopendir:");
 	}
 
 	while ((entry = readdir(dir)) != NULL) {
@@ -410,10 +380,12 @@ append_entries(Pane *pane, int col_offset)
 {
 	int i;
 	ColorPair col;
-	char *buffer =
-		ecalloc(term.buffer_size, sizeof(char)); // Allocate a buffer
 	size_t index = 0;
 
+	if (pane->entries == NULL) {
+		return;
+	}
+	char *buffer = ecalloc(term.buffer_size, sizeof(char));
 	termb_append("\x1b[2;1f", 6); // move to top left
 	for (i = 0;
 		i < term.rows - 2 && pane->start_index + i < pane->entry_count;
@@ -451,7 +423,6 @@ handle_keypress(char c)
 static void
 grabkeys(uint32_t k, Key *key, size_t max_keys)
 {
-	//LOG("key (%c) is pressed", k);
 	size_t i;
 	for (i = 0; i < max_keys; i++) {
 		if (k == key[i].k) {
@@ -496,12 +467,28 @@ display_entry_details(void)
 {
 	char *sz, *ur, *dt, *prm;
 	struct stat st;
+	if (current_pane == NULL) {
+		return;
+	}
+	if (current_pane->entries == NULL) {
+		return;
+	}
+
+	if (&current_pane->entries[current_pane->current_index] == NULL) {
+		return;
+	}
+
+	if (current_pane->entries[current_pane->current_index].st.st_mode ==
+		0) {
+		return;
+	}
 
 	if (current_pane->entry_count < 1) {
 		print_status(color_err, "Empty directory.");
 		return;
 	}
 
+	//pthread_mutex_lock(&directory_mutex);
 	st = current_pane->entries[current_pane->current_index].st;
 	prm = get_entry_permission(st.st_mode);
 	ur = get_entry_owner(st.st_uid);
@@ -518,6 +505,7 @@ display_entry_details(void)
 	//free(gr);
 	free(dt);
 	free(sz);
+	//pthread_mutex_unlock(&directory_mutex);
 }
 
 static void
@@ -707,11 +695,8 @@ open_file(char *file)
 	ext = get_file_extension(file);
 	rule_index = -1;
 
-	//LOG("ext = %s", ext);
 	if (ext != NULL) {
 		rule_index = check_rule(ext);
-		//LOG("rule_index = %d", rule_index);
-		//LOG("ex = %s", ext);
 		free(ext);
 	}
 
@@ -785,16 +770,6 @@ execute_command(Command *cmd)
 	argv[argc - 2] = cmd->target;
 	argv[argc - 1] = NULL;
 
-	// //Log the complete command to be executed
-	char command_log[1024] = { 0 }; // Adjust the size as needed
-	for (size_t i = 0; argv[i] != NULL; i++) {
-		strcat(command_log, argv[i]);
-		strcat(command_log, " ");
-	}
-	//LOG("argv[0]= %s", argv[0]);
-	//LOG("argv[1]= %s", argv[1]);
-	//LOG("Executing command: %s", command_log);
-
 	fork_pid = fork();
 	switch (fork_pid) {
 	case -1:
@@ -807,15 +782,6 @@ execute_command(Command *cmd)
 			int status;
 			waitpid(fork_pid, &status, 0);
 		}
-		// if (waiting == Wait) {
-		// 	while ((r = waitpid(fork_pid, &ws, 0)) == -1 &&
-		// 		errno == EINTR)
-		// 		continue;
-		// 	if (r == -1)
-		// 		return -1;
-		// 	if ((WIFEXITED(ws) != 0) && (WEXITSTATUS(ws) != 0))
-		// 		return -1;
-		// }
 	}
 	return 0;
 }
@@ -831,14 +797,11 @@ termb_append(const char *str, size_t len)
 	memcpy(&term.buffer[term.buffer_index], str, len);
 	term.buffer_index += len;
 	term.buffer_left = term.buffer_size - term.buffer_index;
-	//LOG("APPEND->(%d) term size = %d left(%d)", len, term.buffer_size,
-	//	term.buffer_left);
 }
 
 static void
 termb_write(void)
 {
-	//LOG("WRITE -> (%d) left (%d)", term.buffer_index, term.buffer_left);
 	if (write(STDOUT_FILENO, term.buffer, term.buffer_index - 1) < 0)
 		die("write:");
 	term.buffer_index = 0;
@@ -906,7 +869,6 @@ cd_to_parent(const Arg *arg)
 
 	strncpy(current_pane->path, parent_path, PATH_MAX);
 
-	//log_to_file(__func__, __LINE__,"BBB->%s", current_pane->path);
 	remove_watch(current_pane);
 	set_pane_entries(current_pane);
 	add_watch(current_pane);
@@ -934,7 +896,6 @@ move_cursor(const Arg *arg)
 		return;
 
 	current_pane->current_index += arg->i;
-	//LOG("INDEX = %d", current_pane->current_index);
 
 	if (current_pane->current_index < 0) {
 		current_pane->current_index = 0;
@@ -973,7 +934,6 @@ open_entry(const Arg *arg)
 	switch (check_dir(current_entry->fullpath)) {
 	case 0: /* directory */
 		strncpy(current_pane->path, current_entry->fullpath, PATH_MAX);
-		//log_to_file(__func__, __LINE__,"AAA->%s", current_pane->path);
 		remove_watch(current_pane);
 		set_pane_entries(current_pane);
 		add_watch(current_pane);
@@ -1058,76 +1018,12 @@ ecalloc(size_t nmemb, size_t size)
 static void *
 erealloc(void *p, size_t len)
 {
-	//LOG("### REALLOC-> = %d", len);
 	if ((p = realloc(p, len)) == NULL)
 		die("realloc: %s\n", strerror(errno));
 	return p;
 }
 
-static void
-log_to_fileo(const char *function, int line, const char *format, ...)
-{
-	static int file_initialized = 0;
-	pid_t pid = getpid();           // Get the current process ID
-	pthread_t tid = pthread_self(); // Get the current thread ID
-
-	if (!file_initialized) {
-		remove("/tmp/sfm.log");
-		file_initialized = 1;
-	}
-
-	FILE *file = fopen("/tmp/sfm.log", "a");
-	if (file == NULL) {
-		fprintf(stderr, "Failed to open log file");
-		exit(EXIT_FAILURE);
-	}
-
-	time_t now;
-	time(&now);
-	char time_str[20];
-	strftime(time_str, sizeof(time_str), "%F %R:%S", localtime(&now));
-
-	// Write the log message with the specified format
-	fprintf(file, "[%s] [PID: %d] [TID: %lu] %s() %d: ", time_str, pid, tid,
-		function, line);
-
-	va_list args;
-	va_start(args, format);
-	vfprintf(file, format, args);
-	va_end(args);
-
-	fprintf(file, "\n");
-
-	fclose(file);
-}
-
-static void
-log_to_file(const char *func, int line, const char *format, ...)
-{
-	static int file_initialized = 0;
-	if (!file_initialized) {
-		remove("/tmp/sfm.log");
-		file_initialized = 1;
-	}
-	FILE *log_file = fopen("/tmp/sfm.log", "a");
-	if (!log_file)
-		return;
-
-	pthread_mutex_lock(&log_mutex);
-
-	va_list args;
-	va_start(args, format);
-	fprintf(log_file, "[%s:%d] ", func, line);
-	vfprintf(log_file, format, args);
-	fprintf(log_file, "\n");
-	va_end(args);
-
-	pthread_mutex_unlock(&log_mutex);
-	fclose(log_file);
-}
-
 #if defined(__linux__)
-
 static void *
 event_handler(void *arg)
 {
@@ -1137,81 +1033,36 @@ event_handler(void *arg)
 
 	pane->watcher.fd = inotify_init();
 	if (pane->watcher.fd < 0) {
-		//log_to_file(__func__, __LINE__,
-		//	"inotify_init error for pane: %s", strerror(errno));
+		die("inotify_init:");
 		pthread_exit(NULL);
 	}
-	//log_to_file(__func__, __LINE__, "inotify_init success for pane");
 
 	add_watch(pane);
 
 	while (1) {
 		length = read(pane->watcher.fd, buffer, EVENT_BUFFER_LENGTH);
-		if (length < 0) {
-			if (errno == EINTR) {
-				//log_to_file(__func__, __LINE__,
-				//	"read interrupted by signal, retrying...");
-				continue; // Retry if interrupted by signal
-			}
-			//log_to_file(__func__, __LINE__, "read error: %s",
-			//	strerror(errno));
-			perror("read");
+		if (length <= 0) {
+			die("read:");
 			break;
 		}
 
-		if (length == 0) {
-			//log_to_file(__func__, __LINE__,
-			//	"read returned 0, possibly end of file or no events, skipping...");
-			continue;
-		}
-
 		if (length < (int)sizeof(struct inotify_event)) {
-			//log_to_file(__func__, __LINE__,
-			//	"read length (%d) is less than size of inotify_event (%zu), skipping...",
-			//	length, sizeof(struct inotify_event));
-			continue;
+			die("read:");
+			break;
 		}
-
-		//log_to_file(__func__, __LINE__, "read length: %d", length);
 
 		i = 0;
 		while (i < length) {
 			struct inotify_event *event =
 				(struct inotify_event *)&buffer[i];
-			//log_to_file(__func__, __LINE__,
-			//	"Processing event at index %d, event size: %zu",
-			//	i, sizeof(struct inotify_event));
-
-			if ((i + sizeof(struct inotify_event)) <= length &&
-				(i + sizeof(struct inotify_event) +
-					event->len) <= length) {
-				//log_to_file(__func__, __LINE__,
-				//	"Event valid: wd=%d, mask=%u, len=%u",
-				//	event->wd, event->mask, event->len);
-				pthread_mutex_lock(&event_mutex);
-				if (event->mask & IN_CREATE) {
-					//log_to_file(__func__, __LINE__,
-					//	"The file %s was created.",
-					//	event->name);
-				} else if (event->mask & IN_DELETE) {
-					//kill(main_pid, SIGUSR1);
-					//log_to_file(__func__, __LINE__,
-					//	"The file %s was deleted.",
-					//	event->name);
-				} else if (event->mask & IN_MODIFY) {
-					//log_to_file(__func__, __LINE__,
-					//	"The file %s was modified.",
-					//	event->name);
-				}
-				pthread_mutex_unlock(&event_mutex);
-			} else {
-				//log_to_file(__func__, __LINE__,
-				//	"Invalid event detected, skipping...");
+			if (event->mask) {
+				kill(main_pid, pane->watcher.signal);
+				print_status(color_err, "Directory Modified");
+				sleep(1);
 			}
 			i += sizeof(struct inotify_event) + event->len;
 		}
 	}
-
 	close(pane->watcher.fd);
 	return NULL;
 }
@@ -1220,28 +1071,16 @@ void
 add_watch(Pane *pane)
 {
 	pane->watcher.descriptor = inotify_add_watch(pane->watcher.fd,
-		pane->path, IN_MODIFY | IN_CREATE | IN_DELETE);
-	if (pane->watcher.descriptor < 0) {
-		//log_to_file(__func__, __LINE__,
-		//	"inotify_add_watch error for %s: %s", pane->path,
-		//	strerror(errno));
-	} else {
-		//log_to_file(__func__, __LINE__,
-		//	"inotify_add_watch success for %s", pane->path);
-	}
+		pane->path, IN_CREATE | IN_DELETE);
+	if (pane->watcher.descriptor < 0)
+		die("inotify_add_watch:");
 }
 
 void
 remove_watch(Pane *pane)
 {
-	if (inotify_rm_watch(pane->watcher.fd, pane->watcher.descriptor) < 0) {
-		//log_to_file(__func__, __LINE__,
-		//	"inotify_rm_watch error for %s: %s", pane->path,
-		//	strerror(errno));
-	} else {
-		//log_to_file(__func__, __LINE__,
-		//	"inotify_rm_watch success for %s", pane->path);
-	}
+	if (inotify_rm_watch(pane->watcher.fd, pane->watcher.descriptor) < 0)
+		die("inotify_rm_watch:");
 }
 
 void
@@ -1262,6 +1101,9 @@ cleanup_filesystem_events(void)
 void
 filesystem_event_init(void)
 {
+	panes[Left].watcher.signal = SIGUSR1;
+	panes[Right].watcher.signal = SIGUSR2;
+
 	pthread_create(
 		&panes[Left].watcher.thread, NULL, event_handler, &panes[Left]);
 	pthread_create(&panes[Right].watcher.thread, NULL, event_handler,
@@ -1309,7 +1151,7 @@ event_handler(void *arg)
 		}
 
 		if (event.filter == EVFILT_VNODE) {
-			pthread_mutex_lock(&event_mutex);
+			//pthread_mutex_lock(&event_mutex);
 			if (event.fflags & NOTE_WRITE) {
 				log_to_file(__func__, __LINE__,
 					"The file was modified.");
@@ -1320,7 +1162,7 @@ event_handler(void *arg)
 				log_to_file(__func__, __LINE__,
 					"The file was renamed.");
 			}
-			pthread_mutex_unlock(&event_mutex);
+			//pthread_mutex_unlock(&event_mutex);
 		}
 	}
 

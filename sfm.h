@@ -74,6 +74,7 @@ typedef struct {
 	char directory[PATH_MAX];
 	pthread_t thread;
 	int fd;
+	int signal;
 #if defined(__linux__)
 	int descriptor;
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
