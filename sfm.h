@@ -79,6 +79,7 @@ typedef struct {
 	int descriptor;
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
 	defined(__APPLE__)
+	struct kevent change;
 	int kq;
 #endif
 } Watcher;
@@ -125,7 +126,6 @@ static void add_watch(Pane *pane);
 static void remove_watch(Pane *pane);
 static void cleanup_filesystem_events(void);
 
-static void start(void);
 static void init_term(void);
 static void enable_raw_mode(void);
 static void get_term_size(void);
