@@ -59,10 +59,6 @@ char *editor[2] = { default_editor, NULL };
 char *shell[2] = { default_shell, NULL };
 char *home = default_home;
 static pid_t fork_pid, main_pid;
-static pthread_mutex_t directory_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t input_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t entry_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define EVENT_SIZE          (sizeof(struct inotify_event))
 #define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
 static struct timespec gtimeout;
@@ -73,25 +69,19 @@ enum { Wait, DontWait }; /* spawn forks */
 static void
 log_to_file(const char *func, int line, const char *format, ...)
 {
-	//pthread_mutex_lock(&log_mutex);
-	static int file_initialized = 0;
-	if (!file_initialized) {
-		remove("/tmp/sfm.log");
-		file_initialized = 1;
+	FILE *logfile = fopen("/tmp/sfm.log", "a");
+	if (logfile) {
+		va_list args;
+		va_start(args, format);
+		fprintf(logfile, "[%s:%d] \n", func, line);
+		vfprintf(logfile, format, args);
+		va_end(args);
+		if (fclose(logfile) != 0) {
+			fprintf(stderr, "Error closing log file\n");
+		}
+	} else {
+		fprintf(stderr, "Error opening log file\n");
 	}
-	FILE *log_file = fopen("/tmp/sfm.log", "a");
-	if (!log_file)
-		return;
-
-	va_list args;
-	va_start(args, format);
-	fprintf(log_file, "[%s:%d] ", func, line);
-	vfprintf(log_file, format, args);
-	fprintf(log_file, "\n");
-	va_end(args);
-
-	//pthread_mutex_unlock(&log_mutex);
-	fclose(log_file);
 }
 
 static void
@@ -196,6 +186,7 @@ set_panes(void)
 	panes[Left].start_index = 0;
 	panes[Left].current_index = 0;
 	panes[Left].watcher.fd = -1;
+	panes[Left].watcher.signal = SIGUSR1;
 
 	strncpy(panes[Right].path, home, PATH_MAX - 1);
 	panes[Right].entries = NULL;
@@ -203,6 +194,7 @@ set_panes(void)
 	panes[Right].start_index = 0;
 	panes[Right].current_index = 0;
 	panes[Right].watcher.fd = -1;
+	panes[Right].watcher.signal = SIGUSR2;
 
 	pane_idx = Left; /* cursor pane */
 	current_pane = &panes[pane_idx];
@@ -220,6 +212,7 @@ set_pane_entries(Pane *pane)
 	struct dirent *entry;
 	struct stat status;
 
+	// Free the previous entries
 	if (pane->entries != NULL) {
 		free(pane->entries);
 		pane->entries = NULL;
@@ -235,9 +228,16 @@ set_pane_entries(Pane *pane)
 		die("fdopendir:");
 	}
 
-	pthread_mutex_lock(&directory_mutex);
-	pane->entry_count = count_entries(pane->path);
+	pane->entry_count = 0;
+	while ((entry = readdir(dir)) != NULL) {
+		if (!should_skip_entry(entry)) {
+			pane->entry_count++;
+		}
+	}
+
 	pane->entries = ecalloc(pane->entry_count, sizeof(Entry));
+
+	rewinddir(dir);
 
 	i = 0;
 	while ((entry = readdir(dir)) != NULL) {
@@ -245,9 +245,26 @@ set_pane_entries(Pane *pane)
 			continue;
 		}
 		get_fullpath(tmpfull, pane->path, entry->d_name);
-		if (lstat(tmpfull, &status) !=
-			0) /* file removed while reading */
+
+		if (i >= pane->entry_count) {
+			log_to_file(__func__, __LINE__,
+				"Entry count exceeded allocated memory");
+			break;
+		}
+
+		// file deleted while getting its details
+		if (lstat(tmpfull, &status) != 0) {
+			log_to_file(__func__, __LINE__,
+				"lstat error for %s: %s", tmpfull,
+				strerror(errno));
+			memset(&pane->entries[i], 0, sizeof(Entry));
+			strncpy(pane->entries[i].fullpath, tmpfull,
+				PATH_MAX - 1);
+			strncpy(pane->entries[i].name, entry->d_name,
+				NAME_MAX - 1);
+			i++;
 			continue;
+		}
 
 		size_t fullpath_len = strlen(tmpfull);
 		size_t name_len = strlen(entry->d_name);
@@ -262,39 +279,11 @@ set_pane_entries(Pane *pane)
 		i++;
 	}
 
+	pane->entry_count = i;
+
 	closedir(dir);
 	close(fd);
 	qsort(pane->entries, pane->entry_count, sizeof(Entry), entry_compare);
-	pthread_mutex_unlock(&directory_mutex);
-}
-
-static int
-count_entries(const char *path)
-{
-	DIR *dir;
-	struct dirent *entry;
-	int count, fd;
-
-	count = 0;
-	fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (fd < 0)
-		die("open:");
-
-	dir = fdopendir(fd);
-	if (!dir) {
-		close(fd);
-		die("fdopendir:");
-	}
-
-	while ((entry = readdir(dir)) != NULL) {
-		if (should_skip_entry(entry))
-			continue;
-		count++;
-	}
-
-	closedir(dir);
-	close(fd);
-	return count;
 }
 
 static int
@@ -339,26 +328,24 @@ get_fullpath(char *full_path, char *first, char *second)
 // 		return 1;
 // 	}
 // }
+
 static int
 entry_compare(const void *a, const void *b)
 {
 	const Entry *entryA = (const Entry *)a;
 	const Entry *entryB = (const Entry *)b;
 
-	// Ensure both pointers are valid
 	if (!entryA || !entryB) {
 		return 0;
 	}
 
-	int result;
 	mode_t modeA = entryA->st.st_mode;
 	mode_t modeB = entryB->st.st_mode;
 
 	if (modeA < modeB) {
 		return -1;
 	} else if (modeA == modeB) {
-		result = strncmp(entryA->name, entryB->name, NAME_MAX);
-		return result;
+		return strncmp(entryA->name, entryB->name, NAME_MAX);
 	} else {
 		return 1;
 	}
@@ -480,47 +467,30 @@ print_status(ColorPair color, const char *fmt, ...)
 static void
 display_entry_details(void)
 {
-	pthread_mutex_lock(&entry_mutex);
-	char *sz, *prm;
+	char sz[32], ur[USER_MAX], gr[GROUP_MAX], dt[DATETIME_MAX], prm[11];
 	struct stat st;
-	if (current_pane == NULL) {
-		return;
-	}
-	if (current_pane->entries == NULL) {
-		return;
-	}
 
-	if (&current_pane->entries[current_pane->current_index] == NULL) {
-		return;
-	}
-
-	if (current_pane->entries[current_pane->current_index].st.st_mode ==
-		0) {
-		return;
-	}
-
-	if (current_pane->entry_count < 1) {
+	if (current_pane == NULL || current_pane->entries == NULL ||
+		current_pane->entry_count < 1) {
 		print_status(color_err, "Empty directory.");
 		return;
 	}
 
+	if (current_pane->current_index >= current_pane->entry_count) {
+		return;
+	}
+
 	st = current_pane->entries[current_pane->current_index].st;
-	prm = get_entry_permission(st.st_mode);
-	//ur = get_entry_owner(st.st_uid);
-	//gr = get_entry_group(st.st_gid);
-	//dt = get_entry_datetime(st.M_TIME.tv_sec);
-	sz = get_file_size(st.st_size);
 
-	print_status(color_status, "%02d/%02d %s %s",
+	get_entry_permission(prm, st.st_mode);
+	get_entry_owner(ur, st.st_uid);
+	get_entry_group(gr, st.st_gid);
+	get_entry_datetime(dt, st.M_TIME.tv_sec);
+	get_file_size(sz, st.st_size);
+
+	print_status(color_status, "%02d/%02d %s %s:%s %s %s",
 		current_pane->current_index + 1, current_pane->entry_count, prm,
-		sz);
-
-	free(prm);
-	//free(ur);
-	//free(gr);
-	//free(dt);
-	free(sz);
-	pthread_mutex_unlock(&entry_mutex);
+		ur, gr, dt, sz);
 }
 
 static void
@@ -556,27 +526,20 @@ get_entry_color(ColorPair *col, mode_t mode)
 	}
 }
 
-static char *
-get_entry_datetime(time_t status)
+static void
+get_entry_datetime(char *buf, time_t status)
 {
-	char *result;
 	struct tm lt;
-
-	result = ecalloc(DATETIME_MAX, sizeof(char));
 	localtime_r(&status, &lt);
-	strftime(result, DATETIME_MAX, "%Y-%m-%d %H:%M", &lt);
-	result[DATETIME_MAX - 1] = '\0';
-	return result;
+	strftime(buf, DATETIME_MAX, "%Y-%m-%d %H:%M", &lt);
+	buf[DATETIME_MAX - 1] = '\0';
 }
 
-static char *
-get_entry_permission(mode_t mode)
+static void
+get_entry_permission(char *buf, mode_t mode)
 {
-	char *buf;
 	size_t i;
-
 	const char chars[] = "rwxrwxrwx";
-	buf = ecalloc(11, sizeof(char));
 
 	if (S_ISDIR(mode))
 		buf[0] = 'd';
@@ -599,23 +562,15 @@ get_entry_permission(mode_t mode)
 		buf[i] = (mode & (1 << (9 - i))) ? chars[i - 1] : '-';
 	}
 	buf[10] = '\0';
-
-	return buf;
 }
 
-static char *
-get_file_size(off_t size)
+static void
+get_file_size(char *buf, off_t size)
 {
-	char *result;
 	char unit;
-	int result_len;
-	int counter;
+	int counter = 0;
 
-	counter = 0;
-	result_len = 6;
-	result = ecalloc(result_len, sizeof(char));
-
-	while (size >= 1000) {
+	while (size >= 1024) {
 		size /= 1024;
 		++counter;
 	}
@@ -640,44 +595,31 @@ get_file_size(off_t size)
 		unit = '?';
 	}
 
-	if (snprintf(result, result_len, OFF_T "%c", size, unit) < 0)
-		strncat(result, "???", result_len);
-
-	return result;
+	snprintf(buf, 32, OFF_T "%c", size, unit);
 }
 
-static char *
-get_entry_owner(uid_t status)
+static void
+get_entry_owner(char *buf, uid_t uid)
 {
-	char *result;
-	struct passwd *pw;
-
-	result = ecalloc(USER_MAX, sizeof(char));
-	pw = getpwuid(status);
-	if (pw == NULL)
-		(void)snprintf(result, USER_MAX, "%u", status);
-	else
-		strncpy(result, pw->pw_name, USER_MAX);
-
-	result[USER_MAX - 1] = '\0';
-	return result;
+	struct passwd *pw = getpwuid(uid);
+	if (pw == NULL) {
+		snprintf(buf, USER_MAX, "%u", uid);
+	} else {
+		strncpy(buf, pw->pw_name, USER_MAX - 1);
+		buf[USER_MAX - 1] = '\0';
+	}
 }
 
-static char *
-get_entry_group(gid_t status)
+static void
+get_entry_group(char *buf, gid_t gid)
 {
-	char *result;
-	struct group *gr;
-
-	result = ecalloc(GROUP_MAX, sizeof(char));
-	gr = getgrgid(status);
-	if (gr == NULL)
-		(void)snprintf(result, GROUP_MAX, "%u", status);
-	else
-		strncpy(result, gr->gr_name, GROUP_MAX);
-
-	result[GROUP_MAX - 1] = '\0';
-	return result;
+	struct group *gr = getgrgid(gid);
+	if (gr == NULL) {
+		snprintf(buf, GROUP_MAX, "%u", gid);
+	} else {
+		strncpy(buf, gr->gr_name, GROUP_MAX - 1);
+		buf[GROUP_MAX - 1] = '\0';
+	}
 }
 
 static int
@@ -978,9 +920,12 @@ static void
 quit(const Arg *arg)
 {
 	cleanup_filesystem_events();
-	free(term.buffer);
-	free(panes[Left].entries);
-	free(panes[Right].entries);
+	if (term.buffer != NULL)
+		free(term.buffer);
+	if (panes[Left].entries != NULL)
+		free(panes[Left].entries);
+	if (panes[Right].entries != NULL)
+		free(panes[Right].entries);
 	disable_raw_mode();
 	exit(arg->i);
 }
@@ -1073,6 +1018,7 @@ event_handler(void *arg)
 			struct inotify_event *event =
 				(struct inotify_event *)&buffer[i];
 			if (event->mask) {
+				usleep(50 * 1000); // 500 milliseconds
 				kill(main_pid, pane->watcher.signal);
 			}
 			i += sizeof(struct inotify_event) + event->len;
@@ -1116,9 +1062,6 @@ cleanup_filesystem_events(void)
 void
 filesystem_event_init(void)
 {
-	panes[Left].watcher.signal = SIGUSR1;
-	panes[Right].watcher.signal = SIGUSR2;
-
 	pthread_create(
 		&panes[Left].watcher.thread, NULL, event_handler, &panes[Left]);
 	pthread_create(&panes[Right].watcher.thread, NULL, event_handler,
@@ -1263,8 +1206,6 @@ cleanup_filesystem_events(void)
 void
 filesystem_event_init(void)
 {
-	panes[Left].watcher.signal = SIGUSR1;
-	panes[Right].watcher.signal = SIGUSR2;
 	pthread_create(
 		&panes[Left].watcher.thread, NULL, event_handler, &panes[Left]);
 	pthread_create(&panes[Right].watcher.thread, NULL, event_handler,
@@ -1278,11 +1219,16 @@ main(int argc, char *argv[])
 {
 	char c;
 
+	if (remove("/tmp/sfm.log") != 0) {
+		fprintf(stderr, "Error removing log file: %s\n",
+			strerror(errno));
+	}
+
 	if (argc == 1) {
 #if defined(__OpenBSD__)
-	if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath",
-		    NULL) == -1)
-		die("pledge");
+		if (pledge("cpath exec getpw proc rpath stdio tmppath tty wpath",
+			    NULL) == -1)
+			die("pledge");
 #endif /* __OpenBSD__ */
 		init_term();
 		enable_raw_mode();
