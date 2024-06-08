@@ -61,7 +61,6 @@ char *home = default_home;
 static pid_t fork_pid, main_pid;
 #define EVENT_SIZE          (sizeof(struct inotify_event))
 #define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
-static struct timespec gtimeout;
 
 enum { Left, Right };    /* panes */
 enum { Wait, DontWait }; /* spawn forks */
@@ -73,9 +72,10 @@ log_to_file(const char *func, int line, const char *format, ...)
 	if (logfile) {
 		va_list args;
 		va_start(args, format);
-		fprintf(logfile, "[%s:%d] \n", func, line);
+		fprintf(logfile, "[%s:%d] ", func, line);
 		vfprintf(logfile, format, args);
 		va_end(args);
+		fprintf(logfile, "\n");
 		if (fclose(logfile) != 0) {
 			fprintf(stderr, "Error closing log file\n");
 		}
@@ -212,20 +212,22 @@ set_pane_entries(Pane *pane)
 	struct dirent *entry;
 	struct stat status;
 
-	// Free the previous entries
 	if (pane->entries != NULL) {
 		free(pane->entries);
 		pane->entries = NULL;
 	}
 
 	fd = open(pane->path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (fd < 0)
-		die("open:");
+	if (fd < 0){
+		print_status(color_err, strerror(errno));
+		return;
+	}
 
 	dir = fdopendir(fd);
 	if (!dir) {
 		close(fd);
-		die("fdopendir:");
+		print_status(color_err, strerror(errno));
+		return;
 	}
 
 	pane->entry_count = 0;
@@ -391,6 +393,12 @@ append_entries(Pane *pane, int col_offset)
 	for (i = 0;
 		i < term.rows - 2 && pane->start_index + i < pane->entry_count;
 		i++) {
+
+		if (pane->start_index + i >= pane->entry_count ||
+			pane->entries == NULL) {
+			continue;
+		}
+
 		get_entry_color(
 			&col, pane->entries[pane->start_index + i].st.st_mode);
 
@@ -472,7 +480,7 @@ display_entry_details(void)
 
 	if (current_pane == NULL || current_pane->entries == NULL ||
 		current_pane->entry_count < 1) {
-		print_status(color_err, "Empty directory.");
+		print_status(color_warn, "Empty directory.");
 		return;
 	}
 
@@ -605,8 +613,13 @@ get_entry_owner(char *buf, uid_t uid)
 	if (pw == NULL) {
 		snprintf(buf, USER_MAX, "%u", uid);
 	} else {
-		strncpy(buf, pw->pw_name, USER_MAX - 1);
-		buf[USER_MAX - 1] = '\0';
+
+		size_t len = strlen(pw->pw_name);
+		if (len >= USER_MAX) {
+			len = USER_MAX - 1;
+		}
+		memcpy(buf, pw->pw_name, len);
+		buf[len] = '\0';
 	}
 }
 
@@ -1105,26 +1118,17 @@ event_handler(void *arg)
 			pthread_exit(NULL);
 		} else if (nev > 0) {
 			log_to_file(__func__, __LINE__, "Event detected.");
-			kill(main_pid,
-				pane->watcher
-					.signal); // Send signal to main process
-			if (event.filter == EVFILT_VNODE) {
-				if (event.fflags &
-					(NOTE_WRITE | NOTE_EXTEND |
-						NOTE_ATTRIB)) {
-					log_to_file(__func__, __LINE__,
-						"File modified: %s",
-						pane->path);
-				} else if (event.fflags & NOTE_DELETE) {
-					log_to_file(__func__, __LINE__,
-						"File deleted: %s", pane->path);
-					break; // Exit the loop if the file is deleted
-				}
-				// Re-add the watch if needed (for EV_ONESHOT)
+			usleep(500 * 1000); // 500 milliseconds
+			kill(main_pid, pane->watcher.signal);
+			if (event.fflags & NOTE_DELETE) {
 				log_to_file(__func__, __LINE__,
-					"Re-adding watch after event.");
-				add_watch(pane);
+					"File deleted: %s", pane->path);
+				break; // Exit the loop if the file is deleted
 			}
+			log_to_file(__func__, __LINE__,
+				"Re-adding watch after event.");
+			add_watch(
+				pane); // Re-add the watch after handling the event
 		}
 	}
 
@@ -1158,8 +1162,7 @@ add_watch(Pane *pane)
 
 	EV_SET(&pane->watcher.change, pane->watcher.fd, EVFILT_VNODE,
 		EV_ADD | EV_ENABLE | EV_ONESHOT,
-		NOTE_DELETE | NOTE_EXTEND | NOTE_WRITE | NOTE_ATTRIB, 0,
-		(void *)pane->path);
+		NOTE_DELETE | NOTE_WRITE | NOTE_ATTRIB | NOTE_RENAME | NOTE_REVOKE, 0, (void *)pane->path);
 
 	if (kevent(pane->watcher.kq, &pane->watcher.change, 1, NULL, 0, NULL) ==
 		-1) {
@@ -1193,11 +1196,11 @@ cleanup_filesystem_events(void)
 {
 	remove_watch(&panes[Left]);
 	pthread_cancel(panes[Left].watcher.thread);
-	pthread_join(panes[Left].watcher.thread, NULL);
+	//pthread_join(panes[Left].watcher.thread, NULL);
 
 	remove_watch(&panes[Right]);
 	pthread_cancel(panes[Right].watcher.thread);
-	pthread_join(panes[Right].watcher.thread, NULL);
+	//pthread_join(panes[Right].watcher.thread, NULL);
 
 	close(panes[Left].watcher.kq);
 	close(panes[Right].watcher.kq);
