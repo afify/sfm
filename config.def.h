@@ -25,6 +25,31 @@ static const ColorPair color_sock =   { 92,  0,   NORM };
 static const ColorPair color_status = { 243, 0,   NORM };
 static const ColorPair color_warn =   { 220, 0,   NORM };
 
+/* commands */
+#if defined(__linux__)
+#define CHFLAG "chattr"
+#else
+#define CHFLAG "chflags"
+#endif
+static const char *rm_cmd[]      = { "rm", "-rf" }; /* delete */
+static const char *cp_cmd[]      = { "cp", "-r" }; /* copy */
+static const char *chown_cmd[]   = { "chown", "-R" }; /* change file owner and group */
+static const char *chmod_cmd[]   = { "chmod" }; /* change file mode bits */
+static const char *chflags_cmd[] = { CHFLAG }; /* change file flags */
+static const char *mv_cmd[]      = { "mv" }; /* move */
+static const char delconf[]      = "yes";
+
+static const size_t rm_cmd_len      = LEN(rm_cmd);
+static const size_t cp_cmd_len      = LEN(cp_cmd);
+static const size_t chown_cmd_len   = LEN(chown_cmd);
+static const size_t chmod_cmd_len   = LEN(chmod_cmd);
+static const size_t chflags_cmd_len = LEN(chflags_cmd);
+static const size_t mv_cmd_len      = LEN(mv_cmd);
+static const size_t delconf_len     = LEN(delconf);
+
+/* bookmarks */
+static const char root[]   = "/";
+
 /* software */
 static const char *mpv[]          = { "mpv", "--fullscreen" };
 static const char *sxiv[]         = { "sxiv" };
@@ -70,11 +95,25 @@ static Key nkeys[] = {
 	{ XK_SPACE,            switch_pane,      { 0 }       },
 	{ '.',                 toggle_dotfiles,  { 0 }       },
 	{ XK_CTRL('r'),        refresh,          { 0 }       },
+	{ 'n',                 create_new_file,  { 0 }       },
+	{ 'N',                 create_new_dir,   { 0 }       },
+	{ 'd',                 delete_entry,     { 0 }       },
+
 };
 
 static const size_t nkeyslen = LEN(nkeys);
 
+/* permissions */
+static const mode_t new_dir_perm  = S_IRWXU;
+static const mode_t new_file_perm = S_IRUSR | S_IWUSR;
+
+/* dotfiles */
 static int show_dotfiles = 1;
+
+/* statusbar */
+static const char dtfmt[] = "%F %R"; /* date time format */
+
+/* defaults */
 static char default_home[] = "/";
 static char default_editor[] = "vi";
 static char default_shell[] = "/bin/sh";

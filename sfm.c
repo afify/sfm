@@ -218,7 +218,7 @@ set_pane_entries(Pane *pane)
 	}
 
 	fd = open(pane->path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	if (fd < 0){
+	if (fd < 0) {
 		print_status(color_err, strerror(errno));
 		return;
 	}
@@ -636,6 +636,49 @@ get_entry_group(char *buf, gid_t gid)
 }
 
 static int
+get_user_input(char *input, size_t size, const char *prompt, ...)
+{
+	va_list args;
+	char msg[PROMPT_MAX];
+
+	va_start(args, prompt);
+	vsnprintf(msg, PROMPT_MAX, prompt, args);
+	print_status(color_prompt, msg);
+	va_end(args);
+
+	size_t index = 0;
+	int c;
+
+	while (1) {
+		c = getchar();
+
+		switch (c) {
+		case XK_ESC:
+			display_entry_details();
+			return -1;
+		case XK_ENTER:
+			input[index] = '\0';
+			display_entry_details();
+			return 0;
+		case XK_BACKSPACE:
+			if (index > 0) {
+				index--;
+				printf("\b \b");
+			}
+			break;
+		default:
+			if (index < size - 1) {
+				input[index++] = c;
+				putchar(c);
+			}
+			break;
+		}
+	}
+
+	return 0;
+}
+
+static int
 check_dir(char *path)
 {
 	DIR *dir;
@@ -671,17 +714,17 @@ open_file(char *file)
 	}
 
 	if (rule_index < 0) {
-		cmd.source_paths = NULL;
-		cmd.source_count = 0;
 		cmd.command = editor;
 		cmd.command_count = 1;
+		cmd.source_paths = NULL;
+		cmd.source_count = 0;
 		cmd.target = file;
 		cmd.wait_for_completion = Wait;
 	} else {
-		cmd.source_paths = NULL;
-		cmd.source_count = 0;
 		cmd.command = (char **)rules[rule_index].v;
 		cmd.command_count = rules[rule_index].vlen;
+		cmd.source_paths = NULL;
+		cmd.source_count = 0;
 		cmd.target = file;
 		cmd.wait_for_completion = Wait;
 	}
@@ -850,6 +893,73 @@ cd_to_parent(const Arg *arg)
 	current_pane->current_index = 0;
 	current_pane->start_index = 0;
 	update_screen();
+}
+
+static void
+create_new_file(const Arg *arg)
+{
+	char file_name[NAME_MAX];
+	char full_path[PATH_MAX];
+	int fd;
+
+	if (get_user_input(file_name, NAME_MAX, "new file: ") != 0)
+		return;
+
+	snprintf(full_path, PATH_MAX, "%s/%s", current_pane->path, file_name);
+
+	fd = open(full_path, O_CREAT | O_EXCL, new_file_perm);
+	if (fd < 0) {
+		print_status(color_err, strerror(errno));
+		return;
+	}
+
+	//display_entry_details();
+	close(fd);
+}
+
+static void
+create_new_dir(const Arg *arg)
+{
+	char dir_name[NAME_MAX];
+
+	if (get_user_input(dir_name, sizeof(dir_name), "new directory: ") != 0)
+		return;
+
+	if (mkdir(dir_name, new_dir_perm) != 0)
+		print_status(color_err, strerror(errno));
+}
+
+static void
+delete_entry(const Arg *arg)
+{
+	if (current_pane->entry_count <= 0 ||
+		current_pane->current_index >= current_pane->entry_count) {
+		print_status(color_err, "No entry selected or invalid index.");
+		return;
+	}
+
+	char confirmation[4];
+	printf("Are you sure you want to delete '%s'? (%s): ", delconf,
+		current_pane->entries[current_pane->current_index].name);
+	if (get_user_input(confirmation, sizeof(confirmation), "") != 0 ||
+		strncmp(confirmation, delconf, delconf_len) != 0) {
+		print_status(color_warn, "Deletion aborted.");
+		return;
+	}
+
+	Command cmd;
+	cmd.command = (char **)rm_cmd;
+	cmd.command_count = rm_cmd_len;
+	cmd.source_paths = NULL;
+	cmd.source_count = 0;
+	cmd.target =
+		current_pane->entries[current_pane->current_index].fullpath;
+	cmd.wait_for_completion = DontWait;
+
+	if (execute_command(&cmd) != 0) {
+		print_status(color_err, strerror(errno));
+		return;
+	}
 }
 
 static void
@@ -1162,7 +1272,9 @@ add_watch(Pane *pane)
 
 	EV_SET(&pane->watcher.change, pane->watcher.fd, EVFILT_VNODE,
 		EV_ADD | EV_ENABLE | EV_ONESHOT,
-		NOTE_DELETE | NOTE_WRITE | NOTE_ATTRIB | NOTE_RENAME | NOTE_REVOKE, 0, (void *)pane->path);
+		NOTE_DELETE | NOTE_WRITE | NOTE_ATTRIB | NOTE_RENAME |
+			NOTE_REVOKE,
+		0, (void *)pane->path);
 
 	if (kevent(pane->watcher.kq, &pane->watcher.change, 1, NULL, 0, NULL) ==
 		-1) {

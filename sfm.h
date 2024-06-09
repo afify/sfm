@@ -41,6 +41,7 @@
 #define USER_MAX      32
 #define DATETIME_MAX  20
 #define EXTENTION_MAX 4
+#define PROMPT_MAX    64
 
 #define MAX(A, B)        ((A) > (B) ? (A) : (B))
 #define MIN(A, B)        ((A) < (B) ? (A) : (B))
@@ -112,18 +113,18 @@ typedef struct {
 } Rule;
 
 typedef struct {
-	char **source_paths;     /* Source file paths */
-	size_t source_count;     /* Number of source files */
 	char **command;          /* Command and its arguments */
 	size_t command_count;    /* Command arg count */
+	char **source_paths;     /* Source file paths */
+	size_t source_count;     /* Number of source files */
 	char *target;            /* Single file path or destination path */
 	int wait_for_completion; /* Flag to wait for command completion */
 } Command;
 
 static void filesystem_event_init(void);
-static void *event_handler(void *arg);
-static void add_watch(Pane *pane);
-static void remove_watch(Pane *pane);
+static void *event_handler(void *);
+static void add_watch(Pane *);
+static void remove_watch(Pane *);
 static void cleanup_filesystem_events(void);
 
 static void init_term(void);
@@ -150,6 +151,7 @@ static void get_entry_permission(char *, mode_t);
 static void get_file_size(char *, off_t);
 static void get_entry_owner(char *, uid_t);
 static void get_entry_group(char *, gid_t);
+static int get_user_input(char *, size_t, const char *, ...);
 static int check_dir(char *);
 static int open_file(char *);
 static char *get_file_extension(char *);
@@ -160,14 +162,18 @@ static void termb_write(void);
 static void termb_print_at(
 	uint16_t, uint16_t, ColorPair, int, const char *, ...);
 static void termb_resize(void);
+
 static void cd_to_parent(const Arg *);
+static void create_new_file(const Arg *);
+static void create_new_dir(const Arg *);
+static void delete_entry(const Arg *);
 static void move_bottom(const Arg *);
 static void move_cursor(const Arg *);
 static void move_top(const Arg *);
 static void open_entry(const Arg *);
 static void quit(const Arg *);
 static void switch_pane(const Arg *);
-static void refresh(const Arg *arg);
+static void refresh(const Arg *);
 static void toggle_dotfiles(const Arg *);
 static void die(const char *, ...);
 static void *ecalloc(size_t, size_t);
