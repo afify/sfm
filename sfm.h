@@ -1,3 +1,5 @@
+/* See LICENSE file for copyright and license details. */
+
 #ifndef SFM_H
 #define SFM_H
 
@@ -69,6 +71,7 @@ typedef struct {
 	char fullpath[PATH_MAX];
 	char name[NAME_MAX];
 	struct stat st;
+	int selected;
 } Entry;
 
 typedef struct {
@@ -79,7 +82,7 @@ typedef struct {
 #if defined(__linux__)
 	int descriptor;
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
-	defined(__APPLE__)
+	defined(__APPLE__) || defined(__DragonFly__)
 	struct kevent change;
 	int kq;
 #endif
@@ -173,6 +176,8 @@ static void move_top(const Arg *);
 static void open_entry(const Arg *);
 static void quit(const Arg *);
 static void switch_pane(const Arg *);
+static void select_all(const Arg *);
+static void select_entry(const Arg *);
 static void refresh(const Arg *);
 static void toggle_dotfiles(const Arg *);
 static void die(const char *, ...);

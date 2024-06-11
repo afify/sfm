@@ -30,7 +30,7 @@ DerivePointerAlignment: false
 DisableFormat: false
 IncludeBlocks: Regroup
 IndentCaseLabels: false
-IndentPPDirectives: None
+IndentPPDirectives: BeforeHash
 IndentWidth: 8
 KeepEmptyLinesAtTheStartOfBlocks: true
 Language: Cpp

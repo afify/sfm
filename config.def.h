@@ -1,3 +1,5 @@
+/* See LICENSE file for copyright and license details. */
+
 #ifndef CONFIG_H
 #define CONFIG_H
 
@@ -13,7 +15,7 @@ static const ColorPair color_dir =    { 31,  0,   NORM };
 static const ColorPair color_err =    { 124, 0,   BOLD };
 static const ColorPair color_exec =   { 91,  0,   NORM };
 static const ColorPair color_file =   { 243, 0,   NORM };
-static const ColorPair color_frame =  { 233, 124, NORM };
+static const ColorPair color_frame =  { 237,  0, NORM };
 static const ColorPair color_ifo =    { 93,  0,   NORM };
 static const ColorPair color_lnk =    { 96,  0,   NORM };
 static const ColorPair color_other =  { 90,  0,   NORM };
@@ -98,6 +100,8 @@ static Key nkeys[] = {
 	{ 'n',                 create_new_file,  { 0 }       },
 	{ 'N',                 create_new_dir,   { 0 }       },
 	{ 'd',                 delete_entry,     { 0 }       },
+	{ 's',                 select_entry,     { 0 }       },
+	{ 'a',                 select_all,       { 0 }       },
 
 };
 

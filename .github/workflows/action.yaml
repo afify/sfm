@@ -1,0 +1,102 @@
+name: sfm ci
+
+on:
+  push:
+    branches:
+      - main
+      - term
+  pull_request:
+    branches:
+      - main
+      - term
+
+jobs:
+  ubuntu_x86:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: term
+      - name: Print OS and architecture
+        run: uname -a
+      - name: Compile
+        run: make
+
+  macos_arm:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: term
+      - name: Print OS and architecture
+        run: uname -a
+      - name: Compile
+        run: make
+
+  freebsd_x86:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: term
+      - name: FreeBSD setup and compile
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            echo "FreeBSD environment prepared"
+          run: |
+            uname -a
+            make
+
+  openbsd_x86:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: term
+      - name: OpenBSD setup and compile
+        uses: vmactions/openbsd-vm@v1
+        with:
+          prepare: |
+            echo "OpenBSD environment prepared"
+          run: |
+            uname -a
+            make
+
+  dragonflybsd_x86:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: term
+      - name: DragonFlyBSD setup and compile
+        uses: vmactions/dragonflybsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            echo "DragonFlyBSD environment prepared"
+          run: |
+            uname -a
+            make
+
+  netbsd_x86:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: term
+      - name: NetBSD setup and compile
+        uses: vmactions/netbsd-vm@v1
+        with:
+          prepare: |
+            echo "NetBSD environment prepared"
+          run: |
+            uname -a
+            make

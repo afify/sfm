@@ -1,32 +1,44 @@
+/* See LICENSE file for copyright and license details. */
+
 #if defined(__linux__)
-#define _GNU_SOURCE
+	#define _GNU_SOURCE
+	#include <sys/types.h>
+	#include <sys/inotify.h>
+	#define EV_BUF_LEN (1024 * (sizeof(struct inotify_event) + 16))
+	#define OFF_T      "%ld"
+	#define M_TIME     st_mtim
+
 #elif defined(__APPLE__)
-#define _DARWIN_C_SOURCE
-#elif defined(__FreeBSD__)
-#define __BSD_VISIBLE 1
-#endif
-#if defined(__linux__)
-#include <sys/inotify.h>
-#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
-	defined(__APPLE__)
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/event.h>
+	#define _DARWIN_C_SOURCE
+	#include <sys/types.h>
+	#include <sys/time.h>
+	#include <sys/event.h>
 
-#include <fcntl.h>
-#endif
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
-#define OFF_T "%ld"
-#elif defined(__OpenBSD__) || defined(__APPLE__)
-#define OFF_T "%lld"
-#endif
-#if defined(__APPLE__)
-#define M_TIME st_mtimespec
-#else
-#define M_TIME st_mtim
+	#include <fcntl.h>
+	#define OFF_T  "%lld"
+	#define M_TIME st_mtimespec
+
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+	#define __BSD_VISIBLE 1
+	#include <sys/types.h>
+	#include <sys/time.h>
+	#include <sys/event.h>
+
+	#include <fcntl.h>
+	#define OFF_T  "%ld"
+	#define M_TIME st_mtim
+
+#elif defined(__OpenBSD__)
+	#include <sys/types.h>
+	#include <sys/time.h>
+	#include <sys/event.h>
+
+	#include <fcntl.h>
+	#define OFF_T  "%lld"
+	#define M_TIME st_mtim
+
 #endif
 
-#include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -59,8 +71,6 @@ char *editor[2] = { default_editor, NULL };
 char *shell[2] = { default_shell, NULL };
 char *home = default_home;
 static pid_t fork_pid, main_pid;
-#define EVENT_SIZE          (sizeof(struct inotify_event))
-#define EVENT_BUFFER_LENGTH (1024 * (EVENT_SIZE + 16))
 
 enum { Left, Right };    /* panes */
 enum { Wait, DontWait }; /* spawn forks */
@@ -367,7 +377,7 @@ update_screen(void)
 	append_entries(&panes[Right], term.cols / 2);
 	termb_write();
 
-	display_entry_details();
+	//display_entry_details();
 }
 
 static void
@@ -384,6 +394,7 @@ append_entries(Pane *pane, int col_offset)
 	int i;
 	ColorPair col;
 	size_t index = 0;
+	char if_selected[] = "\u2B1C";
 
 	if (pane->entries == NULL) {
 		return;
@@ -407,6 +418,12 @@ append_entries(Pane *pane, int col_offset)
 			col.attr = col.attr | RVS;
 		}
 
+		if (pane->entries[i].selected == 1) {
+			strcpy(if_selected, "\u2705");
+		} else {
+			strcpy(if_selected, "\u2B1C");
+		}
+
 		// Truncate string based on byte length
 		size_t max_len = (term.cols / 2);
 		char truncated_name[max_len + 1];
@@ -416,8 +433,12 @@ append_entries(Pane *pane, int col_offset)
 		truncated_name[max_len] = '\0';
 
 		index += snprintf(buffer + index, term.buffer_size - index,
-			"\x1b[%dG\x1b[%d;38;5;%dm%s\x1b[0m\r\n", col_offset,
-			col.attr, col.fg, truncated_name);
+			"\x1b[%dG"
+			"\x1b[%d;38;5;%d;48;5;%dm%s\x1b[0m"
+			"\x1b[%d;38;5;%dm%s\x1b[0m\r\n",
+			col_offset, color_frame.attr, color_frame.fg,
+			color_frame.bg, if_selected, col.attr, col.fg,
+			truncated_name);
 	}
 	termb_append(buffer, index);
 	free(buffer);
@@ -654,11 +675,11 @@ get_user_input(char *input, size_t size, const char *prompt, ...)
 
 		switch (c) {
 		case XK_ESC:
-			display_entry_details();
+			//display_entry_details();
 			return -1;
 		case XK_ENTER:
 			input[index] = '\0';
-			display_entry_details();
+			//display_entry_details();
 			return 0;
 		case XK_BACKSPACE:
 			if (index > 0) {
@@ -800,6 +821,8 @@ execute_command(Command *cmd)
 			waitpid(fork_pid, &status, 0);
 		}
 	}
+	fork_pid = 0;
+
 	return 0;
 }
 
@@ -921,11 +944,14 @@ static void
 create_new_dir(const Arg *arg)
 {
 	char dir_name[NAME_MAX];
+	char full_path[PATH_MAX];
 
 	if (get_user_input(dir_name, sizeof(dir_name), "new directory: ") != 0)
 		return;
 
-	if (mkdir(dir_name, new_dir_perm) != 0)
+	snprintf(full_path, PATH_MAX, "%s/%s", current_pane->path, dir_name);
+
+	if (mkdir(full_path, new_dir_perm) != 0)
 		print_status(color_err, strerror(errno));
 }
 
@@ -1050,7 +1076,7 @@ quit(const Arg *arg)
 	if (panes[Right].entries != NULL)
 		free(panes[Right].entries);
 	disable_raw_mode();
-	exit(arg->i);
+	exit(EXIT_SUCCESS);
 }
 
 static void
@@ -1063,6 +1089,27 @@ static void
 switch_pane(const Arg *arg)
 {
 	current_pane = &panes[pane_idx ^= 1];
+	update_screen();
+}
+
+static void
+select_all(const Arg *arg)
+{
+	if (current_pane->entry_count <= 0) {
+		print_status(color_warn, "No entries to select.");
+		return;
+	}
+
+	for (int i = 0; i < current_pane->entry_count; i++) {
+		current_pane->entries[i].selected ^= 1;
+	}
+	update_screen();
+}
+
+static void
+select_entry(const Arg *arg)
+{
+	current_pane->entries[current_pane->current_index].selected ^= 1;
 	update_screen();
 }
 
@@ -1113,7 +1160,7 @@ static void *
 event_handler(void *arg)
 {
 	Pane *pane = (Pane *)arg;
-	char buffer[EVENT_BUFFER_LENGTH];
+	char buffer[EV_BUF_LEN];
 	int length, i;
 
 	pane->watcher.fd = inotify_init();
@@ -1125,7 +1172,7 @@ event_handler(void *arg)
 	add_watch(pane);
 
 	while (1) {
-		length = read(pane->watcher.fd, buffer, EVENT_BUFFER_LENGTH);
+		length = read(pane->watcher.fd, buffer, EV_BUF_LEN);
 		if (length <= 0) {
 			die("read:");
 			break;
@@ -1154,8 +1201,8 @@ event_handler(void *arg)
 void
 add_watch(Pane *pane)
 {
-	pane->watcher.descriptor = inotify_add_watch(
-		pane->watcher.fd, pane->path, IN_CREATE | IN_DELETE);
+	pane->watcher.descriptor = inotify_add_watch(pane->watcher.fd,
+		pane->path, IN_MODIFY | IN_CREATE | IN_DELETE);
 	if (pane->watcher.descriptor < 0)
 		die("inotify_add_watch:");
 }
@@ -1192,7 +1239,7 @@ filesystem_event_init(void)
 }
 
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
-	defined(__APPLE__)
+	defined(__APPLE__) || defined(__DragonFly__)
 
 static void *
 event_handler(void *arg)

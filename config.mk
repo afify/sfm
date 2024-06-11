@@ -11,4 +11,4 @@ CFLAGS   = -g3 -std=c99 -pedantic -Wextra -Wall -Wno-unused-parameter -Os ${CPPF
 LDFLAGS  = -pthread
 
 # compiler and linker
-CC = clang
+CC = cc
