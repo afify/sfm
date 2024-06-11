@@ -20,7 +20,7 @@
 
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 	#define __BSD_VISIBLE 1
-	#include <sys/types.h>
+	#include <sys/type.h>
 	#include <sys/time.h>
 	#include <sys/event.h>
 
@@ -377,7 +377,7 @@ update_screen(void)
 	append_entries(&panes[Right], term.cols / 2);
 	termb_write();
 
-	//display_entry_details();
+	display_entry_details();
 }
 
 static void
@@ -675,7 +675,7 @@ get_user_input(char *input, size_t size, const char *prompt, ...)
 
 		switch (c) {
 		case XK_ESC:
-			//display_entry_details();
+			display_entry_details();
 			return -1;
 		case XK_ENTER:
 			input[index] = '\0';
@@ -808,6 +808,23 @@ execute_command(Command *cmd)
 	argv[argc - 2] = cmd->target;
 	argv[argc - 1] = NULL;
 
+    // Log the full command
+    size_t log_size = 0;
+    for (size_t i = 0; i < argc - 1; i++) {
+        log_size += strlen(argv[i]) + 1; // +1 for the space or null terminator
+    }
+    char *log_command = ecalloc(log_size, sizeof(char));
+    char *ptr = log_command;
+    for (size_t i = 0; i < argc - 1; i++) {
+        size_t len = strlen(argv[i]);
+        memcpy(ptr, argv[i], len);
+        ptr += len;
+        *ptr = ' ';
+        ptr++;
+    }
+    log_to_file(__func__, __LINE__, "exec = %s", log_command);
+    free(log_command);
+
 	fork_pid = fork();
 	switch (fork_pid) {
 	case -1:
@@ -928,7 +945,7 @@ create_new_file(const Arg *arg)
 	if (get_user_input(file_name, NAME_MAX, "new file: ") != 0)
 		return;
 
-	snprintf(full_path, PATH_MAX, "%s/%s", current_pane->path, file_name);
+	get_fullpath(full_path, current_pane->path, file_name);
 
 	fd = open(full_path, O_CREAT | O_EXCL, new_file_perm);
 	if (fd < 0) {
@@ -936,7 +953,7 @@ create_new_file(const Arg *arg)
 		return;
 	}
 
-	//display_entry_details();
+	display_entry_details();
 	close(fd);
 }
 
@@ -949,43 +966,85 @@ create_new_dir(const Arg *arg)
 	if (get_user_input(dir_name, sizeof(dir_name), "new directory: ") != 0)
 		return;
 
-	snprintf(full_path, PATH_MAX, "%s/%s", current_pane->path, dir_name);
+	get_fullpath(full_path, current_pane->path, dir_name);
 
 	if (mkdir(full_path, new_dir_perm) != 0)
 		print_status(color_err, strerror(errno));
 }
 
+int
+get_selected_path(Pane *pane, char *result)
+{
+	int count = 0;
+	char *ptr = result;
+
+	for (int i = 0; i < pane->entry_count; i++) {
+		if (pane->entries[i].selected) {
+			count++;
+			size_t len = strlen(pane->entries[i].fullpath);
+			memcpy(ptr, pane->entries[i].fullpath, len);
+			ptr += len;
+			*ptr = ' ';
+			ptr++;
+		}
+	}
+
+	if (count > 0 && ptr != result) {
+		ptr[-1] = '\0';
+	} else {
+		result[0] = '\0';
+	}
+
+	return count;
+}
+
 static void
 delete_entry(const Arg *arg)
 {
+	Command cmd;
+	char *selected;
+	int selected_count;
+	char confirmation[4];
+
 	if (current_pane->entry_count <= 0 ||
 		current_pane->current_index >= current_pane->entry_count) {
 		print_status(color_err, "No entry selected or invalid index.");
 		return;
 	}
 
-	char confirmation[4];
-	printf("Are you sure you want to delete '%s'? (%s): ", delconf,
-		current_pane->entries[current_pane->current_index].name);
-	if (get_user_input(confirmation, sizeof(confirmation), "") != 0 ||
-		strncmp(confirmation, delconf, delconf_len) != 0) {
+	/* check selection */
+	selected = ecalloc(PATH_MAX * current_pane->entry_count, sizeof(char));
+	selected_count = get_selected_path(current_pane, selected);
+	if (selected_count < 1) {
+		snprintf(selected, PATH_MAX, "%s",
+			current_pane->entries[current_pane->current_index]
+				.fullpath);
+		selected_count = 1;
+	}
+
+	log_to_file(__func__, __LINE__, "SELECTED COUNT = %d", selected_count);
+	log_to_file(__func__, __LINE__, "SELECTED = %s", selected);
+	/* confirmation */
+	if (get_user_input(confirmation, sizeof(confirmation), "Delete (%s)?",
+		    delconf) < 0)
+		return;
+	if (strncmp(confirmation, delconf, delconf_len) != 0) {
 		print_status(color_warn, "Deletion aborted.");
 		return;
 	}
 
-	Command cmd;
 	cmd.command = (char **)rm_cmd;
 	cmd.command_count = rm_cmd_len;
-	cmd.source_paths = NULL;
-	cmd.source_count = 0;
-	cmd.target =
-		current_pane->entries[current_pane->current_index].fullpath;
+	cmd.source_paths = &selected;
+	cmd.source_count = selected_count;
+	cmd.target = NULL;
 	cmd.wait_for_completion = DontWait;
 
-	if (execute_command(&cmd) != 0) {
+	if (execute_command(&cmd) != 0)
 		print_status(color_err, strerror(errno));
-		return;
-	}
+
+	free(selected);
+	return;
 }
 
 static void
@@ -1397,6 +1456,7 @@ main(int argc, char *argv[])
 		get_env();
 		set_panes();
 		start_signal();
+		log_to_file(__func__, __LINE__, "start");
 
 		termb_append("\033[2J", 4);
 		update_screen();
