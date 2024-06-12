@@ -20,7 +20,7 @@
 
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 	#define __BSD_VISIBLE 1
-	#include <sys/type.h>
+	#include <sys/types.h>
 	#include <sys/time.h>
 	#include <sys/event.h>
 
@@ -735,19 +735,17 @@ open_file(char *file)
 	}
 
 	if (rule_index < 0) {
-		cmd.command = editor;
-		cmd.command_count = 1;
-		cmd.source_paths = NULL;
-		cmd.source_count = 0;
-		cmd.target = file;
-		cmd.wait_for_completion = Wait;
+		cmd.cmd = editor;
+		cmd.cmdc = 1;
+		cmd.argv = &file;
+		cmd.argc = 1;
+		cmd.wait_exec = Wait;
 	} else {
-		cmd.command = (char **)rules[rule_index].v;
-		cmd.command_count = rules[rule_index].vlen;
-		cmd.source_paths = NULL;
-		cmd.source_count = 0;
-		cmd.target = file;
-		cmd.wait_for_completion = Wait;
+		cmd.cmd = (char **)rules[rule_index].v;
+		cmd.cmdc = rules[rule_index].vlen;
+		cmd.argv = &file;
+		cmd.argc = 1;
+		cmd.wait_exec = Wait;
 	}
 
 	disable_raw_mode();
@@ -796,48 +794,50 @@ static int
 execute_command(Command *cmd)
 {
 	size_t argc;
+	char **argv;
+	char log_command[4024];
+	size_t pos;
+	pid_t fork_pid;
 
-	argc = cmd->command_count + cmd->source_count + 2;
-	char *argv[argc];
+	argc = cmd->cmdc + cmd->argc + 2;
+	argv = ecalloc(argc, sizeof(char *));
 
-	memcpy(argv, cmd->command,
-		cmd->command_count * sizeof(char *)); /* command */
-	memcpy(&argv[cmd->command_count], cmd->source_paths,
-		cmd->source_count * sizeof(char *)); /* files */
+	memcpy(argv, cmd->cmd, cmd->cmdc * sizeof(char *));
+	memcpy(&argv[cmd->cmdc], cmd->argv, cmd->argc * sizeof(char *));
 
-	argv[argc - 2] = cmd->target;
 	argv[argc - 1] = NULL;
 
-    // Log the full command
-    size_t log_size = 0;
-    for (size_t i = 0; i < argc - 1; i++) {
-        log_size += strlen(argv[i]) + 1; // +1 for the space or null terminator
-    }
-    char *log_command = ecalloc(log_size, sizeof(char));
-    char *ptr = log_command;
-    for (size_t i = 0; i < argc - 1; i++) {
-        size_t len = strlen(argv[i]);
-        memcpy(ptr, argv[i], len);
-        ptr += len;
-        *ptr = ' ';
-        ptr++;
-    }
-    log_to_file(__func__, __LINE__, "exec = %s", log_command);
-    free(log_command);
+	// Construct the command string for logging
+	log_command[0] = '\0'; // Initialize the string with null terminator
+	pos = 0;
+	for (size_t i = 0; i < argc - 1; ++i) {
+		if (argv[i] != NULL) {
+			int len = snprintf(log_command + pos,
+				sizeof(log_command) - pos, "%s ", argv[i]);
+			if (len < 0 || pos + len >= sizeof(log_command)) {
+				break; // Avoid buffer overflow
+			}
+			pos += len;
+		}
+	}
+	log_command[sizeof(log_command) - 1] = '\0'; // Ensure null-termination
+	log_to_file(__func__, __LINE__, "exec = %s", log_command);
 
 	fork_pid = fork();
 	switch (fork_pid) {
 	case -1:
+		free(argv);
 		return -1;
 	case 0:
 		execvp(argv[0], argv);
-		exit(EXIT_SUCCESS);
+		exit(EXIT_FAILURE);
 	default:
-		if (cmd->wait_for_completion == Wait) {
+		if (cmd->wait_exec == Wait) {
 			int status;
 			waitpid(fork_pid, &status, 0);
 		}
 	}
+	free(argv);
 	fork_pid = 0;
 
 	return 0;
@@ -972,27 +972,16 @@ create_new_dir(const Arg *arg)
 		print_status(color_err, strerror(errno));
 }
 
-int
-get_selected_path(Pane *pane, char *result)
+static int
+get_selected_paths(Pane *pane, char **result)
 {
 	int count = 0;
-	char *ptr = result;
 
 	for (int i = 0; i < pane->entry_count; i++) {
 		if (pane->entries[i].selected) {
+			result[count] = pane->entries[i].fullpath;
 			count++;
-			size_t len = strlen(pane->entries[i].fullpath);
-			memcpy(ptr, pane->entries[i].fullpath, len);
-			ptr += len;
-			*ptr = ' ';
-			ptr++;
 		}
-	}
-
-	if (count > 0 && ptr != result) {
-		ptr[-1] = '\0';
-	} else {
-		result[0] = '\0';
 	}
 
 	return count;
@@ -1002,9 +991,9 @@ static void
 delete_entry(const Arg *arg)
 {
 	Command cmd;
-	char *selected;
 	int selected_count;
 	char confirmation[4];
+	char **selected_paths;
 
 	if (current_pane->entry_count <= 0 ||
 		current_pane->current_index >= current_pane->entry_count) {
@@ -1012,39 +1001,43 @@ delete_entry(const Arg *arg)
 		return;
 	}
 
-	/* check selection */
-	selected = ecalloc(PATH_MAX * current_pane->entry_count, sizeof(char));
-	selected_count = get_selected_path(current_pane, selected);
+	selected_paths = ecalloc(current_pane->entry_count, sizeof(char *));
+	selected_count = get_selected_paths(current_pane, selected_paths);
+
 	if (selected_count < 1) {
-		snprintf(selected, PATH_MAX, "%s",
+		selected_paths[0] =
 			current_pane->entries[current_pane->current_index]
-				.fullpath);
+				.fullpath;
 		selected_count = 1;
 	}
 
 	log_to_file(__func__, __LINE__, "SELECTED COUNT = %d", selected_count);
-	log_to_file(__func__, __LINE__, "SELECTED = %s", selected);
+	log_to_file(__func__, __LINE__, "SELECTED = %s", selected_paths[0]);
+
 	/* confirmation */
 	if (get_user_input(confirmation, sizeof(confirmation), "Delete (%s)?",
-		    delconf) < 0)
+		    delconf) < 0) {
+		free(selected_paths);
 		return;
+	}
 	if (strncmp(confirmation, delconf, delconf_len) != 0) {
 		print_status(color_warn, "Deletion aborted.");
+		free(selected_paths);
 		return;
 	}
 
-	cmd.command = (char **)rm_cmd;
-	cmd.command_count = rm_cmd_len;
-	cmd.source_paths = &selected;
-	cmd.source_count = selected_count;
-	cmd.target = NULL;
-	cmd.wait_for_completion = DontWait;
+	cmd.cmd = (char **)rm_cmd;
+	cmd.cmdc = rm_cmd_len;
+	cmd.argv = selected_paths;
+	cmd.argc = selected_count;
+	cmd.wait_exec = DontWait;
 
-	if (execute_command(&cmd) != 0)
+	if (execute_command(&cmd) != 0) {
+		log_to_file(__func__, __LINE__, "%s", strerror(errno));
 		print_status(color_err, strerror(errno));
+	}
 
-	free(selected);
-	return;
+	free(selected_paths);
 }
 
 static void

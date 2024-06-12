@@ -116,12 +116,11 @@ typedef struct {
 } Rule;
 
 typedef struct {
-	char **command;          /* Command and its arguments */
-	size_t command_count;    /* Command arg count */
-	char **source_paths;     /* Source file paths */
-	size_t source_count;     /* Number of source files */
-	char *target;            /* Single file path or destination path */
-	int wait_for_completion; /* Flag to wait for command completion */
+	char **cmd;
+	size_t cmdc;
+	char **argv;
+	size_t argc;
+	int wait_exec;
 } Command;
 
 static void filesystem_event_init(void);
