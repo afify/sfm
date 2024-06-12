@@ -2,6 +2,10 @@ name: build-attest
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - term
 
 jobs:
   build:

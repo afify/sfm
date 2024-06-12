@@ -1,4 +1,4 @@
-name: sfm ci
+name: Cross platform build
 
 on:
   push:
