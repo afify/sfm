@@ -71,6 +71,8 @@ char *editor[2] = { default_editor, NULL };
 char *shell[2] = { default_shell, NULL };
 char *home = default_home;
 static pid_t fork_pid, main_pid;
+static char **selected_entries = NULL;
+static int selected_count = 0;
 
 enum { Left, Right };    /* panes */
 enum { Wait, DontWait }; /* spawn forks */
@@ -321,6 +323,21 @@ get_fullpath(char *full_path, char *first, char *second)
 		PATH_MAX) {
 		die("Path exided maximun length");
 	}
+}
+
+static int
+get_selected_paths(Pane *pane, char **result)
+{
+	int count = 0;
+
+	for (int i = 0; i < pane->entry_count; i++) {
+		if (pane->entries[i].selected) {
+			result[count] = pane->entries[i].fullpath;
+			count++;
+		}
+	}
+
+	return count;
 }
 
 // static int
@@ -749,7 +766,10 @@ open_file(char *file)
 	}
 
 	disable_raw_mode();
-	execute_command(&cmd);
+	if (execute_command(&cmd) != 0) {
+		log_to_file(__func__, __LINE__, "%s", strerror(errno));
+		print_status(color_err, strerror(errno));
+	}
 	enable_raw_mode();
 	termb_resize();
 
@@ -795,7 +815,7 @@ execute_command(Command *cmd)
 {
 	size_t argc;
 	char **argv;
-	char log_command[4024];
+	char log_command[99024];
 	size_t pos;
 	pid_t fork_pid;
 
@@ -972,19 +992,17 @@ create_new_dir(const Arg *arg)
 		print_status(color_err, strerror(errno));
 }
 
-static int
-get_selected_paths(Pane *pane, char **result)
+static void
+copy_entries(const Arg *arg)
 {
-	int count = 0;
+	selected_entries = ecalloc(current_pane->entry_count, PATH_MAX);
+	selected_count = get_selected_paths(current_pane, selected_entries);
 
-	for (int i = 0; i < pane->entry_count; i++) {
-		if (pane->entries[i].selected) {
-			result[count] = pane->entries[i].fullpath;
-			count++;
-		}
+	if (selected_count < 1) {
+		print_status(color_warn, "No entries selected.");
+	} else {
+		print_status(color_status, "Entries copied.");
 	}
-
-	return count;
 }
 
 static void
@@ -1001,7 +1019,7 @@ delete_entry(const Arg *arg)
 		return;
 	}
 
-	selected_paths = ecalloc(current_pane->entry_count, sizeof(char *));
+	selected_paths = ecalloc(current_pane->entry_count, PATH_MAX);
 	selected_count = get_selected_paths(current_pane, selected_paths);
 
 	if (selected_count < 1) {
@@ -1084,6 +1102,37 @@ move_top(const Arg *arg)
 }
 
 static void
+move_entries(const Arg *arg)
+{
+	if (selected_count <= 0) {
+		print_status(color_warn, "No entries copied.");
+		log_to_file(__func__, __LINE__, "No entries copied.");
+		return;
+	}
+
+	char **argv = ecalloc(selected_count + 2, PATH_MAX);
+	for (int i = 0; i < selected_count; i++) {
+		argv[i] = selected_entries[i];
+	}
+	argv[selected_count] = current_pane->path; // Destination path
+	argv[selected_count + 1] = NULL;
+
+	Command cmd;
+	cmd.cmd = (char **)mv_cmd;
+	cmd.cmdc = mv_cmd_len;
+	cmd.argv = argv;
+	cmd.argc = selected_count + 1;
+	cmd.wait_exec = Wait;
+
+	if (execute_command(&cmd) != 0) {
+		log_to_file(__func__, __LINE__, "%s", strerror(errno));
+		print_status(color_err, strerror(errno));
+	}
+
+	free(argv);
+}
+
+static void
 open_entry(const Arg *arg)
 {
 	if (current_pane->entry_count < 1)
@@ -1115,6 +1164,37 @@ open_entry(const Arg *arg)
 	case -1: /* failed to open directory */
 		print_status(color_err, strerror(errno));
 	}
+}
+
+static void
+paste_entries(const Arg *arg)
+{
+	if (selected_count <= 0) {
+		print_status(color_warn, "No entries copied.");
+		log_to_file(__func__, __LINE__, "No entries copied.");
+		return;
+	}
+
+	char **argv = ecalloc(selected_count + 2, PATH_MAX);
+	for (int i = 0; i < selected_count; i++) {
+		argv[i] = selected_entries[i];
+	}
+	argv[selected_count] = current_pane->path; // Destination path
+	argv[selected_count + 1] = NULL;
+
+	Command cmd;
+	cmd.cmd = (char **)cp_cmd;
+	cmd.cmdc = cp_cmd_len;
+	cmd.argv = argv;
+	cmd.argc = selected_count + 1;
+	cmd.wait_exec = Wait;
+
+	if (execute_command(&cmd) != 0) {
+		log_to_file(__func__, __LINE__, "%s", strerror(errno));
+		print_status(color_err, strerror(errno));
+	}
+
+	free(argv);
 }
 
 static void
@@ -1215,8 +1295,13 @@ event_handler(void *arg)
 	char buffer[EV_BUF_LEN];
 	int length, i;
 
+	log_to_file(__func__, __LINE__, "Event handler started for path: %s",
+		pane->path);
+
 	pane->watcher.fd = inotify_init();
 	if (pane->watcher.fd < 0) {
+		log_to_file(__func__, __LINE__,
+			"Error initializing inotify: %s", strerror(errno));
 		die("inotify_init:");
 		pthread_exit(NULL);
 	}
@@ -1226,11 +1311,16 @@ event_handler(void *arg)
 	while (1) {
 		length = read(pane->watcher.fd, buffer, EV_BUF_LEN);
 		if (length <= 0) {
+			log_to_file(__func__, __LINE__,
+				"Error reading inotify event: %s",
+				strerror(errno));
 			die("read:");
 			break;
 		}
 
 		if (length < (int)sizeof(struct inotify_event)) {
+			log_to_file(__func__, __LINE__,
+				"Incomplete inotify event read");
 			die("read:");
 			break;
 		}
@@ -1240,6 +1330,10 @@ event_handler(void *arg)
 			struct inotify_event *event =
 				(struct inotify_event *)&buffer[i];
 			if (event->mask) {
+				log_to_file(__func__, __LINE__,
+					"Inotify event detected: mask=%u, len=%u, name=%s",
+					event->mask, event->len,
+					event->len ? event->name : "");
 				usleep(50 * 1000); // 500 milliseconds
 				kill(main_pid, pane->watcher.signal);
 			}
@@ -1253,10 +1347,16 @@ event_handler(void *arg)
 void
 add_watch(Pane *pane)
 {
-	pane->watcher.descriptor = inotify_add_watch(pane->watcher.fd,
-		pane->path, IN_MODIFY | IN_CREATE | IN_DELETE);
-	if (pane->watcher.descriptor < 0)
+	pane->watcher.descriptor =
+		inotify_add_watch(pane->watcher.fd, pane->path,
+			IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO);
+	if (pane->watcher.descriptor < 0) {
+		log_to_file(__func__, __LINE__,
+			"Error adding inotify watch: %s", strerror(errno));
 		die("inotify_add_watch:");
+	}
+	log_to_file(__func__, __LINE__, "Added inotify watch for path: %s",
+		pane->path);
 }
 
 void

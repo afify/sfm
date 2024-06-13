@@ -102,7 +102,9 @@ static Key nkeys[] = {
 	{ 'd',                 delete_entry,     { 0 }       },
 	{ 's',                 select_entry,     { 0 }       },
 	{ 'a',                 select_all,       { 0 }       },
-
+	{ 'y',                 copy_entries,     { 0 }       },
+	{ 'p',                 paste_entries,    { 0 }       },
+	{ 'P',                 move_entries,     { 0 }       },
 };
 
 static const size_t nkeyslen = LEN(nkeys);
