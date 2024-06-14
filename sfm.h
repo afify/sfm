@@ -8,6 +8,8 @@
 
 #include <limits.h>
 #include <stdint.h>
+#include <termios.h>
+#include <unistd.h>
 
 /* macros */
 #define NORM   0
@@ -50,9 +52,11 @@
 #define LEN(A)           (sizeof(A) / sizeof(A[0]))
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
 
+#define RULE(category, command) {category, LEN(category), command, LEN(command)}
+
 typedef struct {
 	struct termios orig;
-	struct termios new;
+	struct termios newterm;
 	int rows;
 	int cols;
 	char *buffer;
@@ -72,6 +76,7 @@ typedef struct {
 	char name[NAME_MAX];
 	struct stat st;
 	int selected;
+	ColorPair color;
 } Entry;
 
 typedef struct {
@@ -116,12 +121,36 @@ typedef struct {
 } Rule;
 
 typedef struct {
-	char **cmd;
+	char **cmdv;
 	size_t cmdc;
 	char **argv;
 	size_t argc;
 	int wait_exec;
 } Command;
+
+enum { Left, Right };    /* panes */
+enum { Wait, DontWait }; /* spawn forks */
+enum { NormalMode, VisualMode };
+enum { SelectNone, SelectAll, InvertSelection };
+
+/* global variables */
+static char default_home[] = "/";
+static char default_editor[] = "vi";
+static char default_shell[] = "/bin/sh";
+static Terminal term;
+static Pane *current_pane;
+static Pane panes[2];
+static int pane_idx;
+char *editor[2] = { default_editor, NULL };
+char *shell[2] = { default_shell, NULL };
+char *home = default_home;
+static pid_t fork_pid, main_pid;
+static char **selected_entries = NULL;
+static int selected_count = 0;
+static int mode;
+
+/* function declarations */
+static void log_to_file(const char *, int, const char *, ...); /* DELETE */
 
 static void filesystem_event_init(void);
 static void *event_handler(void *);
@@ -148,7 +177,7 @@ static void handle_keypress(char);
 static void grabkeys(uint32_t, Key *, size_t);
 static void print_status(ColorPair, const char *, ...);
 static void display_entry_details(void);
-static void get_entry_color(ColorPair *, mode_t);
+static void set_entry_color(Entry *);
 static void get_entry_datetime(char *, time_t);
 static void get_entry_permission(char *, mode_t);
 static void get_file_size(char *, off_t);
@@ -178,14 +207,16 @@ static void move_entries(const Arg *);
 static void open_entry(const Arg *);
 static void paste_entries(const Arg *);
 static void switch_pane(const Arg *);
-static void select_all(const Arg *);
 static void select_entry(const Arg *);
 static void refresh(const Arg *);
 static void toggle_dotfiles(const Arg *);
 static void die(const char *, ...);
 static void *ecalloc(size_t, size_t);
 static void *erealloc(void *, size_t);
-static void log_to_file(const char *, int, const char *, ...);
 static void quit(const Arg *);
+
+static void visual_mode(const Arg *);
+static void update_selection(const Arg *);
+static void normal_mode(const Arg *);
 
 #endif // SFM_H

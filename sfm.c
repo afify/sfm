@@ -55,27 +55,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
 #include <time.h>
-#include <unistd.h>
 
 #include "sfm.h"
 #include "config.h"
-
-/* global variables */
-static Terminal term;
-static Pane *current_pane;
-static Pane panes[2];
-static int pane_idx;
-char *editor[2] = { default_editor, NULL };
-char *shell[2] = { default_shell, NULL };
-char *home = default_home;
-static pid_t fork_pid, main_pid;
-static char **selected_entries = NULL;
-static int selected_count = 0;
-
-enum { Left, Right };    /* panes */
-enum { Wait, DontWait }; /* spawn forks */
 
 static void
 log_to_file(const char *func, int line, const char *format, ...)
@@ -110,12 +93,12 @@ static void
 enable_raw_mode(void)
 {
 	tcgetattr(STDIN_FILENO, &term.orig);
-	term.new = term.orig;
-	term.new.c_lflag &= ~(ECHO | ICANON | ISIG);
-	term.new.c_iflag &= ~(IXON | ICRNL);
-	term.new.c_oflag &= ~(OPOST);
-	term.new.c_cflag |= (CS8);
-	tcsetattr(STDIN_FILENO, TCSAFLUSH, &term.new);
+	term.newterm = term.orig;
+	term.newterm.c_lflag &= ~(ECHO | ICANON | ISIG);
+	term.newterm.c_iflag &= ~(IXON | ICRNL);
+	term.newterm.c_oflag &= ~(OPOST);
+	term.newterm.c_cflag |= (CS8);
+	tcsetattr(STDIN_FILENO, TCSAFLUSH, &term.newterm);
 	if (write(STDOUT_FILENO, "\x1b[?1049h", 8) < 0)
 		die("write:");
 }
@@ -290,6 +273,9 @@ set_pane_entries(Pane *pane)
 		pane->entries[i].name[name_len] = '\0';
 
 		pane->entries[i].st = status;
+
+		set_entry_color(&pane->entries[pane->start_index + i]);
+
 		i++;
 	}
 
@@ -394,7 +380,8 @@ update_screen(void)
 	append_entries(&panes[Right], term.cols / 2);
 	termb_write();
 
-	display_entry_details();
+	if (mode == NormalMode)
+		display_entry_details();
 }
 
 static void
@@ -409,9 +396,7 @@ static void
 append_entries(Pane *pane, int col_offset)
 {
 	int i;
-	ColorPair col;
 	size_t index = 0;
-	char if_selected[] = "\u2B1C";
 
 	if (pane->entries == NULL) {
 		return;
@@ -427,36 +412,27 @@ append_entries(Pane *pane, int col_offset)
 			continue;
 		}
 
-		get_entry_color(
-			&col, pane->entries[pane->start_index + i].st.st_mode);
+		Entry entry = pane->entries[pane->start_index + i];
 
-		if (pane == current_pane &&
-			pane->start_index + i == pane->current_index) {
-			col.attr = col.attr | RVS;
+
+		if (pane->entries[i].selected == 1)
+			entry.color = color_selected;
+
+		if (pane == current_pane && pane->start_index + i == pane->current_index) {
+			entry.color.attr |= RVS;
 		}
 
-		if (pane->entries[i].selected == 1) {
-			strcpy(if_selected, "\u2705");
-		} else {
-			strcpy(if_selected, "\u2B1C");
-		}
+		// Calculate the maximum length for the entry name
+		size_t max_len = term.cols / 2;
 
-		// Truncate string based on byte length
-		size_t max_len = (term.cols / 2);
-		char truncated_name[max_len + 1];
-		strncpy(truncated_name,
-			pane->entries[pane->start_index + i].name, max_len);
-		truncated_name[max_len - 1] = '.';
-		truncated_name[max_len] = '\0';
-
+		// Format the entry with truncation and padding
 		index += snprintf(buffer + index, term.buffer_size - index,
 			"\x1b[%dG"
-			"\x1b[%d;38;5;%d;48;5;%dm%s\x1b[0m"
-			"\x1b[%d;38;5;%dm%s\x1b[0m\r\n",
-			col_offset, color_frame.attr, color_frame.fg,
-			color_frame.bg, if_selected, col.attr, col.fg,
-			truncated_name);
+			"\x1b[%d;38;5;%d;48;5;%dm%-*.*s\x1b[0m\r\n",
+			col_offset, entry.color.attr, entry.color.fg,
+			entry.color.bg, (int)max_len, (int)max_len, entry.name);
 	}
+
 	termb_append(buffer, index);
 	free(buffer);
 }
@@ -540,34 +516,34 @@ display_entry_details(void)
 }
 
 static void
-get_entry_color(ColorPair *col, mode_t mode)
+set_entry_color(Entry *ent)
 {
-	switch (mode & S_IFMT) {
+	switch (ent->st.st_mode & S_IFMT) {
 	case S_IFREG:
-		*col = color_file;
-		if ((S_IXUSR | S_IXGRP | S_IXOTH) & mode)
-			*col = color_exec;
+		ent->color = color_file;
+		if ((S_IXUSR | S_IXGRP | S_IXOTH) & ent->st.st_mode)
+			ent->color = color_exec;
 		break;
 	case S_IFDIR:
-		*col = color_dir;
+		ent->color = color_dir;
 		break;
 	case S_IFLNK:
-		*col = color_lnk;
+		ent->color = color_lnk;
 		break;
 	case S_IFBLK:
-		*col = color_blk;
+		ent->color = color_blk;
 		break;
 	case S_IFCHR:
-		*col = color_chr;
+		ent->color = color_chr;
 		break;
 	case S_IFIFO:
-		*col = color_ifo;
+		ent->color = color_ifo;
 		break;
 	case S_IFSOCK:
-		*col = color_sock;
+		ent->color = color_sock;
 		break;
 	default:
-		*col = color_other;
+		ent->color = color_other;
 		break;
 	}
 }
@@ -752,13 +728,13 @@ open_file(char *file)
 	}
 
 	if (rule_index < 0) {
-		cmd.cmd = editor;
+		cmd.cmdv = editor;
 		cmd.cmdc = 1;
 		cmd.argv = &file;
 		cmd.argc = 1;
 		cmd.wait_exec = Wait;
 	} else {
-		cmd.cmd = (char **)rules[rule_index].v;
+		cmd.cmdv = (char **)rules[rule_index].v;
 		cmd.cmdc = rules[rule_index].vlen;
 		cmd.argv = &file;
 		cmd.argc = 1;
@@ -822,7 +798,7 @@ execute_command(Command *cmd)
 	argc = cmd->cmdc + cmd->argc + 2;
 	argv = ecalloc(argc, sizeof(char *));
 
-	memcpy(argv, cmd->cmd, cmd->cmdc * sizeof(char *));
+	memcpy(argv, cmd->cmdv, cmd->cmdc * sizeof(char *));
 	memcpy(&argv[cmd->cmdc], cmd->argv, cmd->argc * sizeof(char *));
 
 	argv[argc - 1] = NULL;
@@ -1044,7 +1020,7 @@ delete_entry(const Arg *arg)
 		return;
 	}
 
-	cmd.cmd = (char **)rm_cmd;
+	cmd.cmdv = (char **)rm_cmd;
 	cmd.cmdc = rm_cmd_len;
 	cmd.argv = selected_paths;
 	cmd.argc = selected_count;
@@ -1090,6 +1066,12 @@ move_cursor(const Arg *arg)
 		current_pane->start_index =
 			current_pane->current_index - (term.rows - 3);
 	}
+
+	if (mode == VisualMode) {
+		current_pane->entries[current_pane->current_index].selected ^=
+			1;
+	}
+
 	update_screen();
 }
 
@@ -1118,7 +1100,7 @@ move_entries(const Arg *arg)
 	argv[selected_count + 1] = NULL;
 
 	Command cmd;
-	cmd.cmd = (char **)mv_cmd;
+	cmd.cmdv = (char **)mv_cmd;
 	cmd.cmdc = mv_cmd_len;
 	cmd.argv = argv;
 	cmd.argc = selected_count + 1;
@@ -1183,7 +1165,7 @@ paste_entries(const Arg *arg)
 	argv[selected_count + 1] = NULL;
 
 	Command cmd;
-	cmd.cmd = (char **)cp_cmd;
+	cmd.cmdv = (char **)cp_cmd;
 	cmd.cmdc = cp_cmd_len;
 	cmd.argv = argv;
 	cmd.argc = selected_count + 1;
@@ -1221,20 +1203,6 @@ static void
 switch_pane(const Arg *arg)
 {
 	current_pane = &panes[pane_idx ^= 1];
-	update_screen();
-}
-
-static void
-select_all(const Arg *arg)
-{
-	if (current_pane->entry_count <= 0) {
-		print_status(color_warn, "No entries to select.");
-		return;
-	}
-
-	for (int i = 0; i < current_pane->entry_count; i++) {
-		current_pane->entries[i].selected ^= 1;
-	}
 	update_screen();
 }
 
@@ -1528,6 +1496,51 @@ filesystem_event_init(void)
 
 #endif
 
+static void
+visual_mode(const Arg *arg)
+{
+	if (current_pane->entry_count <= 0) {
+		print_status(color_warn, "No entries to select.");
+		return;
+	}
+
+	if (mode == VisualMode) {
+		normal_mode(&(Arg) { 0 });
+	} else {
+		mode = VisualMode;
+		select_entry(&(Arg) { 0 });
+		print_status(color_prompt, " --VISUAL-- ");
+	}
+
+	update_screen();
+}
+
+static void
+normal_mode(const Arg *arg)
+{
+	mode = NormalMode;
+	display_entry_details();
+}
+
+void
+update_selection(const Arg *arg)
+{
+	if (current_pane->entry_count <= 0) {
+		print_status(color_warn, "No entries to select.");
+		return;
+	}
+
+	for (int i = 0; i < current_pane->entry_count; i++) {
+		current_pane->entries[i].selected = (arg->i == SelectAll) ?
+			1 :
+			(arg->i == InvertSelection) ?
+			!current_pane->entries[i].selected :
+			0;
+	}
+
+	update_screen();
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1544,6 +1557,7 @@ main(int argc, char *argv[])
 			    NULL) == -1)
 			die("pledge");
 #endif /* __OpenBSD__ */
+		mode = NormalMode;
 		init_term();
 		enable_raw_mode();
 		get_env();
