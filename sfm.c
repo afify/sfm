@@ -182,6 +182,7 @@ set_panes(void)
 	panes[Left].current_index = 0;
 	panes[Left].watcher.fd = -1;
 	panes[Left].watcher.signal = SIGUSR1;
+	panes[Left].offset = 0;
 
 	strncpy(panes[Right].path, home, PATH_MAX - 1);
 	panes[Right].entries = NULL;
@@ -190,6 +191,7 @@ set_panes(void)
 	panes[Right].current_index = 0;
 	panes[Right].watcher.fd = -1;
 	panes[Right].watcher.signal = SIGUSR2;
+	panes[Right].offset = term.cols / 2;
 
 	pane_idx = Left; /* cursor pane */
 	current_pane = &panes[pane_idx];
@@ -367,18 +369,15 @@ entry_compare(const void *a, const void *b)
 }
 
 static void
-update_screen(void)
+update_screen()
 {
-	termb_append("\x1b[H\x1b[999B\x1b[1J",
-		13); // Move to the last line and clear above
-
-	termb_print_at(1, 1, color_panell, term.cols / 2, panes[Left].path);
-	termb_print_at(
-		1, term.cols / 2, color_panelr, term.cols, panes[Right].path);
-
-	append_entries(&panes[Left], 0);
-	append_entries(&panes[Right], term.cols / 2);
+	write(STDOUT_FILENO, "\x1b[2;1H\x1b[0J\x1b[1A",
+		14); // clear except first and last line
+	append_entries(&panes[Left]);
+	append_entries(&panes[Right]);
 	termb_write();
+
+	write_entries_name();
 
 	if (mode == NormalMode)
 		display_entry_details();
@@ -393,16 +392,20 @@ disable_raw_mode(void)
 }
 
 static void
-append_entries(Pane *pane, int col_offset)
+append_entries(Pane *pane)
 {
 	int i;
 	size_t index = 0;
+	size_t max_len = term.cols / 2;
+	Entry entry;
+	char *buffer;
 
 	if (pane->entries == NULL) {
 		return;
 	}
-	char *buffer = ecalloc(term.buffer_size, sizeof(char));
+	buffer = ecalloc(term.buffer_size, sizeof(char));
 	termb_append("\x1b[2;1f", 6); // move to top left
+
 	for (i = 0;
 		i < term.rows - 2 && pane->start_index + i < pane->entry_count;
 		i++) {
@@ -412,7 +415,7 @@ append_entries(Pane *pane, int col_offset)
 			continue;
 		}
 
-		Entry entry = pane->entries[pane->start_index + i];
+		entry = pane->entries[pane->start_index + i];
 
 		if (pane->entries[i].selected == 1)
 			entry.color = color_selected;
@@ -422,14 +425,11 @@ append_entries(Pane *pane, int col_offset)
 			entry.color.attr |= RVS;
 		}
 
-		// Calculate the maximum length for the entry name
-		size_t max_len = term.cols / 2;
-
 		// Format the entry with truncation and padding
 		index += snprintf(buffer + index, term.buffer_size - index,
 			"\x1b[%dG"
 			"\x1b[%d;38;5;%d;48;5;%dm%-*.*s\x1b[0m\r\n",
-			col_offset, entry.color.attr, entry.color.fg,
+			pane->offset, entry.color.attr, entry.color.fg,
 			entry.color.bg, (int)max_len, (int)max_len, entry.name);
 	}
 
@@ -871,36 +871,23 @@ termb_write(void)
 }
 
 static void
-termb_print_at(
-	uint16_t x, uint16_t y, ColorPair col, int end, const char *fmt, ...)
+write_entries_name(void)
 {
-	char buf[term.cols];
-	int buf_len;
-	size_t max_result_size;
-	size_t result_len;
-	va_list vl;
+	int half_cols = term.cols / 2;
+	char result[term.cols + 100];
 
-	va_start(vl, fmt);
-	buf_len = vsnprintf(buf, term.cols, fmt, vl);
-	va_end(vl);
+	int result_len = snprintf(result, sizeof(result),
+		"\x1b[1;1H"                   // Move cursor to top-left corner
+		"\x1b[%hu;38;5;%hu;48;5;%hum" // Set colors for left pane
+		"%-*.*s"                      // Left string with padding
+		"\x1b[%hu;38;5;%hu;48;5;%hum" // Set colors for right pane
+		"%-*.*s"                      // Right string with padding
+		"\x1b[0m",                    // Reset colors
+		color_panell.attr, color_panell.fg, color_panell.bg, half_cols,
+		half_cols, panes[Left].path, color_panelr.attr, color_panelr.fg,
+		color_panelr.bg, half_cols, half_cols, panes[Right].path);
 
-	// Fill the rest of the line with spaces to ensure the highlight spans the entire line
-	int padding_len = end - y - buf_len;
-	if (padding_len < 0)
-		padding_len = 0; // Ensure we do not have negative padding
-
-	max_result_size = 4 + UINT16_LEN + UINT16_LEN + 15 + UINT8_LEN +
-		UINT8_LEN + UINT8_LEN + buf_len + padding_len + 6 + 1;
-
-	char result[max_result_size];
-	result_len = snprintf(result, max_result_size,
-		"\x1b[%hu;%huf"               // Move cursor to x y positions
-		"\x1b[%hu;38;5;%hu;48;5;%hum" // Set string colors
-		"%s%*s"      // String with padding to 'end' position
-		"\x1b[0;0m", // Reset colors
-		x, y, col.attr, col.fg, col.bg, buf, padding_len, "");
-
-	termb_append(result, result_len);
+	write(STDOUT_FILENO, result, result_len);
 }
 
 static void

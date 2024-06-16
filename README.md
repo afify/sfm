@@ -3,6 +3,8 @@
 **simple file manager**
 
 [![Build status](https://ci.appveyor.com/api/projects/status/goq88ahjyvtjrui2?svg=true)](https://ci.appveyor.com/project/afify/sfm)
+[![CodeQL](https://github.com/afify/sfm/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/afify/sfm/actions/workflows/github-code-scanning/codeql)
+[![Cross platform build](https://github.com/afify/sfm/actions/workflows/action.yaml/badge.svg)](https://github.com/afify/sfm/actions/workflows/action.yaml)
 
 Description
 ------------

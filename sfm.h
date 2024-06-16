@@ -108,6 +108,7 @@ typedef struct {
 	int *matched_indices;
 	int matched_count;
 	int current_match;
+	int offset;
 } Pane;
 
 typedef union {
@@ -181,7 +182,7 @@ static int get_selected_paths(Pane *, char **);
 static int entry_compare(const void *const, const void *const);
 static void update_screen(void);
 static void disable_raw_mode(void);
-static void append_entries(Pane *, int);
+static void append_entries(Pane *);
 static void handle_keypress(char);
 static void grabkeys(uint32_t, Key *, size_t);
 static void print_status(ColorPair, const char *, ...);
@@ -232,5 +233,6 @@ static void update_search_highlight(const char *);
 static void start_search(const Arg *);
 static void cancel_search_highlight(void);
 static void move_to_match(const Arg *);
+static void write_entries_name(void);
 
 #endif // SFM_H
