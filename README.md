@@ -15,10 +15,8 @@ sfm is a simple file manager for unix-like systems.
 * open files by extension.
 * bottom statusbar.
 * vim-like key bindings.
-* filter.
 * no dependencies.
-* c99 static linking.
-* based on [termbox](https://github.com/nsf/termbox).
+* c99.
 * Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
 * Follows the suckless [philosophy](https://suckless.org/philosophy/).
 
@@ -48,23 +46,19 @@ Installation
 
 **current**
 ```sh
-git clone git://git.afify.dev/sfm
+git clone https://github.com/afify/sfm
 cd sfm/
 make
 make install
 ```
 **latest release**
 ```sh
-[ "$(uname)" = "Linux" ] && shacmd="sha256sum" grepf="--color=never"|| shacmd="sha256"
-latest=$(curl -s https://git.afify.dev/sfm/tags.xml | grep $grepf -m 1 -o "\[v.*\]" | tr -d '[]')
-tgz="https://git.afify.dev/sfm/releases/sfm-${latest}.tar.gz"
-sha="${tgz}.sha256"
-wget "${tgz}"
-wget "${sha}"
-${shacmd} -c "sfm-${latest}.tar.gz.sha256" && \
-tar -xzf "sfm-${latest}.tar.gz" && cd "sfm-${latest}" && \
-make
-make install
+latest=$(curl -s https://api.github.com/repos/afify/sfm/releases/latest | grep -o '"tag_name": "[^"]*' | cut -d'"' -f4)
+tgz="https://github.com/afify/sfm/archive/refs/tags/${latest}.tar.gz"
+curl -L -o "sfm-${latest}.tar.gz" "${tgz}"
+tar -xzf "sfm-${latest}.tar.gz"
+cd "sfm-${latest#v}" && \
+make && make install || echo "Build failed!"
 ```
 
 Run
