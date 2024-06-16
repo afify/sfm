@@ -42,17 +42,14 @@ scroll up
 .B ctrl+d
 scroll down
 .TP
-.B n
-create new file if not exists
+.B ctrl+f
+create new file
 .TP
-.B N
-create new directory if not exists
+.B ctrl+m
+create new directory
 .TP
 .B d
 delete file | directory recursively
-.TP
-.B D
-duplicate file | directory recursively
 .TP
 .B y
 yank
@@ -63,30 +60,6 @@ paste
 .B P
 move
 .TP
-.B b
-spawn a shell in the current directory
-.TP
-.B c
-start change
-.TP
-.B cw
-rename
-.TP
-.B co
-change owner and group (chown)
-.TP
-.B cm
-change mode (chmod)
-.TP
-.B cf
-change flags (chflags | chattr)
-.TP
-.B cc
-exit change
-.TP
-.B cq
-exit change
-.TP
 .B .
 toggle dotfiles
 .TP
@@ -94,13 +67,13 @@ toggle dotfiles
 start visual mode
 .TP
 .B /
-start filter
+start search
 .TP
-.B ENTER
-find filter
+.B n
+next match
 .TP
-.B ESC
-exit filter
+.B N
+previous match
 .TP
 .B SPACE
 switch pane
@@ -125,7 +98,7 @@ exit visual mode
 exit visual mode
 .TP
 .B ESC
-exit visual mode | change
+exit visual mode
 .SH CUSTOMIZATION
 sfm is customized by creating a custom
 .IR config.h

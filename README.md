@@ -1,4 +1,4 @@
-<img src="https://afify.dev/img/sfm.png" alt="sfm logo"/>
+<img src="https://raw.githubusercontent.com/afify/sfm/main/sfm.png" alt="sfm logo"/>
 
 **simple file manager**
 
@@ -7,16 +7,16 @@
 Description
 ------------
 sfm is a simple file manager for unix-like systems.
-* pthreads(7) to read events, no timers.
 * BSD kqueue(2) - kernel event notification mechanism.
 * Linux inotify(7) - monitoring filesystem events.
+* pthreads(7) to read events, no timers.
 * dual pane.
 * bookmarks.
 * open files by extension.
 * bottom statusbar.
 * vim-like key bindings.
 * no dependencies.
-* c99.
+* search.
 * Inspired by [vifm](https://vifm.info/) and [noice](https://git.2f30.org/noice/).
 * Follows the suckless [philosophy](https://suckless.org/philosophy/).
 
