@@ -130,7 +130,7 @@ typedef struct {
 
 enum { Left, Right };    /* panes */
 enum { Wait, DontWait }; /* spawn forks */
-enum { NormalMode, VisualMode };
+enum { NormalMode, VisualMode, SearchMode };
 enum { SelectNone, SelectAll, InvertSelection };
 
 /* global variables */
@@ -218,5 +218,11 @@ static void quit(const Arg *);
 static void visual_mode(const Arg *);
 static void update_selection(const Arg *);
 static void normal_mode(const Arg *);
+
+static void update_search_highlight(const char *);
+static void start_search(const Arg *);
+static void cancel_search_highlight(void);
+
+
 
 #endif // SFM_H

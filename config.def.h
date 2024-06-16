@@ -24,7 +24,7 @@ static const ColorPair color_panell    = { 166, 233, BOLD };
 static const ColorPair color_panelr    = { 5,   233, BOLD };
 static const ColorPair color_status    = { 243, 0,   NORM };
 
-static const ColorPair color_search    = { 255, 0,   NORM };
+static const ColorPair color_search    = { 1, 0,   NORM };
 static const ColorPair color_selected  = { 21, 118,  NORM };
 
 static const ColorPair color_prompt    = { 33,  0,   NORM };
@@ -114,6 +114,8 @@ static Key nkeys[] = {
 	{ 'x',                 update_selection, { .i = SelectNone }      },
 	{ 'a',                 update_selection, { .i = SelectAll }       },
 	{ 'i',                 update_selection, { .i = InvertSelection } },
+	{ '/', start_search, { 0 } },
+
 };
 
 static const size_t nkeyslen = LEN(nkeys);

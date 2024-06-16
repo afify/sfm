@@ -414,11 +414,11 @@ append_entries(Pane *pane, int col_offset)
 
 		Entry entry = pane->entries[pane->start_index + i];
 
-
 		if (pane->entries[i].selected == 1)
 			entry.color = color_selected;
 
-		if (pane == current_pane && pane->start_index + i == pane->current_index) {
+		if (pane == current_pane &&
+			pane->start_index + i == pane->current_index) {
 			entry.color.attr |= RVS;
 		}
 
@@ -441,6 +441,17 @@ static void
 handle_keypress(char c)
 {
 	log_to_file(__func__, __LINE__, "key: (%c)", c);
+
+	if (mode == SearchMode) {
+		if (c == XK_ESC || c == '/') {
+			cancel_search_highlight();
+			mode = NormalMode;
+			update_screen();
+			return;
+		}
+		return; // Ignore other keypresses in search mode
+	}
+
 	grabkeys(c, nkeys, nkeyslen);
 }
 
@@ -1539,6 +1550,70 @@ update_selection(const Arg *arg)
 	}
 
 	update_screen();
+}
+
+static void
+start_search(const Arg *arg)
+{
+	if (mode == SearchMode) {
+		cancel_search_highlight();
+		mode = NormalMode;
+		update_screen();
+		return;
+	}
+
+	mode = SearchMode;
+	char search_term[NAME_MAX] = { 0 };
+	int index = 0;
+	char c;
+
+	print_status(color_prompt, "Search: ");
+
+	while (1) {
+		c = getchar();
+		if (c == XK_ENTER || c == XK_ESC || c == '/') {
+			break;
+		} else if (c == XK_BACKSPACE && index > 0) {
+			index--;
+			search_term[index] = '\0';
+		} else if (index < NAME_MAX - 1) {
+			search_term[index++] = c;
+			search_term[index] = '\0';
+		}
+
+		update_search_highlight(search_term);
+	}
+
+	// Reset the colors if search is canceled or finished
+	if (c == XK_ESC || c == '/') {
+		cancel_search_highlight();
+		mode = NormalMode;
+	} else if (c == XK_ENTER) {
+		mode = NormalMode;
+	}
+	update_screen();
+}
+
+static void
+update_search_highlight(const char *search_term)
+{
+	for (int i = 0; i < current_pane->entry_count; i++) {
+		if (strstr(current_pane->entries[i].name, search_term) !=
+			NULL) {
+			current_pane->entries[i].color = color_search;
+		} else {
+			set_entry_color(&current_pane->entries[i]);
+		}
+	}
+	update_screen();
+}
+
+static void
+cancel_search_highlight(void)
+{
+	for (int i = 0; i < current_pane->entry_count; i++) {
+		set_entry_color(&current_pane->entries[i]);
+	}
 }
 
 int
