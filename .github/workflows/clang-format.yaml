@@ -3,10 +3,10 @@ name: Clang Format Check
 on:
   push:
     branches:
-      - term
+      - main
   pull_request:
     branches:
-      - term
+      - main
 
 jobs:
   clang-format:
@@ -14,17 +14,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install clang-format
         run: sudo apt-get install -y clang-format
 
-      - name: Run clang-format
+      - name: Run clang-format and check for issues
         run: |
           clang-format -i sfm.c sfm.h
-
-      - name: Check for formatting changes
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git diff --exit-code || (git add sfm.c sfm.h && git commit -m "Apply clang-format changes" && git push)
+          git diff --exit-code
+        shell: bash

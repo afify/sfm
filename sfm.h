@@ -52,7 +52,10 @@
 #define LEN(A)           (sizeof(A) / sizeof(A[0]))
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
 
-#define RULE(category, command) {category, LEN(category), command, LEN(command)}
+#define RULE(category, command)                                \
+	{                                                      \
+		category, LEN(category), command, LEN(command) \
+	}
 
 typedef struct {
 	struct termios orig;
@@ -222,7 +225,5 @@ static void normal_mode(const Arg *);
 static void update_search_highlight(const char *);
 static void start_search(const Arg *);
 static void cancel_search_highlight(void);
-
-
 
 #endif // SFM_H
