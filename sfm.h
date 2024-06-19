@@ -3,14 +3,6 @@
 #ifndef SFM_H
 #define SFM_H
 
-#include <sys/types.h>
-#include <sys/stat.h>
-
-#include <limits.h>
-#include <stdint.h>
-#include <termios.h>
-#include <unistd.h>
-
 /* macros */
 #define NORM   0
 #define BOLD   1
@@ -52,9 +44,9 @@
 #define LEN(A)           (sizeof(A) / sizeof(A[0]))
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
 
-#define RULE(category, command)                                \
-	{                                                      \
-		category, LEN(category), command, LEN(command) \
+#define RULE(category, command, wait)                                  \
+	{                                                              \
+		category, LEN(category), command, LEN(command), (wait) \
 	}
 
 typedef struct {
@@ -83,19 +75,25 @@ typedef struct {
 	ColorPair color;
 } Entry;
 
+#if defined(__linux__)
 typedef struct {
 	char directory[PATH_MAX];
 	pthread_t thread;
 	int fd;
 	int signal;
-#if defined(__linux__)
 	int descriptor;
+} Watcher;
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
 	defined(__APPLE__) || defined(__DragonFly__)
+typedef struct {
+	char directory[PATH_MAX];
+	pthread_t thread;
+	int fd;
+	int signal;
 	struct kevent change;
 	int kq;
-#endif
 } Watcher;
+#endif
 
 typedef struct {
 	char path[PATH_MAX];
@@ -127,6 +125,7 @@ typedef struct {
 	size_t exlen;
 	const void *v;
 	size_t vlen;
+	int wait_exec;
 } Rule;
 
 typedef struct {
@@ -137,36 +136,14 @@ typedef struct {
 	int wait_exec;
 } Command;
 
-enum { Left, Right };    /* panes */
-enum { Wait, DontWait }; /* spawn forks */
+enum { Left, Right };                  /* panes */
+enum { Wait = 0, DontWait = WNOHANG }; /* spawn forks */
 enum { NormalMode, VisualMode, SearchMode };
 enum { SelectNone, SelectAll, InvertSelection };
-enum { NextMatch, PrevMatch };
-
-/* global variables */
-static char default_home[] = "/";
-static char default_editor[] = "vi";
-static char default_shell[] = "/bin/sh";
-static Terminal term;
-static Pane *current_pane;
-static Pane panes[2];
-static int pane_idx;
-char *editor[2] = { default_editor, NULL };
-char *shell[2] = { default_shell, NULL };
-char *home = default_home;
-static pid_t fork_pid, main_pid;
-static char **selected_entries = NULL;
-static int selected_count = 0;
-static int mode;
+enum { NextMatch, PrevMatch }; /* search */
 
 /* function declarations */
 static void log_to_file(const char *, int, const char *, ...); /* DELETE */
-
-static void filesystem_event_init(void);
-static void *event_handler(void *);
-static void add_watch(Pane *);
-static void remove_watch(Pane *);
-static void cleanup_filesystem_events(void);
 
 static void init_term(void);
 static void enable_raw_mode(void);
@@ -201,9 +178,17 @@ static int check_rule(char *);
 static int execute_command(Command *);
 static void termb_append(const char *, size_t);
 static void termb_write(void);
-static void termb_print_at(
-	uint16_t, uint16_t, ColorPair, int, const char *, ...);
 static void termb_resize(void);
+
+static void filesystem_event_init(void);
+static void *event_handler(void *);
+static void add_watch(Pane *);
+static void remove_watch(Pane *);
+static void cleanup_filesystem_events(void);
+static void update_search_highlight(const char *);
+static void cancel_search_highlight(void);
+static void write_entries_name(void);
+static void spawn(Command *);
 
 static void cd_to_parent(const Arg *);
 static void create_new_file(const Arg *);
@@ -228,11 +213,7 @@ static void quit(const Arg *);
 static void visual_mode(const Arg *);
 static void update_selection(const Arg *);
 static void normal_mode(const Arg *);
-
-static void update_search_highlight(const char *);
 static void start_search(const Arg *);
-static void cancel_search_highlight(void);
 static void move_to_match(const Arg *);
-static void write_entries_name(void);
 
 #endif // SFM_H

@@ -52,22 +52,39 @@
 #include <pwd.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "sfm.h"
 #include "config.h"
 
+/* global variables */
+static Terminal term;
+static Pane *current_pane;
+static Pane panes[2];
+static int pane_idx;
+char *editor[2] = { "vi", NULL };
+char *shell[2] = { "/bin/sh", NULL };
+char *home = "/";
+static pid_t fork_pid, main_pid;
+static char **selected_entries = NULL;
+static int selected_count = 0;
+static int mode;
+
 static void
 log_to_file(const char *func, int line, const char *format, ...)
 {
+	pid_t pid = getpid();
 	FILE *logfile = fopen("/tmp/sfm.log", "a");
 	if (logfile) {
 		va_list args;
 		va_start(args, format);
-		fprintf(logfile, "[%s:%d] ", func, line);
+		fprintf(logfile, "%d-- [%s:%d] ", pid, func, line);
 		vfprintf(logfile, format, args);
 		va_end(args);
 		fprintf(logfile, "\n");
@@ -154,13 +171,16 @@ sighandler(int signo)
 
 	switch (signo) {
 	case SIGWINCH:
+		log_to_file(__func__, __LINE__, "SIGWINCH");
 		termb_resize();
 		break;
 	case SIGUSR1:
+		log_to_file(__func__, __LINE__, "SIGUSR1");
 		set_pane_entries(&panes[Left]);
 		update_screen();
 		break;
 	case SIGUSR2:
+		log_to_file(__func__, __LINE__, "SIGUSR2");
 		set_pane_entries(&panes[Right]);
 		update_screen();
 		break;
@@ -283,8 +303,8 @@ set_pane_entries(Pane *pane)
 
 	pane->entry_count = i;
 
-	closedir(dir);
-	close(fd);
+	if (closedir(dir) < 0)
+		die("closedir:");
 	qsort(pane->entries, pane->entry_count, sizeof(Entry), entry_compare);
 }
 
@@ -369,18 +389,20 @@ entry_compare(const void *a, const void *b)
 }
 
 static void
-update_screen()
+update_screen(void)
 {
-	write(STDOUT_FILENO, "\x1b[2;1H\x1b[0J\x1b[1A",
-		14); // clear except first and last line
+	// clear all except last line
+	write(STDOUT_FILENO, "\x1b[F\x1b[A\x1b[999C\x1b[1J", 16);
 	append_entries(&panes[Left]);
 	append_entries(&panes[Right]);
 	termb_write();
-
 	write_entries_name();
 
-	if (mode == NormalMode)
+	log_to_file(__func__, __LINE__, "err: (%d)", errno);
+	if (mode == NormalMode && errno == 0)
 		display_entry_details();
+	else
+		print_status(color_err, strerror(errno));
 }
 
 static void
@@ -417,9 +439,11 @@ append_entries(Pane *pane)
 
 		entry = pane->entries[pane->start_index + i];
 
+		/* selected entry */
 		if (pane->entries[i].selected == 1)
 			entry.color = color_selected;
 
+		/* current entry */
 		if (pane == current_pane &&
 			pane->start_index + i == pane->current_index) {
 			entry.color.attr |= RVS;
@@ -435,6 +459,7 @@ append_entries(Pane *pane)
 
 	termb_append(buffer, index);
 	free(buffer);
+	buffer = NULL;
 }
 
 static void
@@ -666,7 +691,7 @@ get_user_input(char *input, size_t size, const char *prompt, ...)
 
 	va_start(args, prompt);
 	vsnprintf(msg, PROMPT_MAX, prompt, args);
-	print_status(color_prompt, msg);
+	print_status(color_normal, msg);
 	va_end(args);
 
 	size_t index = 0;
@@ -734,6 +759,7 @@ open_file(char *file)
 	if (ext != NULL) {
 		rule_index = check_rule(ext);
 		free(ext);
+		ext = NULL;
 	}
 
 	if (rule_index < 0) {
@@ -747,18 +773,108 @@ open_file(char *file)
 		cmd.cmdc = rules[rule_index].vlen;
 		cmd.argv = &file;
 		cmd.argc = 1;
-		cmd.wait_exec = Wait;
+		cmd.wait_exec = rules[rule_index].wait_exec;
 	}
 
-	disable_raw_mode();
-	if (execute_command(&cmd) != 0) {
-		log_to_file(__func__, __LINE__, "%s", strerror(errno));
-		print_status(color_err, strerror(errno));
-	}
-	enable_raw_mode();
-	termb_resize();
+	spawn(&cmd);
 
 	return 0;
+}
+
+static void
+spawn(Command *cmd)
+{
+	int execvp_errno;
+
+	if (cmd->wait_exec == Wait)
+		disable_raw_mode();
+
+	execvp_errno = execute_command(cmd);
+
+	if (cmd->wait_exec == Wait) {
+		enable_raw_mode();
+		termb_resize();
+	}
+
+	switch (execvp_errno) {
+	case 0:
+		break;
+	case ENOENT:
+		print_status(color_err, "Command not found: %s", cmd->cmdv[0]);
+		break;
+	case EACCES:
+		print_status(color_err, "Permission denied: %s", cmd->argv[0]);
+		break;
+	case E2BIG:
+		print_status(
+			color_err, "Argument list too long: %s", cmd->argv[0]);
+		break;
+	case EFAULT:
+		print_status(color_err, "Bad address: %s", cmd->argv[0]);
+		break;
+	case EIO:
+		print_status(color_err, "I/O error: %s", cmd->argv[0]);
+		break;
+	case ENOEXEC:
+		print_status(color_err, "Exec format error: %s", cmd->argv[0]);
+		break;
+	case ENOMEM:
+		print_status(color_err, "Out of memory: %s", cmd->argv[0]);
+		break;
+	case ENOTDIR:
+		print_status(color_err, "Not a directory: %s", cmd->argv[0]);
+		break;
+	case ETXTBSY:
+		print_status(color_err, "Text file busy: %s", cmd->argv[0]);
+		break;
+	case EPERM:
+		print_status(
+			color_err, "Operation not permitted: %s", cmd->argv[0]);
+		break;
+	case ELOOP:
+		print_status(color_err,
+			"Too many symbolic links encountered: %s",
+			cmd->argv[0]);
+		break;
+	case ENAMETOOLONG:
+		print_status(color_err, "File name too long: %s", cmd->argv[0]);
+		break;
+	case ENFILE:
+		print_status(
+			color_err, "File table overflow: %s", cmd->argv[0]);
+		break;
+	case ENODEV:
+		print_status(color_err, "No such device: %s", cmd->argv[0]);
+		break;
+	case ENOLCK:
+		print_status(color_err, "No locks available: %s", cmd->argv[0]);
+		break;
+	case ENOSYS:
+		print_status(color_err, "Function not implemented: %s",
+			cmd->argv[0]);
+		break;
+	case ENOTBLK:
+		print_status(
+			color_err, "Block device required: %s", cmd->argv[0]);
+		break;
+	case EISDIR:
+		print_status(color_err, "Is a directory: %s", cmd->argv[0]);
+		break;
+	case EROFS:
+		print_status(
+			color_err, "Read-only file system: %s", cmd->argv[0]);
+		break;
+	case EMFILE:
+		print_status(
+			color_err, "Too many open files: %s", cmd->argv[0]);
+		break;
+	default:
+		print_status(color_err, "execvp failed with errno: %d",
+			execvp_errno);
+		break;
+	}
+
+	errno = 0;
 }
 
 static char *
@@ -802,7 +918,9 @@ execute_command(Command *cmd)
 	char **argv;
 	char log_command[99024];
 	size_t pos;
-	pid_t fork_pid;
+	int wait_status;
+	int exit_status = 0;
+	int exit_errno = 0;
 
 	argc = cmd->cmdc + cmd->argc + 2;
 	argv = ecalloc(argc, sizeof(char *));
@@ -832,20 +950,25 @@ execute_command(Command *cmd)
 	switch (fork_pid) {
 	case -1:
 		free(argv);
+		argv = NULL;
 		return -1;
 	case 0:
-		execvp(argv[0], argv);
-		exit(EXIT_FAILURE);
+		exit_status = execvp(argv[0], argv);
+		if (exit_status < 0) {
+			free(argv);
+			argv = NULL;
+		}
+		exit(errno);
 	default:
-		if (cmd->wait_exec == Wait) {
-			int status;
-			waitpid(fork_pid, &status, 0);
+		waitpid(fork_pid, &wait_status, cmd->wait_exec);
+		if (WIFEXITED(wait_status) && WEXITSTATUS(wait_status)) {
+			exit_errno = WEXITSTATUS(wait_status);
 		}
 	}
 	free(argv);
+	argv = NULL;
 	fork_pid = 0;
-
-	return 0;
+	return exit_errno;
 }
 
 static void
@@ -971,9 +1094,16 @@ copy_entries(const Arg *arg)
 	selected_count = get_selected_paths(current_pane, selected_entries);
 
 	if (selected_count < 1) {
+		selected_entries[0] =
+			current_pane->entries[current_pane->current_index]
+				.fullpath;
+		selected_count = 1;
+	}
+
+	if (selected_count < 1) {
 		print_status(color_warn, "No entries selected.");
 	} else {
-		print_status(color_status, "Entries copied.");
+		print_status(color_normal, "Entries copied.");
 	}
 }
 
@@ -981,9 +1111,7 @@ static void
 delete_entry(const Arg *arg)
 {
 	Command cmd;
-	int selected_count;
 	char confirmation[4];
-	char **selected_paths;
 
 	if (current_pane->entry_count <= 0 ||
 		current_pane->current_index >= current_pane->entry_count) {
@@ -991,43 +1119,46 @@ delete_entry(const Arg *arg)
 		return;
 	}
 
-	selected_paths = ecalloc(current_pane->entry_count, PATH_MAX);
-	selected_count = get_selected_paths(current_pane, selected_paths);
+	selected_entries = ecalloc(current_pane->entry_count, PATH_MAX);
+	selected_count = get_selected_paths(current_pane, selected_entries);
 
 	if (selected_count < 1) {
-		selected_paths[0] =
+		selected_entries[0] =
 			current_pane->entries[current_pane->current_index]
 				.fullpath;
 		selected_count = 1;
 	}
 
 	log_to_file(__func__, __LINE__, "SELECTED COUNT = %d", selected_count);
-	log_to_file(__func__, __LINE__, "SELECTED = %s", selected_paths[0]);
+	log_to_file(__func__, __LINE__, "SELECTED = %s", selected_entries[0]);
 
 	/* confirmation */
 	if (get_user_input(confirmation, sizeof(confirmation), "Delete (%s)?",
 		    delconf) < 0) {
-		free(selected_paths);
+		free(selected_entries);
+		selected_entries = NULL;
+		selected_count = 0;
 		return;
 	}
 	if (strncmp(confirmation, delconf, delconf_len) != 0) {
 		print_status(color_warn, "Deletion aborted.");
-		free(selected_paths);
+		free(selected_entries);
+		selected_entries = NULL;
+		selected_count = 0;
 		return;
 	}
 
 	cmd.cmdv = (char **)rm_cmd;
 	cmd.cmdc = rm_cmd_len;
-	cmd.argv = selected_paths;
+	cmd.argv = selected_entries;
 	cmd.argc = selected_count;
 	cmd.wait_exec = DontWait;
 
-	if (execute_command(&cmd) != 0) {
-		log_to_file(__func__, __LINE__, "%s", strerror(errno));
-		print_status(color_err, strerror(errno));
-	}
+	spawn(&cmd);
 
-	free(selected_paths);
+	free(selected_entries);
+	selected_entries = NULL;
+	selected_count = 0;
 }
 
 static void
@@ -1100,14 +1231,15 @@ move_entries(const Arg *arg)
 	cmd.cmdc = mv_cmd_len;
 	cmd.argv = argv;
 	cmd.argc = selected_count + 1;
-	cmd.wait_exec = Wait;
+	cmd.wait_exec = DontWait;
 
-	if (execute_command(&cmd) != 0) {
-		log_to_file(__func__, __LINE__, "%s", strerror(errno));
-		print_status(color_err, strerror(errno));
-	}
+	spawn(&cmd);
 
+	free(selected_entries);
+	selected_entries = NULL;
+	selected_count = 0;
 	free(argv);
+	argv = NULL;
 }
 
 static void
@@ -1134,6 +1266,7 @@ open_entry(const Arg *arg)
 		break;
 	case 1: /* not a directory open file */
 		if (S_ISREG(current_entry->st.st_mode)) {
+			errno = 0; /* check_dir errno */
 			s = open_file(current_entry->fullpath);
 			if (s < 0)
 				print_status(color_err, strerror(errno));
@@ -1148,7 +1281,7 @@ static void
 paste_entries(const Arg *arg)
 {
 	if (selected_count <= 0) {
-		print_status(color_warn, "No entries copied.");
+		print_status(color_warn, "No entries copied");
 		log_to_file(__func__, __LINE__, "No entries copied.");
 		return;
 	}
@@ -1165,20 +1298,24 @@ paste_entries(const Arg *arg)
 	cmd.cmdc = cp_cmd_len;
 	cmd.argv = argv;
 	cmd.argc = selected_count + 1;
-	cmd.wait_exec = Wait;
+	cmd.wait_exec = DontWait;
 
-	if (execute_command(&cmd) != 0) {
-		log_to_file(__func__, __LINE__, "%s", strerror(errno));
-		print_status(color_err, strerror(errno));
-	}
+	spawn(&cmd);
 
+	free(selected_entries);
+	selected_entries = NULL;
+	selected_count = 0;
 	free(argv);
+	argv = NULL;
 }
 
 static void
 quit(const Arg *arg)
 {
+	cancel_search_highlight();
 	cleanup_filesystem_events();
+	if (selected_entries != NULL)
+		free(selected_entries);
 	if (term.buffer != NULL)
 		free(term.buffer);
 	if (panes[Left].entries != NULL)
@@ -1311,9 +1448,8 @@ event_handler(void *arg)
 void
 add_watch(Pane *pane)
 {
-	pane->watcher.descriptor =
-		inotify_add_watch(pane->watcher.fd, pane->path,
-			IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO);
+	pane->watcher.descriptor = inotify_add_watch(
+		pane->watcher.fd, pane->path, IN_CREATE | IN_DELETE);
 	if (pane->watcher.descriptor < 0) {
 		log_to_file(__func__, __LINE__,
 			"Error adding inotify watch: %s", strerror(errno));
@@ -1505,7 +1641,7 @@ visual_mode(const Arg *arg)
 	} else {
 		mode = VisualMode;
 		select_entry(&(Arg) { 0 });
-		print_status(color_prompt, " --VISUAL-- ");
+		print_status(color_normal, " --VISUAL-- ");
 	}
 
 	update_screen();
@@ -1595,6 +1731,9 @@ update_search_highlight(const char *search_term)
 static void
 cancel_search_highlight(void)
 {
+	if (current_pane->matched_indices == NULL)
+		return;
+
 	for (int i = 0; i < current_pane->entry_count; i++) {
 		set_entry_color(&current_pane->entries[i]);
 	}

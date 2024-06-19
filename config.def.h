@@ -27,7 +27,7 @@ static const ColorPair color_status    = { 243, 0,   NORM };
 static const ColorPair color_search    = { 15, 104,   NORM };
 static const ColorPair color_selected  = { 21, 118,  NORM };
 
-static const ColorPair color_prompt    = { 33,  0,   NORM };
+static const ColorPair color_normal    = { 33,  0,   NORM };
 static const ColorPair color_warn      = { 220, 0,   NORM };
 static const ColorPair color_err       = { 124, 0,   BOLD };
 
@@ -77,12 +77,12 @@ static const char *docs[]   = { "odt", "doc", "docx", "xls", "xlsx", "odp",
                                 "ods", "pptx", "odg" };
 
 static Rule rules[] = {
-	RULE(videos, mpv),
-	RULE(images, sxiv),
-	RULE(pdf,    mupdf),
-	RULE(docs,   libreoffice),
-	RULE(arts,   gimp),
-	RULE(obj,    r2)
+	RULE(videos, mpv,         DontWait),
+	RULE(images, sxiv,        DontWait),
+	RULE(pdf,    mupdf,       DontWait),
+	RULE(docs,   libreoffice, DontWait),
+	RULE(arts,   gimp,        DontWait),
+	RULE(obj,    r2,          Wait)
 };
 
 /* normal keys */
