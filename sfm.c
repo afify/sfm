@@ -2,8 +2,8 @@
 
 #if defined(__linux__)
 	#define _GNU_SOURCE
-	#include <sys/types.h>
 	#include <sys/inotify.h>
+	#include <sys/types.h>
 	#define EV_BUF_LEN (1024 * (sizeof(struct inotify_event) + 16))
 	#define OFF_T      "%ld"
 	#define M_TIME     st_mtim
@@ -15,6 +15,7 @@
 	#include <sys/event.h>
 
 	#include <fcntl.h>
+	#include <limits.h>
 	#define OFF_T  "%lld"
 	#define M_TIME st_mtimespec
 
@@ -25,6 +26,7 @@
 	#include <sys/event.h>
 
 	#include <fcntl.h>
+	#include <limits.h>
 	#define OFF_T  "%ld"
 	#define M_TIME st_mtim
 
@@ -52,7 +54,6 @@
 #include <pwd.h>
 #include <signal.h>
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -100,7 +101,7 @@ static void
 init_term(void)
 {
 	get_term_size();
-	term.buffer_size = term.rows * term.cols * 4;
+	term.buffer_size = (unsigned long)term.rows * term.cols * 4;
 	term.buffer = ecalloc(term.buffer_size, sizeof(char));
 	term.buffer_left = term.buffer_size;
 	term.buffer_index = 0;
@@ -132,9 +133,9 @@ get_term_size(void)
 static void
 get_env(void)
 {
-	char *env_editor;
-	char *env_shell;
-	char *env_home;
+	char *env_editor = NULL;
+	char *env_shell = NULL;
+	char *env_home = NULL;
 
 	env_editor = getenv("EDITOR");
 	if (env_editor != NULL)
@@ -183,6 +184,8 @@ sighandler(int signo)
 		log_to_file(__func__, __LINE__, "SIGUSR2");
 		set_pane_entries(&panes[Right]);
 		update_screen();
+		break;
+	default:
 		break;
 	}
 }
@@ -503,7 +506,7 @@ print_status(ColorPair color, const char *fmt, ...)
 	result_len = snprintf(result, max_result_size,
 		"\x1b[%d;1f" // moves cursor to last line, column 1
 		"\x1b[2K"    // erase the entire line
-		"\x1b[%hu;38;5;%hu;48;5;%hum" // set string colors
+		"\x1b[%d;38;5;%d;48;5;%dm" // set string colors
 		"%s"
 		"\x1b[0;0m", // reset colors
 		term.rows, color.attr, color.fg, color.bg, buf);
@@ -515,7 +518,11 @@ print_status(ColorPair color, const char *fmt, ...)
 static void
 display_entry_details(void)
 {
-	char sz[32], ur[USER_MAX], gr[GROUP_MAX], dt[DATETIME_MAX], prm[11];
+	char sz[FSIZE_MAX];
+	char ur[USER_MAX];
+	char gr[GROUP_MAX];
+	char dt[DATETIME_MAX];
+	char prm[PERMISSION_MAX];
 	struct stat st;
 
 	if (current_pane == NULL || current_pane->entries == NULL ||
@@ -594,7 +601,7 @@ get_entry_datetime(char *buf, time_t status)
 static void
 get_entry_permission(char *buf, mode_t mode)
 {
-	size_t i;
+	size_t i = 0;
 	const char chars[] = "rwxrwxrwx";
 
 	if (S_ISDIR(mode))
@@ -614,10 +621,10 @@ get_entry_permission(char *buf, mode_t mode)
 	else
 		buf[0] = '?';
 
-	for (i = 1; i < 10; i++) {
+	for (i = 1; i < PERMISSION_MAX; i++) {
 		buf[i] = (mode & (1 << (9 - i))) ? chars[i - 1] : '-';
 	}
-	buf[10] = '\0';
+	buf[PERMISSION_MAX - 1] = '\0';
 }
 
 static void
@@ -627,7 +634,7 @@ get_file_size(char *buf, off_t size)
 	int counter = 0;
 
 	while (size >= 1024) {
-		size /= 1024;
+		size >>= 10;
 		++counter;
 	}
 
@@ -651,18 +658,21 @@ get_file_size(char *buf, off_t size)
 		unit = '?';
 	}
 
-	snprintf(buf, 32, OFF_T "%c", size, unit);
+	if (snprintf(buf, FSIZE_MAX, OFF_T "%c", size, unit) < 0 )
+		print_status(color_err, strerror(errno));
 }
 
 static void
 get_entry_owner(char *buf, uid_t uid)
 {
-	struct passwd *pw = getpwuid(uid);
+	struct passwd *pw;
+	size_t len;
+
+	pw = getpwuid(uid);
 	if (pw == NULL) {
 		snprintf(buf, USER_MAX, "%u", uid);
 	} else {
-
-		size_t len = strlen(pw->pw_name);
+		len = strlen(pw->pw_name);
 		if (len >= USER_MAX) {
 			len = USER_MAX - 1;
 		}
@@ -688,14 +698,13 @@ get_user_input(char *input, size_t size, const char *prompt, ...)
 {
 	va_list args;
 	char msg[PROMPT_MAX];
+	int c;
+	size_t index = 0;
 
 	va_start(args, prompt);
 	vsnprintf(msg, PROMPT_MAX, prompt, args);
 	print_status(color_normal, msg);
 	va_end(args);
-
-	size_t index = 0;
-	int c;
 
 	while (1) {
 		c = getchar();
@@ -746,7 +755,7 @@ check_dir(char *path)
 	return 0;
 }
 
-static int
+static void
 open_file(char *file)
 {
 	char *ext;
@@ -777,8 +786,40 @@ open_file(char *file)
 	}
 
 	spawn(&cmd);
+}
 
-	return 0;
+static char *
+get_file_extension(char *str)
+{
+	char *ext;
+	char *dot;
+
+	if (!str)
+		return NULL;
+
+	dot = strrchr(str, '.');
+	if (!dot || dot == str)
+		return NULL;
+
+	ext = ecalloc(EXTENTION_MAX + 1, sizeof(char));
+	strncpy(ext, dot + 1, EXTENTION_MAX);
+
+	for (char *p = ext; *p; p++)
+		*p = tolower((unsigned char)*p);
+
+	return ext;
+}
+
+static int
+check_rule(char *ex)
+{
+	size_t c, d;
+
+	for (c = 0; c < LEN(rules); c++)
+		for (d = 0; d < rules[c].exlen; d++)
+			if (strncmp(rules[c].ext[d], ex, EXTENTION_MAX) == 0)
+				return c;
+	return -1;
 }
 
 static void
@@ -877,40 +918,6 @@ spawn(Command *cmd)
 	errno = 0;
 }
 
-static char *
-get_file_extension(char *str)
-{
-	char *ext;
-	char *dot;
-
-	if (!str)
-		return NULL;
-
-	dot = strrchr(str, '.');
-	if (!dot || dot == str)
-		return NULL;
-
-	ext = ecalloc(EXTENTION_MAX + 1, sizeof(char));
-	strncpy(ext, dot + 1, EXTENTION_MAX);
-
-	for (char *p = ext; *p; p++)
-		*p = tolower((unsigned char)*p);
-
-	return ext;
-}
-
-static int
-check_rule(char *ex)
-{
-	size_t c, d;
-
-	for (c = 0; c < LEN(rules); c++)
-		for (d = 0; d < rules[c].exlen; d++)
-			if (strncmp(rules[c].ext[d], ex, EXTENTION_MAX) == 0)
-				return c;
-	return -1;
-}
-
 static int
 execute_command(Command *cmd)
 {
@@ -1000,12 +1007,12 @@ write_entries_name(void)
 	char result[term.cols + 100];
 
 	int result_len = snprintf(result, sizeof(result),
-		"\x1b[1;1H"                   // Move cursor to top-left corner
-		"\x1b[%hu;38;5;%hu;48;5;%hum" // Set colors for left pane
-		"%-*.*s"                      // Left string with padding
-		"\x1b[%hu;38;5;%hu;48;5;%hum" // Set colors for right pane
-		"%-*.*s"                      // Right string with padding
-		"\x1b[0m",                    // Reset colors
+		"\x1b[1;1H"                // Move cursor to top-left corner
+		"\x1b[%d;38;5;%d;48;5;%dm" // Set colors for left pane
+		"%-*.*s"                   // Left string with padding
+		"\x1b[%d;38;5;%d;48;5;%dm" // Set colors for right pane
+		"%-*.*s"                   // Right string with padding
+		"\x1b[0m",                 // Reset colors
 		color_panell.attr, color_panell.fg, color_panell.bg, half_cols,
 		half_cols, panes[Left].path, color_panelr.attr, color_panelr.fg,
 		color_panelr.bg, half_cols, half_cols, panes[Right].path);
@@ -1090,7 +1097,7 @@ create_new_dir(const Arg *arg)
 static void
 copy_entries(const Arg *arg)
 {
-	selected_entries = ecalloc(current_pane->entry_count, PATH_MAX);
+	selected_entries = ecalloc(current_pane->entry_count, sizeof(char *));
 	selected_count = get_selected_paths(current_pane, selected_entries);
 
 	if (selected_count < 1) {
@@ -1105,6 +1112,8 @@ copy_entries(const Arg *arg)
 	} else {
 		print_status(color_normal, "Entries copied.");
 	}
+
+	mode = NormalMode;
 }
 
 static void
@@ -1119,7 +1128,7 @@ delete_entry(const Arg *arg)
 		return;
 	}
 
-	selected_entries = ecalloc(current_pane->entry_count, PATH_MAX);
+	selected_entries = ecalloc(current_pane->entry_count, sizeof(char *));
 	selected_count = get_selected_paths(current_pane, selected_entries);
 
 	if (selected_count < 1) {
@@ -1159,6 +1168,7 @@ delete_entry(const Arg *arg)
 	free(selected_entries);
 	selected_entries = NULL;
 	selected_count = 0;
+	mode = NormalMode;
 }
 
 static void
@@ -1194,10 +1204,8 @@ move_cursor(const Arg *arg)
 			current_pane->current_index - (term.rows - 3);
 	}
 
-	if (mode == VisualMode) {
-		current_pane->entries[current_pane->current_index].selected ^=
-			1;
-	}
+	if (mode == VisualMode)
+		select_cur_entry(&(Arg) { .i = Select });
 
 	update_screen();
 }
@@ -1248,7 +1256,6 @@ open_entry(const Arg *arg)
 	if (current_pane->entry_count < 1)
 		return;
 
-	int s;
 	Entry *current_entry =
 		&current_pane->entries[current_pane->current_index];
 
@@ -1262,14 +1269,10 @@ open_entry(const Arg *arg)
 		current_pane->start_index = 0;
 		update_screen();
 		break;
-
-		break;
 	case 1: /* not a directory open file */
 		if (S_ISREG(current_entry->st.st_mode)) {
 			errno = 0; /* check_dir errno */
-			s = open_file(current_entry->fullpath);
-			if (s < 0)
-				print_status(color_err, strerror(errno));
+			open_file(current_entry->fullpath);
 		}
 		break;
 	case -1: /* failed to open directory */
@@ -1286,7 +1289,7 @@ paste_entries(const Arg *arg)
 		return;
 	}
 
-	char **argv = ecalloc(selected_count + 2, PATH_MAX);
+	char **argv = ecalloc(selected_count + 2, sizeof(char *));
 	for (int i = 0; i < selected_count; i++) {
 		argv[i] = selected_entries[i];
 	}
@@ -1340,9 +1343,17 @@ switch_pane(const Arg *arg)
 }
 
 static void
-select_entry(const Arg *arg)
+select_entry(Entry *entry, int s)
 {
-	current_pane->entries[current_pane->current_index].selected ^= 1;
+	entry->selected =
+		(s == InvertSelection) ? !entry->selected : (s == Select);
+}
+
+static void
+select_cur_entry(const Arg *arg)
+{
+	select_entry(
+		&current_pane->entries[current_pane->current_index], arg->i);
 	update_screen();
 }
 
@@ -1640,7 +1651,7 @@ visual_mode(const Arg *arg)
 		normal_mode(&(Arg) { 0 });
 	} else {
 		mode = VisualMode;
-		select_entry(&(Arg) { 0 });
+		select_cur_entry(&(Arg) { .i = Select });
 		print_status(color_normal, " --VISUAL-- ");
 	}
 
@@ -1650,14 +1661,14 @@ visual_mode(const Arg *arg)
 static void
 normal_mode(const Arg *arg)
 {
-	mode = NormalMode;
 	if (mode == SearchMode)
 		cancel_search_highlight();
+	mode = NormalMode;
 	display_entry_details();
 }
 
 void
-update_selection(const Arg *arg)
+select_all(const Arg *arg)
 {
 	if (current_pane->entry_count <= 0) {
 		print_status(color_warn, "No entries to select.");
@@ -1665,11 +1676,7 @@ update_selection(const Arg *arg)
 	}
 
 	for (int i = 0; i < current_pane->entry_count; i++) {
-		current_pane->entries[i].selected = (arg->i == SelectAll) ?
-			1 :
-			(arg->i == InvertSelection) ?
-			!current_pane->entries[i].selected :
-			0;
+		select_entry(&current_pane->entries[i], arg->i);
 	}
 
 	update_screen();

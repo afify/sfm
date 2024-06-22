@@ -94,6 +94,8 @@ static Key nkeys[] = {
 	{ XK_UP,               move_cursor,      { .i = -1 }              },
 	{ XK_CTRL('u'),        move_cursor,      { .i = -5 }              },
 	{ XK_CTRL('d'),        move_cursor,      { .i = +5 }              },
+	{ '{',                 move_cursor,      { .i = -10 }             },
+	{ '}',                 move_cursor,      { .i = +10 }             },
 	{ 'l',                 open_entry,       { 0 }                    },
 	{ 'h',                 cd_to_parent,     { 0 }                    },
 	{ 'q',                 quit,             { 0 }                    },
@@ -105,19 +107,18 @@ static Key nkeys[] = {
 	{ XK_CTRL('f'),        create_new_file,  { 0 }                    },
 	{ XK_CTRL('m'),        create_new_dir,   { 0 }                    },
 	{ 'd',                 delete_entry,     { 0 }                    },
-	{ 's',                 select_entry,     { 0 }                    },
 	{ 'y',                 copy_entries,     { 0 }                    },
 	{ 'p',                 paste_entries,    { 0 }                    },
 	{ 'P',                 move_entries,     { 0 }                    },
 	{ 'v',                 visual_mode,      { 0 }                    },
 	{ XK_ESC,              normal_mode,      { 0 }                    },
-	{ 'x',                 update_selection, { .i = SelectNone }      },
-	{ 'a',                 update_selection, { .i = SelectAll }       },
-	{ 'i',                 update_selection, { .i = InvertSelection } },
+	{ 's',                 select_cur_entry, { .i = InvertSelection } },
+	{ 'x',                 select_all,       { .i = DontSelect }      },
+	{ 'a',                 select_all,       { .i = Select }          },
+	{ 'i',                 select_all,       { .i = InvertSelection } },
 	{ '/',                 start_search,     { 0 }                    },
 	{ 'n',                 move_to_match,    { .i = NextMatch }       },
 	{ 'N',                 move_to_match,    { .i = PrevMatch }       },
-
 };
 
 static const size_t nkeyslen = LEN(nkeys);

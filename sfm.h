@@ -33,11 +33,13 @@
 #define UINT8_LEN  3
 #define UINT16_LEN 5
 
-#define GROUP_MAX     32
-#define USER_MAX      32
-#define DATETIME_MAX  20
-#define EXTENTION_MAX 4
-#define PROMPT_MAX    64
+#define GROUP_MAX      32
+#define USER_MAX       32
+#define DATETIME_MAX   20
+#define EXTENTION_MAX  4
+#define PROMPT_MAX     64
+#define PERMISSION_MAX 10
+#define FSIZE_MAX      32
 
 #define MAX(A, B)        ((A) > (B) ? (A) : (B))
 #define MIN(A, B)        ((A) < (B) ? (A) : (B))
@@ -139,7 +141,7 @@ typedef struct {
 enum { Left, Right };                  /* panes */
 enum { Wait = 0, DontWait = WNOHANG }; /* spawn forks */
 enum { NormalMode, VisualMode, SearchMode };
-enum { SelectNone, SelectAll, InvertSelection };
+enum { DontSelect, Select, InvertSelection };
 enum { NextMatch, PrevMatch }; /* search */
 
 /* function declarations */
@@ -172,13 +174,14 @@ static void get_entry_owner(char *, uid_t);
 static void get_entry_group(char *, gid_t);
 static int get_user_input(char *, size_t, const char *, ...);
 static int check_dir(char *);
-static int open_file(char *);
+static void open_file(char *);
 static char *get_file_extension(char *);
 static int check_rule(char *);
+static void spawn(Command *);
 static int execute_command(Command *);
 static void termb_append(const char *, size_t);
 static void termb_write(void);
-static void termb_resize(void);
+static void write_entries_name(void);
 
 static void filesystem_event_init(void);
 static void *event_handler(void *);
@@ -187,8 +190,8 @@ static void remove_watch(Pane *);
 static void cleanup_filesystem_events(void);
 static void update_search_highlight(const char *);
 static void cancel_search_highlight(void);
-static void write_entries_name(void);
-static void spawn(Command *);
+
+static void termb_resize(void);
 
 static void cd_to_parent(const Arg *);
 static void create_new_file(const Arg *);
@@ -202,7 +205,10 @@ static void move_entries(const Arg *);
 static void open_entry(const Arg *);
 static void paste_entries(const Arg *);
 static void switch_pane(const Arg *);
-static void select_entry(const Arg *);
+static void select_cur_entry(const Arg *);
+
+static void select_entry(Entry *, int);
+
 static void refresh(const Arg *);
 static void toggle_dotfiles(const Arg *);
 static void die(const char *, ...);
@@ -211,7 +217,7 @@ static void *erealloc(void *, size_t);
 static void quit(const Arg *);
 
 static void visual_mode(const Arg *);
-static void update_selection(const Arg *);
+static void select_all(const Arg *);
 static void normal_mode(const Arg *);
 static void start_search(const Arg *);
 static void move_to_match(const Arg *);
