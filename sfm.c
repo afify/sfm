@@ -420,6 +420,7 @@ static void
 append_entries(Pane *pane)
 {
 	int i;
+	int n = 0;
 	size_t index = 0;
 	size_t max_len = term.cols / 2;
 	Entry entry;
@@ -453,11 +454,15 @@ append_entries(Pane *pane)
 		}
 
 		// Format the entry with truncation and padding
-		index += snprintf(buffer + index, term.buffer_size - index,
+		n = snprintf(buffer + index, term.buffer_size - index,
 			"\x1b[%dG"
 			"\x1b[%d;38;5;%d;48;5;%dm%-*.*s\x1b[0m\r\n",
 			pane->offset, entry.color.attr, entry.color.fg,
 			entry.color.bg, (int)max_len, (int)max_len, entry.name);
+		if (n < 0)
+			break;
+
+		index += n;
 	}
 
 	termb_append(buffer, index);
@@ -658,7 +663,7 @@ get_file_size(char *buf, off_t size)
 		unit = '?';
 	}
 
-	if (snprintf(buf, FSIZE_MAX, OFF_T "%c", size, unit) < 0 )
+	if (snprintf(buf, FSIZE_MAX, OFF_T "%c", size, unit) < 0)
 		print_status(color_err, strerror(errno));
 }
 
@@ -1183,11 +1188,51 @@ move_bottom(const Arg *arg)
 }
 
 static void
+update_entry(Pane *pane, int index)
+{
+	int err;
+	size_t max_len;
+	Entry entry;
+	char buffer[PATH_MAX];
+	int pos;
+
+
+	if (index < 0 || index >= pane->entry_count)
+		return;
+
+	max_len = term.cols / 2;
+	entry = pane->entries[index];
+	pos = index - pane->start_index;
+
+	if (pane->entries[index].selected == 1)
+		entry.color = color_selected;
+
+	if (pane == current_pane && index == current_pane->current_index) {
+		entry.color.attr |= RVS;
+	}
+
+	err = snprintf(buffer, sizeof(buffer),
+		"\x1b[%d;%dH" // Move cursor to the entry position
+		"\x1b[%d;38;5;%d;48;5;%dm%-*.*s\x1b[0m",
+		pos + 2, pane->offset, entry.color.attr, entry.color.fg,
+		entry.color.bg, (int)max_len-1, (int)max_len, entry.name);
+
+	if (err < 0)
+		print_status(color_err, strerror(errno));
+
+	write(STDOUT_FILENO, buffer, strlen(buffer));
+}
+
+static void
 move_cursor(const Arg *arg)
 {
+	int new_start_index;
+	int old_index;
+
 	if (current_pane->entry_count == 0)
 		return;
 
+	old_index = current_pane->current_index;
 	current_pane->current_index += arg->i;
 
 	if (current_pane->current_index < 0) {
@@ -1196,6 +1241,7 @@ move_cursor(const Arg *arg)
 		current_pane->current_index = current_pane->entry_count - 1;
 	}
 
+	new_start_index = current_pane->start_index;
 	if (current_pane->current_index < current_pane->start_index) {
 		current_pane->start_index = current_pane->current_index;
 	} else if (current_pane->current_index >=
@@ -1204,10 +1250,18 @@ move_cursor(const Arg *arg)
 			current_pane->current_index - (term.rows - 3);
 	}
 
+	if (new_start_index != current_pane->start_index) {
+		update_screen();
+	} else {
+		// Update only the necessary entries
+		if (old_index != current_pane->current_index) {
+			update_entry(current_pane, old_index);
+			update_entry(current_pane, current_pane->current_index);
+		}
+	}
+
 	if (mode == VisualMode)
 		select_cur_entry(&(Arg) { .i = Select });
-
-	update_screen();
 }
 
 static void
@@ -1354,7 +1408,7 @@ select_cur_entry(const Arg *arg)
 {
 	select_entry(
 		&current_pane->entries[current_pane->current_index], arg->i);
-	update_screen();
+	update_entry(current_pane, current_pane->current_index);
 }
 
 static void
