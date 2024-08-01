@@ -229,7 +229,7 @@ set_pane_entries(Pane *pane)
 	int fd, i;
 	DIR *dir;
 	char tmpfull[PATH_MAX];
-	struct dirent *entry;
+	const struct dirent *entry;
 	struct stat status;
 
 	if (pane->entries != NULL) {
@@ -244,7 +244,7 @@ set_pane_entries(Pane *pane)
 	}
 
 	dir = fdopendir(fd);
-	if (!dir) {
+	if (dir == NULL) {
 		close(fd);
 		print_status(color_err, strerror(errno));
 		return;
@@ -252,7 +252,7 @@ set_pane_entries(Pane *pane)
 
 	pane->entry_count = 0;
 	while ((entry = readdir(dir)) != NULL) {
-		if (!should_skip_entry(entry)) {
+		if (should_skip_entry(entry) == 0) {
 			pane->entry_count++;
 		}
 	}
@@ -263,7 +263,7 @@ set_pane_entries(Pane *pane)
 
 	i = 0;
 	while ((entry = readdir(dir)) != NULL) {
-		if (should_skip_entry(entry)) {
+		if (should_skip_entry(entry) == 1) {
 			continue;
 		}
 		get_fullpath(tmpfull, pane->path, entry->d_name);
@@ -325,15 +325,18 @@ should_skip_entry(const struct dirent *entry)
 }
 
 static void
-get_fullpath(char *full_path, char *first, char *second)
+get_fullpath(char *full_path, const char *first, const char *second)
 {
+	int ret;
 
 	if (first[0] == '/' && first[1] == '\0')
 		(void)snprintf(full_path, PATH_MAX, "/%s", second);
-	else if (snprintf(full_path, PATH_MAX, "%s/%s", first, second) >
-		PATH_MAX) {
-		die("Path exided maximun length");
-	}
+
+	ret = snprintf(full_path, PATH_MAX, "%s/%s", first, second);
+	if (ret < 0)
+		die(strerror(errno));
+	if (ret >= PATH_MAX)
+		die("Path exceeded maximum length");
 }
 
 static int
@@ -668,28 +671,25 @@ get_file_size(char *buf, off_t size)
 }
 
 static void
-get_entry_owner(char *buf, uid_t uid)
+get_entry_owner(char *buf, const uid_t uid)
 {
-	struct passwd *pw;
-	size_t len;
+	const struct passwd *pw;
 
 	pw = getpwuid(uid);
 	if (pw == NULL) {
 		snprintf(buf, USER_MAX, "%u", uid);
 	} else {
-		len = strlen(pw->pw_name);
-		if (len >= USER_MAX) {
-			len = USER_MAX - 1;
-		}
-		memcpy(buf, pw->pw_name, len);
-		buf[len] = '\0';
+		strncpy(buf, pw->pw_name, USER_MAX - 1);
+		buf[GROUP_MAX - 1] = '\0';
 	}
 }
 
 static void
-get_entry_group(char *buf, gid_t gid)
+get_entry_group(char *buf, const gid_t gid)
 {
-	struct group *gr = getgrgid(gid);
+	const struct group *gr;
+
+	gr = getgrgid(gid);
 	if (gr == NULL) {
 		snprintf(buf, GROUP_MAX, "%u", gid);
 	} else {
@@ -794,10 +794,10 @@ open_file(char *file)
 }
 
 static char *
-get_file_extension(char *str)
+get_file_extension(const char *str)
 {
 	char *ext;
-	char *dot;
+	const char *dot;
 
 	if (!str)
 		return NULL;
@@ -816,7 +816,7 @@ get_file_extension(char *str)
 }
 
 static int
-check_rule(char *ex)
+check_rule(const char *ex)
 {
 	size_t c, d;
 
@@ -1196,7 +1196,6 @@ update_entry(Pane *pane, int index)
 	char buffer[PATH_MAX];
 	int pos;
 
-
 	if (index < 0 || index >= pane->entry_count)
 		return;
 
@@ -1215,7 +1214,7 @@ update_entry(Pane *pane, int index)
 		"\x1b[%d;%dH" // Move cursor to the entry position
 		"\x1b[%d;38;5;%d;48;5;%dm%-*.*s\x1b[0m",
 		pos + 2, pane->offset, entry.color.attr, entry.color.fg,
-		entry.color.bg, (int)max_len-1, (int)max_len, entry.name);
+		entry.color.bg, (int)max_len - 1, (int)max_len, entry.name);
 
 	if (err < 0)
 		print_status(color_err, strerror(errno));
@@ -1295,7 +1294,9 @@ move_entries(const Arg *arg)
 	cmd.argc = selected_count + 1;
 	cmd.wait_exec = DontWait;
 
+	print_status(color_normal, "Moving...");
 	spawn(&cmd);
+	print_status(color_normal, "Moved...");
 
 	free(selected_entries);
 	selected_entries = NULL;
@@ -1357,7 +1358,9 @@ paste_entries(const Arg *arg)
 	cmd.argc = selected_count + 1;
 	cmd.wait_exec = DontWait;
 
+	print_status(color_normal, "Pasting...");
 	spawn(&cmd);
+	print_status(color_normal, "Pasted...");
 
 	free(selected_entries);
 	selected_entries = NULL;
@@ -1842,7 +1845,7 @@ move_to_match(const Arg *arg)
 }
 
 int
-main(int argc, char *argv[])
+main(int argc, const char *argv[])
 {
 	char c;
 
