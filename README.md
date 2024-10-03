@@ -5,6 +5,7 @@
 [![Build status](https://ci.appveyor.com/api/projects/status/goq88ahjyvtjrui2?svg=true)](https://ci.appveyor.com/project/afify/sfm)
 [![CodeQL](https://github.com/afify/sfm/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/afify/sfm/actions/workflows/github-code-scanning/codeql)
 [![Cross platform build](https://github.com/afify/sfm/actions/workflows/action.yaml/badge.svg)](https://github.com/afify/sfm/actions/workflows/action.yaml)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fafify%2Fsfm.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fafify%2Fsfm?ref=badge_shield)
 
 Description
 ------------
@@ -73,3 +74,7 @@ Configuration
 -------------
 The configuration of sfm is done by creating a custom config.h
 and (re)compiling the source code. This keeps it fast, secure and simple.
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fafify%2Fsfm.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fafify%2Fsfm?ref=badge_large)
