@@ -447,7 +447,7 @@ append_entries(Pane *pane)
 		entry = pane->entries[pane->start_index + i];
 
 		/* selected entry */
-		if (pane->entries[i].selected == 1)
+		if (entry.selected == 1)
 			entry.color = color_selected;
 
 		/* current entry */
