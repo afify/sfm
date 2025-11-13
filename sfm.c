@@ -984,8 +984,11 @@ termb_append(const char *str, size_t len)
 {
 	if (len >= term.buffer_left) {
 		term.buffer_size = term.buffer_size ? term.buffer_size : 4096;
-		while (term.buffer_size - term.buffer_index <= len)
+		while (term.buffer_size - term.buffer_index <= len) {
 			term.buffer_size *= 2;
+			if (term.buffer_size > MAX_TERM_BUFFER)
+				die("Terminal buffer exceeded maximum size");
+		}
 		term.buffer = erealloc(term.buffer, term.buffer_size);
 		term.buffer_left = term.buffer_size - term.buffer_index;
 	}

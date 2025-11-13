@@ -42,9 +42,10 @@
 #define FSIZE_MAX      32
 
 /* buffer sizes */
-#define STATUSBUF_SIZE 4096
-#define CMDLOG_SIZE    2048
-#define MAX_COLS       512
+#define STATUSBUF_SIZE  4096
+#define CMDLOG_SIZE     2048
+#define MAX_COLS        512
+#define MAX_TERM_BUFFER (16 * 1024 * 1024) /* 16MB safety limit */
 
 #define MAX(A, B)        ((A) > (B) ? (A) : (B))
 #define MIN(A, B)        ((A) < (B) ? (A) : (B))
