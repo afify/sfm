@@ -304,6 +304,11 @@ set_pane_entries(Pane *pane)
 		size_t fullpath_len = strlen(tmpfull);
 		size_t name_len = strlen(entry->d_name);
 
+		if (fullpath_len >= PATH_MAX)
+			fullpath_len = PATH_MAX - 1;
+		if (name_len >= NAME_MAX)
+			name_len = NAME_MAX - 1;
+
 		memcpy(pane->entries[i].fullpath, tmpfull, fullpath_len);
 		pane->entries[i].fullpath[fullpath_len] = '\0';
 
@@ -342,8 +347,14 @@ get_fullpath(char *full_path, const char *first, const char *second)
 {
 	int ret;
 
-	if (first[0] == '/' && first[1] == '\0')
-		(void)snprintf(full_path, PATH_MAX, "/%s", second);
+	if (first[0] == '/' && first[1] == '\0') {
+		ret = snprintf(full_path, PATH_MAX, "/%s", second);
+		if (ret < 0)
+			die(strerror(errno));
+		if (ret >= PATH_MAX)
+			die("Path exceeded maximum length");
+		return;
+	}
 
 	ret = snprintf(full_path, PATH_MAX, "%s/%s", first, second);
 	if (ret < 0)
@@ -972,8 +983,11 @@ static void
 termb_append(const char *str, size_t len)
 {
 	if (len >= term.buffer_left) {
-		term.buffer_size = term.buffer_size ? term.buffer_size * 2 : 4096;
+		term.buffer_size = term.buffer_size ? term.buffer_size : 4096;
+		while (term.buffer_size - term.buffer_index <= len)
+			term.buffer_size *= 2;
 		term.buffer = erealloc(term.buffer, term.buffer_size);
+		term.buffer_left = term.buffer_size - term.buffer_index;
 	}
 
 	memcpy(&term.buffer[term.buffer_index], str, len);
