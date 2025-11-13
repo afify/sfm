@@ -77,6 +77,19 @@ clang-tidy:
 	@echo "Running clang-tidy..."
 	clang-tidy $(SRC) -- $(CFLAGS)
 
+perf: $(BIN)
+	@echo "Running performance analysis..."
+	@echo "Building with profiling flags..."
+	$(CC) -c -pg -O2 -std=c99 -D_DEFAULT_SOURCE -D_BSD_SOURCE -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -DVERSION=\"$(VERSION)\" $(SRC)
+	$(CC) -pg $(LDFLAGS) -o $(BIN) $(OBJ)
+	@echo "Run './sfm' with your workload, then use 'gprof sfm gmon.out' to see profile"
+
+perf-record: $(BIN)
+	@echo "Recording performance with perf (requires root or perf_event_paranoid=1)..."
+	timeout 5 perf record -g -- script -qec "printf 'jjjjjkkkkGggGq' | ./$(BIN)" /dev/null || true
+	@echo "Analyzing perf data..."
+	perf report --stdio | head -50
+
 security: valgrind cppcheck clang-tidy
 
-.PHONY: all options clean dist install uninstall
+.PHONY: all options clean dist install uninstall perf perf-record

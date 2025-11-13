@@ -399,7 +399,6 @@ update_screen(void)
 	termb_write();
 	write_entries_name();
 
-	log_to_file(__func__, __LINE__, "err: (%d)", errno);
 	if (mode == NormalMode && errno == 0)
 		display_entry_details();
 	else
@@ -419,15 +418,13 @@ append_entries(Pane *pane)
 {
 	int i;
 	int n = 0;
-	size_t index = 0;
 	size_t max_len = term.cols / 2;
 	Entry entry;
-	char *buffer;
+	char buffer[512];
 
 	if (pane->entries == NULL) {
 		return;
 	}
-	buffer = ecalloc(term.buffer_size, sizeof(char));
 	termb_append("\x1b[2;1f", 6); // move to top left
 
 	for (i = 0;
@@ -452,20 +449,16 @@ append_entries(Pane *pane)
 		}
 
 		// Format the entry with truncation and padding
-		n = snprintf(buffer + index, term.buffer_size - index,
+		n = snprintf(buffer, sizeof(buffer),
 			"\x1b[%dG"
 			"\x1b[%d;38;5;%d;48;5;%dm%-*.*s\x1b[0m\r\n",
 			pane->offset, entry.color.attr, entry.color.fg,
 			entry.color.bg, (int)max_len, (int)max_len, entry.name);
-		if (n < 0)
+		if (n < 0 || n >= (int)sizeof(buffer))
 			break;
 
-		index += n;
+		termb_append(buffer, n);
 	}
-
-	termb_append(buffer, index);
-	free(buffer);
-	buffer = NULL;
 }
 
 static void

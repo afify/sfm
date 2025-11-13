@@ -4,3 +4,6 @@
 sfm
 sfm-*.tar.gz
 config.h
+gmon.out
+perf.data
+perf.data.old
