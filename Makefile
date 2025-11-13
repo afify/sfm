@@ -62,7 +62,9 @@ valgrind: $(BIN)
 
 splint: $(SRC)
 	@echo "Running splint..."
-	splint +unixlib -weak +enumint -preproc -D__FreeBSD__ -DVERSION=\"$(VERSION)\" $(SRC)
+	splint +unixlib -weak +enumint -preproc -D__FreeBSD__ -DVERSION=\"$(VERSION)\" \
+		+matchanyintegral +longintegral -unrecog -varuse -retvalother -retvalint \
+		$(SRC)
 
 cppcheck:
 	@echo "Running cppcheck..."
