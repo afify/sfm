@@ -195,10 +195,13 @@ set_panes(void)
 {
 	char cwd[PATH_MAX];
 
-	if ((getcwd(cwd, sizeof(cwd)) == NULL))
+	if ((getcwd(cwd, sizeof(cwd)) == NULL)) {
 		strncpy(cwd, home, PATH_MAX - 1);
+		cwd[PATH_MAX - 1] = '\0';
+	}
 
 	strncpy(panes[Left].path, cwd, PATH_MAX - 1);
+	panes[Left].path[PATH_MAX - 1] = '\0';
 	panes[Left].entries = NULL;
 	panes[Left].entry_count = 0;
 	panes[Left].start_index = 0;
@@ -208,6 +211,7 @@ set_panes(void)
 	panes[Left].offset = 0;
 
 	strncpy(panes[Right].path, home, PATH_MAX - 1);
+	panes[Right].path[PATH_MAX - 1] = '\0';
 	panes[Right].entries = NULL;
 	panes[Right].entry_count = 0;
 	panes[Right].start_index = 0;
@@ -282,8 +286,10 @@ set_pane_entries(Pane *pane)
 			memset(&pane->entries[i], 0, sizeof(Entry));
 			strncpy(pane->entries[i].fullpath, tmpfull,
 				PATH_MAX - 1);
+			pane->entries[i].fullpath[PATH_MAX - 1] = '\0';
 			strncpy(pane->entries[i].name, entry->d_name,
 				NAME_MAX - 1);
+			pane->entries[i].name[NAME_MAX - 1] = '\0';
 			i++;
 			continue;
 		}
@@ -354,51 +360,22 @@ get_selected_paths(Pane *pane, char **result)
 	return count;
 }
 
-// static int
-// entry_compare(const void *const A, const void *const B)
-// {
-// 	int result;
-// 	mode_t data1 = (*(Entry *)A).st.st_mode;
-// 	mode_t data2 = (*(Entry *)B).st.st_mode;
-//
-// 	if (data1 < data2) {
-// 		return -1;
-// 	} else if (data1 == data2) {
-// 		result = strncmp(
-// 			(*(Entry *)A).name, (*(Entry *)B).name, NAME_MAX);
-// 		return result;
-// 	} else {
-// 		return 1;
-// 	}
-// }
-
 static int
 entry_compare(const void *a, const void *b)
 {
-	const Entry *entryA = (const Entry *)a;
-	const Entry *entryB = (const Entry *)b;
+	const Entry *ea = a, *eb = b;
 
-	if (!entryA || !entryB) {
-		return 0;
-	}
-
-	mode_t modeA = entryA->st.st_mode;
-	mode_t modeB = entryB->st.st_mode;
-
-	if (modeA < modeB) {
-		return -1;
-	} else if (modeA == modeB) {
-		return strncmp(entryA->name, entryB->name, NAME_MAX);
-	} else {
-		return 1;
-	}
+	if (ea->st.st_mode != eb->st.st_mode)
+		return (ea->st.st_mode < eb->st.st_mode) ? -1 : 1;
+	return strncmp(ea->name, eb->name, NAME_MAX);
 }
 
 static void
 update_screen(void)
 {
 	// clear all except last line
-	write(STDOUT_FILENO, "\x1b[F\x1b[A\x1b[999C\x1b[1J", 16);
+	if (write(STDOUT_FILENO, "\x1b[F\x1b[A\x1b[999C\x1b[1J", 16) < 0)
+		die("write:");
 	append_entries(&panes[Left]);
 	append_entries(&panes[Right]);
 	termb_write();
@@ -497,21 +474,19 @@ grabkeys(uint32_t k, Key *key, size_t max_keys)
 static void
 print_status(ColorPair color, const char *fmt, ...)
 {
-	char buf[term.cols];
-	int buf_len;
-	size_t max_result_size;
+	char buf[STATUSBUF_SIZE];
+	char result[STATUSBUF_SIZE];
 	size_t result_len;
+	size_t max_width;
 	va_list vl;
 
+	max_width = MIN(term.cols, STATUSBUF_SIZE - 1);
+
 	va_start(vl, fmt);
-	buf_len = vsnprintf(buf, term.cols, fmt, vl);
+	vsnprintf(buf, max_width, fmt, vl);
 	va_end(vl);
 
-	max_result_size = 5 + UINT16_LEN + 4 + 15 + UINT8_LEN + UINT8_LEN +
-		UINT8_LEN + buf_len + 6 + 1;
-
-	char result[max_result_size];
-	result_len = snprintf(result, max_result_size,
+	result_len = snprintf(result, STATUSBUF_SIZE,
 		"\x1b[%d;1f" // moves cursor to last line, column 1
 		"\x1b[2K"    // erase the entire line
 		"\x1b[%d;38;5;%d;48;5;%dm" // set string colors
@@ -570,7 +545,7 @@ set_entry_color(Entry *ent)
 	switch (ent->st.st_mode & S_IFMT) {
 	case S_IFREG:
 		ent->color = color_file;
-		if ((S_IXUSR | S_IXGRP | S_IXOTH) & ent->st.st_mode)
+		if (ISEXEC(ent->st.st_mode))
 			ent->color = color_exec;
 		break;
 	case S_IFDIR:
@@ -612,19 +587,19 @@ get_entry_permission(char *buf, mode_t mode)
 	size_t i = 0;
 	const char chars[] = "rwxrwxrwx";
 
-	if (S_ISDIR(mode))
+	if (ISDIR(mode))
 		buf[0] = 'd';
-	else if (S_ISREG(mode))
+	else if (ISREG(mode))
 		buf[0] = '-';
-	else if (S_ISLNK(mode))
+	else if (ISLNK(mode))
 		buf[0] = 'l';
-	else if (S_ISBLK(mode))
+	else if (ISBLK(mode))
 		buf[0] = 'b';
-	else if (S_ISCHR(mode))
+	else if (ISCHR(mode))
 		buf[0] = 'c';
-	else if (S_ISFIFO(mode))
+	else if (ISFIFO(mode))
 		buf[0] = 'p';
-	else if (S_ISSOCK(mode))
+	else if (ISSOCK(mode))
 		buf[0] = 's';
 	else
 		buf[0] = '?';
@@ -680,7 +655,7 @@ get_entry_owner(char *buf, const uid_t uid)
 		snprintf(buf, USER_MAX, "%u", uid);
 	} else {
 		strncpy(buf, pw->pw_name, USER_MAX - 1);
-		buf[GROUP_MAX - 1] = '\0';
+		buf[USER_MAX - 1] = '\0';
 	}
 }
 
@@ -692,6 +667,7 @@ get_entry_group(char *buf, const gid_t gid)
 	gr = getgrgid(gid);
 	if (gr == NULL) {
 		snprintf(buf, GROUP_MAX, "%u", gid);
+		buf[GROUP_MAX - 1] = '\0';
 	} else {
 		strncpy(buf, gr->gr_name, GROUP_MAX - 1);
 		buf[GROUP_MAX - 1] = '\0';
@@ -720,18 +696,19 @@ get_user_input(char *input, size_t size, const char *prompt, ...)
 			return -1;
 		case XK_ENTER:
 			input[index] = '\0';
-			//display_entry_details();
 			return 0;
 		case XK_BACKSPACE:
 			if (index > 0) {
 				index--;
-				printf("\b \b");
+				if (write(STDOUT_FILENO, "\b \b", 3) < 0)
+					die("write:");
 			}
 			break;
 		default:
 			if (index < size - 1) {
 				input[index++] = c;
-				putchar(c);
+				if (write(STDOUT_FILENO, &c, 1) < 0)
+					die("write:");
 			}
 			break;
 		}
@@ -808,6 +785,7 @@ get_file_extension(const char *str)
 
 	ext = ecalloc(EXTENTION_MAX + 1, sizeof(char));
 	strncpy(ext, dot + 1, EXTENTION_MAX);
+	ext[EXTENTION_MAX] = '\0';
 
 	for (char *p = ext; *p; p++)
 		*p = tolower((unsigned char)*p);
@@ -928,7 +906,7 @@ execute_command(Command *cmd)
 {
 	size_t argc;
 	char **argv;
-	char log_command[99024];
+	char log_command[CMDLOG_SIZE];
 	size_t pos;
 	int wait_status;
 	int exit_status = 0;
@@ -943,19 +921,19 @@ execute_command(Command *cmd)
 	argv[argc - 1] = NULL;
 
 	// Construct the command string for logging
-	log_command[0] = '\0'; // Initialize the string with null terminator
+	log_command[0] = '\0';
 	pos = 0;
 	for (size_t i = 0; i < argc - 1; ++i) {
 		if (argv[i] != NULL) {
 			int len = snprintf(log_command + pos,
-				sizeof(log_command) - pos, "%s ", argv[i]);
-			if (len < 0 || pos + len >= sizeof(log_command)) {
-				break; // Avoid buffer overflow
+				CMDLOG_SIZE - pos, "%s ", argv[i]);
+			if (len < 0 || pos + len >= CMDLOG_SIZE) {
+				break;
 			}
 			pos += len;
 		}
 	}
-	log_command[sizeof(log_command) - 1] = '\0'; // Ensure null-termination
+	log_command[CMDLOG_SIZE - 1] = '\0';
 	log_to_file(__func__, __LINE__, "exec = %s", log_command);
 
 	fork_pid = fork();
@@ -1008,10 +986,13 @@ termb_write(void)
 static void
 write_entries_name(void)
 {
-	int half_cols = term.cols / 2;
-	char result[term.cols + 100];
+	int half_cols;
+	char result[STATUSBUF_SIZE];
+	int result_len;
 
-	int result_len = snprintf(result, sizeof(result),
+	half_cols = MIN(term.cols / 2, MAX_COLS / 2);
+
+	result_len = snprintf(result, STATUSBUF_SIZE,
 		"\x1b[1;1H"                // Move cursor to top-left corner
 		"\x1b[%d;38;5;%d;48;5;%dm" // Set colors for left pane
 		"%-*.*s"                   // Left string with padding
@@ -1022,7 +1003,8 @@ write_entries_name(void)
 		half_cols, panes[Left].path, color_panelr.attr, color_panelr.fg,
 		color_panelr.bg, half_cols, half_cols, panes[Right].path);
 
-	write(STDOUT_FILENO, result, result_len);
+	if (write(STDOUT_FILENO, result, result_len) < 0)
+		die("write:");
 }
 
 static void
@@ -1042,16 +1024,19 @@ cd_to_parent(const Arg *arg)
 	if (current_pane->path[0] == '/' && current_pane->path[1] == '\0')
 		return;
 
-	strncpy(parent_path, current_pane->path, PATH_MAX);
+	strncpy(parent_path, current_pane->path, PATH_MAX - 1);
+	parent_path[PATH_MAX - 1] = '\0';
 	last_slash = strrchr(parent_path, '/');
 	if (last_slash != NULL)
 		*last_slash = '\0';
 
 	if (strnlen(parent_path, PATH_MAX) == 0) {
-		strncpy(parent_path, "/", PATH_MAX);
+		strncpy(parent_path, "/", PATH_MAX - 1);
+		parent_path[PATH_MAX - 1] = '\0';
 	}
 
-	strncpy(current_pane->path, parent_path, PATH_MAX);
+	strncpy(current_pane->path, parent_path, PATH_MAX - 1);
+	current_pane->path[PATH_MAX - 1] = '\0';
 
 	remove_watch(current_pane);
 	set_pane_entries(current_pane);
@@ -1219,7 +1204,8 @@ update_entry(Pane *pane, int index)
 	if (err < 0)
 		print_status(color_err, strerror(errno));
 
-	write(STDOUT_FILENO, buffer, strlen(buffer));
+	if (write(STDOUT_FILENO, buffer, strlen(buffer)) < 0)
+		die("write:");
 }
 
 static void
@@ -1316,7 +1302,8 @@ open_entry(const Arg *arg)
 
 	switch (check_dir(current_entry->fullpath)) {
 	case 0: /* directory */
-		strncpy(current_pane->path, current_entry->fullpath, PATH_MAX);
+		strncpy(current_pane->path, current_entry->fullpath, PATH_MAX - 1);
+		current_pane->path[PATH_MAX - 1] = '\0';
 		remove_watch(current_pane);
 		set_pane_entries(current_pane);
 		add_watch(current_pane);
@@ -1325,7 +1312,7 @@ open_entry(const Arg *arg)
 		update_screen();
 		break;
 	case 1: /* not a directory open file */
-		if (S_ISREG(current_entry->st.st_mode)) {
+		if (ISREG(current_entry->st.st_mode)) {
 			errno = 0; /* check_dir errno */
 			open_file(current_entry->fullpath);
 		}
@@ -1675,11 +1662,11 @@ cleanup_filesystem_events(void)
 {
 	remove_watch(&panes[Left]);
 	pthread_cancel(panes[Left].watcher.thread);
-	//pthread_join(panes[Left].watcher.thread, NULL);
+	pthread_join(panes[Left].watcher.thread, NULL);
 
 	remove_watch(&panes[Right]);
 	pthread_cancel(panes[Right].watcher.thread);
-	//pthread_join(panes[Right].watcher.thread, NULL);
+	pthread_join(panes[Right].watcher.thread, NULL);
 
 	close(panes[Left].watcher.kq);
 	close(panes[Right].watcher.kq);

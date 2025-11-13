@@ -41,10 +41,25 @@
 #define PERMISSION_MAX 10
 #define FSIZE_MAX      32
 
+/* buffer sizes */
+#define STATUSBUF_SIZE 4096
+#define CMDLOG_SIZE    2048
+#define MAX_COLS       512
+
 #define MAX(A, B)        ((A) > (B) ? (A) : (B))
 #define MIN(A, B)        ((A) < (B) ? (A) : (B))
 #define LEN(A)           (sizeof(A) / sizeof(A[0]))
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
+
+/* file type macros */
+#define ISDIR(m)  (S_ISDIR(m))
+#define ISREG(m)  (S_ISREG(m))
+#define ISLNK(m)  (S_ISLNK(m))
+#define ISBLK(m)  (S_ISBLK(m))
+#define ISCHR(m)  (S_ISCHR(m))
+#define ISFIFO(m) (S_ISFIFO(m))
+#define ISSOCK(m) (S_ISSOCK(m))
+#define ISEXEC(m) ((S_IXUSR | S_IXGRP | S_IXOTH) & (m))
 
 #define RULE(category, command, wait)                                  \
 	{                                                              \
