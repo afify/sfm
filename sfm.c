@@ -125,7 +125,10 @@ static void
 get_term_size(void)
 {
 	struct winsize ws;
-	ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
+
+	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0)
+		die("ioctl:");
+
 	term.rows = ws.ws_row;
 	term.cols = ws.ws_col;
 }
