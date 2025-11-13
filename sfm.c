@@ -477,7 +477,7 @@ grabkeys(uint32_t k, Key *key, size_t max_keys)
 static void
 print_status(ColorPair color, const char *fmt, ...)
 {
-	char buf[STATUSBUF_SIZE];
+	char buf[STATUSBUF_SIZE] = {0};
 	char result[STATUSBUF_SIZE];
 	size_t result_len;
 	size_t max_width;
@@ -968,8 +968,8 @@ static void
 termb_append(const char *str, size_t len)
 {
 	if (len >= term.buffer_left) {
-		term.buffer = erealloc(term.buffer, term.buffer_size * 2);
-		term.buffer_size *= 2;
+		term.buffer_size = term.buffer_size ? term.buffer_size * 2 : 4096;
+		term.buffer = erealloc(term.buffer, term.buffer_size);
 	}
 
 	memcpy(&term.buffer[term.buffer_index], str, len);
