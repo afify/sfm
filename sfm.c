@@ -1515,7 +1515,7 @@ event_handler(void *arg)
 					"Inotify event detected: mask=%u, len=%u, name=%s",
 					event->mask, event->len,
 					event->len ? event->name : "");
-				usleep(50 * 1000); // 500 milliseconds
+				usleep(500 * 1000); // 500 milliseconds
 				kill(main_pid, pane->watcher.signal);
 			}
 			i += sizeof(struct inotify_event) + event->len;
