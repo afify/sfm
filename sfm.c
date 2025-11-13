@@ -210,7 +210,9 @@ set_panes(void)
 	panes[Left].start_index = 0;
 	panes[Left].current_index = 0;
 	panes[Left].watcher.fd = -1;
+#if defined(__linux__)
 	panes[Left].watcher.descriptor = -1;
+#endif
 	panes[Left].watcher.signal = SIGUSR1;
 	panes[Left].matched_indices = NULL;
 	panes[Left].offset = 0;
@@ -222,7 +224,9 @@ set_panes(void)
 	panes[Right].start_index = 0;
 	panes[Right].current_index = 0;
 	panes[Right].watcher.fd = -1;
+#if defined(__linux__)
 	panes[Right].watcher.descriptor = -1;
+#endif
 	panes[Right].watcher.signal = SIGUSR2;
 	panes[Right].matched_indices = NULL;
 	panes[Right].offset = term.cols / 2;
@@ -367,8 +371,9 @@ static int
 get_selected_paths(Pane *pane, char **result)
 {
 	int count = 0;
+	int i;
 
-	for (int i = 0; i < pane->entry_count; i++) {
+	for (i = 0; i < pane->entry_count; i++) {
 		if (pane->entries[i].selected) {
 			result[count] = pane->entries[i].fullpath;
 			count++;
@@ -794,6 +799,7 @@ static char *
 get_file_extension(const char *str)
 {
 	char *ext;
+	char *p;
 	const char *dot;
 
 	if (!str)
@@ -807,7 +813,7 @@ get_file_extension(const char *str)
 	strncpy(ext, dot + 1, EXTENTION_MAX);
 	ext[EXTENTION_MAX] = '\0';
 
-	for (char *p = ext; *p; p++)
+	for (p = ext; *p; p++)
 		*p = tolower((unsigned char)*p);
 
 	return ext;
@@ -928,6 +934,7 @@ execute_command(Command *cmd)
 	char **argv;
 	char log_command[CMDLOG_SIZE];
 	size_t pos;
+	size_t i;
 	int wait_status;
 	int exit_status = 0;
 	int exit_errno = 0;
@@ -943,7 +950,7 @@ execute_command(Command *cmd)
 	// Construct the command string for logging
 	log_command[0] = '\0';
 	pos = 0;
-	for (size_t i = 0; i < argc - 1; ++i) {
+	for (i = 0; i < argc - 1; ++i) {
 		if (argv[i] != NULL) {
 			int len = snprintf(log_command + pos,
 				CMDLOG_SIZE - pos, "%s ", argv[i]);
@@ -1239,6 +1246,7 @@ move_cursor(const Arg *arg)
 {
 	int new_start_index;
 	int old_index;
+	Arg select_arg;
 
 	if (current_pane->entry_count == 0)
 		return;
@@ -1271,8 +1279,10 @@ move_cursor(const Arg *arg)
 		}
 	}
 
-	if (mode == VisualMode)
-		select_cur_entry(&(Arg) { .i = Select });
+	if (mode == VisualMode) {
+		select_arg.i = Select;
+		select_cur_entry(&select_arg);
+	}
 }
 
 static void
@@ -1286,14 +1296,17 @@ move_top(const Arg *arg)
 static void
 move_entries(const Arg *arg)
 {
+	int i;
+	char **argv;
+
 	if (selected_count <= 0) {
 		print_status(color_warn, "No entries copied.");
 		log_to_file(__func__, __LINE__, "No entries copied.");
 		return;
 	}
 
-	char **argv = ecalloc(selected_count + 2, PATH_MAX);
-	for (int i = 0; i < selected_count; i++) {
+	argv = ecalloc(selected_count + 2, PATH_MAX);
+	for (i = 0; i < selected_count; i++) {
 		argv[i] = selected_entries[i];
 	}
 	argv[selected_count] = current_pane->path; // Destination path
@@ -1351,14 +1364,17 @@ open_entry(const Arg *arg)
 static void
 paste_entries(const Arg *arg)
 {
+	int i;
+	char **argv;
+
 	if (selected_count <= 0) {
 		print_status(color_warn, "No entries copied");
 		log_to_file(__func__, __LINE__, "No entries copied.");
 		return;
 	}
 
-	char **argv = ecalloc(selected_count + 2, sizeof(char *));
-	for (int i = 0; i < selected_count; i++) {
+	argv = ecalloc(selected_count + 2, sizeof(char *));
+	for (i = 0; i < selected_count; i++) {
 		argv[i] = selected_entries[i];
 	}
 	argv[selected_count] = current_pane->path; // Destination path
@@ -1718,16 +1734,20 @@ filesystem_event_init(void)
 static void
 visual_mode(const Arg *arg)
 {
+	Arg zero_arg = {0};
+	Arg select_arg;
+
 	if (current_pane->entry_count <= 0) {
 		print_status(color_warn, "No entries to select.");
 		return;
 	}
 
 	if (mode == VisualMode) {
-		normal_mode(&(Arg) { 0 });
+		normal_mode(&zero_arg);
 	} else {
 		mode = VisualMode;
-		select_cur_entry(&(Arg) { .i = Select });
+		select_arg.i = Select;
+		select_cur_entry(&select_arg);
 		print_status(color_normal, " --VISUAL-- ");
 	}
 
@@ -1746,12 +1766,14 @@ normal_mode(const Arg *arg)
 void
 select_all(const Arg *arg)
 {
+	int i;
+
 	if (current_pane->entry_count <= 0) {
 		print_status(color_warn, "No entries to select.");
 		return;
 	}
 
-	for (int i = 0; i < current_pane->entry_count; i++) {
+	for (i = 0; i < current_pane->entry_count; i++) {
 		select_entry(&current_pane->entries[i], arg->i);
 	}
 
@@ -1788,6 +1810,8 @@ start_search(const Arg *arg)
 static void
 update_search_highlight(const char *search_term)
 {
+	int i;
+
 	if (current_pane->matched_indices != NULL) {
 		free(current_pane->matched_indices);
 		current_pane->matched_indices = NULL;
@@ -1797,7 +1821,7 @@ update_search_highlight(const char *search_term)
 	current_pane->matched_indices =
 		(int *)ecalloc(current_pane->entry_count, sizeof(int));
 
-	for (int i = 0; i < current_pane->entry_count; i++) {
+	for (i = 0; i < current_pane->entry_count; i++) {
 		if (strcasestr(current_pane->entries[i].name, search_term) !=
 			NULL) {
 			current_pane->entries[i].matched = 1;
@@ -1814,10 +1838,12 @@ update_search_highlight(const char *search_term)
 static void
 cancel_search_highlight(void)
 {
+	int i;
+
 	if (current_pane->matched_indices == NULL)
 		return;
 
-	for (int i = 0; i < current_pane->entry_count; i++) {
+	for (i = 0; i < current_pane->entry_count; i++) {
 		set_entry_color(&current_pane->entries[i]);
 	}
 	if (current_pane->matched_indices != NULL) {
