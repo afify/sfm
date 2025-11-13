@@ -485,27 +485,36 @@ grabkeys(uint32_t k, Key *key, size_t max_keys)
 static void
 print_status(ColorPair color, const char *fmt, ...)
 {
-	char buf[STATUSBUF_SIZE] = {0};
 	char result[STATUSBUF_SIZE];
-	size_t result_len;
-	size_t max_width;
+	size_t offset;
+	int n;
 	va_list vl;
 
-	max_width = MIN(term.cols, STATUSBUF_SIZE - 1);
-
-	va_start(vl, fmt);
-	vsnprintf(buf, max_width, fmt, vl);
-	va_end(vl);
-
-	result_len = snprintf(result, STATUSBUF_SIZE,
+	/* Build ANSI prefix */
+	offset = snprintf(result, STATUSBUF_SIZE,
 		"\x1b[%d;1f" // moves cursor to last line, column 1
 		"\x1b[2K"    // erase the entire line
-		"\x1b[%d;38;5;%d;48;5;%dm" // set string colors
-		"%s"
-		"\x1b[0;0m", // reset colors
-		term.rows, color.attr, color.fg, color.bg, buf);
+		"\x1b[%d;38;5;%d;48;5;%dm", // set string colors
+		term.rows, color.attr, color.fg, color.bg);
 
-	if (write(STDOUT_FILENO, result, result_len) < 0)
+	if (offset >= STATUSBUF_SIZE)
+		return;
+
+	/* Append formatted message */
+	va_start(vl, fmt);
+	n = vsnprintf(result + offset, STATUSBUF_SIZE - offset, fmt, vl);
+	va_end(vl);
+
+	if (n < 0 || offset + n >= STATUSBUF_SIZE - 8)
+		offset = STATUSBUF_SIZE - 8;
+	else
+		offset += n;
+
+	/* Append ANSI suffix */
+	offset += snprintf(result + offset, STATUSBUF_SIZE - offset,
+		"\x1b[0;0m"); // reset colors
+
+	if (write(STDOUT_FILENO, result, offset) < 0)
 		die("write:");
 }
 
