@@ -496,11 +496,11 @@ print_status(ColorPair color, const char *fmt, ...)
 	va_list vl;
 
 	/* Build ANSI prefix */
-	offset = snprintf(result, STATUSBUF_SIZE,
+	offset = (size_t)snprintf(result, STATUSBUF_SIZE,
 		"\x1b[%d;1f" // moves cursor to last line, column 1
 		"\x1b[2K"    // erase the entire line
 		"\x1b[%d;38;5;%d;48;5;%dm", // set string colors
-		term.rows, color.attr, color.fg, color.bg);
+		term.rows, (int)color.attr, (int)color.fg, (int)color.bg);
 
 	if (offset >= STATUSBUF_SIZE)
 		return;
@@ -1032,11 +1032,11 @@ write_entries_name(void)
 		"\x1b[%d;38;5;%d;48;5;%dm" // Set colors for right pane
 		"%-*.*s"                   // Right string with padding
 		"\x1b[0m",                 // Reset colors
-		color_panell.attr, color_panell.fg, color_panell.bg, half_cols,
-		half_cols, panes[Left].path, color_panelr.attr, color_panelr.fg,
-		color_panelr.bg, half_cols, half_cols, panes[Right].path);
+		(int)color_panell.attr, (int)color_panell.fg, (int)color_panell.bg, half_cols,
+		half_cols, panes[Left].path, (int)color_panelr.attr, (int)color_panelr.fg,
+		(int)color_panelr.bg, half_cols, half_cols, panes[Right].path);
 
-	if (write(STDOUT_FILENO, result, result_len) < 0)
+	if (write(STDOUT_FILENO, result, (size_t)result_len) < 0)
 		die("write:");
 }
 
@@ -1120,7 +1120,7 @@ create_new_dir(const Arg *arg)
 static void
 copy_entries(const Arg *arg)
 {
-	selected_entries = ecalloc(current_pane->entry_count, sizeof(char *));
+	selected_entries = ecalloc((size_t)current_pane->entry_count, sizeof(char *));
 	selected_count = get_selected_paths(current_pane, selected_entries);
 
 	if (selected_count < 1) {
@@ -1151,7 +1151,7 @@ delete_entry(const Arg *arg)
 		return;
 	}
 
-	selected_entries = ecalloc(current_pane->entry_count, sizeof(char *));
+	selected_entries = ecalloc((size_t)current_pane->entry_count, sizeof(char *));
 	selected_count = get_selected_paths(current_pane, selected_entries);
 
 	if (selected_count < 1) {
@@ -1183,7 +1183,7 @@ delete_entry(const Arg *arg)
 	cmd.cmdv = (char **)rm_cmd;
 	cmd.cmdc = rm_cmd_len;
 	cmd.argv = selected_entries;
-	cmd.argc = selected_count;
+	cmd.argc = (size_t)selected_count;
 	cmd.wait_exec = DontWait;
 
 	spawn(&cmd);
@@ -1231,8 +1231,8 @@ update_entry(Pane *pane, int index)
 	err = snprintf(buffer, sizeof(buffer),
 		"\x1b[%d;%dH" // Move cursor to the entry position
 		"\x1b[%d;38;5;%d;48;5;%dm%-*.*s\x1b[0m",
-		pos + 2, pane->offset, entry.color.attr, entry.color.fg,
-		entry.color.bg, (int)max_len - 1, (int)max_len, entry.name);
+		pos + 2, pane->offset, (int)entry.color.attr, (int)entry.color.fg,
+		(int)entry.color.bg, (int)max_len - 1, (int)max_len, entry.name);
 
 	if (err < 0)
 		print_status(color_err, strerror(errno));
@@ -1316,7 +1316,7 @@ move_entries(const Arg *arg)
 	cmd.cmdv = (char **)mv_cmd;
 	cmd.cmdc = mv_cmd_len;
 	cmd.argv = argv;
-	cmd.argc = selected_count + 1;
+	cmd.argc = (size_t)(selected_count + 1);
 	cmd.wait_exec = DontWait;
 
 	print_status(color_normal, "Moving...");
@@ -1384,7 +1384,7 @@ paste_entries(const Arg *arg)
 	cmd.cmdv = (char **)cp_cmd;
 	cmd.cmdc = cp_cmd_len;
 	cmd.argv = argv;
-	cmd.argc = selected_count + 1;
+	cmd.argc = (size_t)(selected_count + 1);
 	cmd.wait_exec = DontWait;
 
 	print_status(color_normal, "Pasting...");
@@ -1819,7 +1819,7 @@ update_search_highlight(const char *search_term)
 	}
 
 	current_pane->matched_indices =
-		(int *)ecalloc(current_pane->entry_count, sizeof(int));
+		(int *)ecalloc((size_t)current_pane->entry_count, sizeof(int));
 
 	for (i = 0; i < current_pane->entry_count; i++) {
 		if (strcasestr(current_pane->entries[i].name, search_term) !=
