@@ -85,7 +85,7 @@ log_to_file(const char *func, int line, const char *format, ...)
 	if (logfile) {
 		va_list args;
 		va_start(args, format);
-		fprintf(logfile, "%d-- [%s:%d] ", pid, func, line);
+		fprintf(logfile, "%d-- [%s:%d] ", (int)pid, func, line);
 		vfprintf(logfile, format, args);
 		va_end(args);
 		fprintf(logfile, "\n");
@@ -126,11 +126,11 @@ get_term_size(void)
 {
 	struct winsize ws;
 
-	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0)
+	if (ioctl(STDOUT_FILENO, (unsigned long)TIOCGWINSZ, &ws) < 0)
 		die("ioctl:");
 
-	term.rows = ws.ws_row;
-	term.cols = ws.ws_col;
+	term.rows = (int)ws.ws_row;
+	term.cols = (int)ws.ws_col;
 }
 
 static void
@@ -272,7 +272,7 @@ set_pane_entries(Pane *pane)
 		}
 	}
 
-	pane->entries = ecalloc(pane->entry_count, sizeof(Entry));
+	pane->entries = ecalloc((size_t)pane->entry_count, sizeof(Entry));
 
 	rewinddir(dir);
 
@@ -330,7 +330,7 @@ set_pane_entries(Pane *pane)
 
 	if (closedir(dir) < 0)
 		die("closedir:");
-	qsort(pane->entries, pane->entry_count, sizeof(Entry), entry_compare);
+	qsort(pane->entries, (size_t)pane->entry_count, sizeof(Entry), entry_compare);
 }
 
 static int
@@ -457,12 +457,12 @@ append_entries(Pane *pane)
 		n = snprintf(buffer, sizeof(buffer),
 			"\x1b[%dG"
 			"\x1b[%d;38;5;%d;48;5;%dm%-*.*s\x1b[0m\r\n",
-			pane->offset, entry.color.attr, entry.color.fg,
-			entry.color.bg, (int)max_len, (int)max_len, entry.name);
+			pane->offset, (int)entry.color.attr, (int)entry.color.fg,
+			(int)entry.color.bg, (int)max_len, (int)max_len, entry.name);
 		if (n < 0 || n >= (int)sizeof(buffer))
 			break;
 
-		termb_append(buffer, n);
+		termb_append(buffer, (size_t)n);
 	}
 }
 
