@@ -210,7 +210,9 @@ set_panes(void)
 	panes[Left].start_index = 0;
 	panes[Left].current_index = 0;
 	panes[Left].watcher.fd = -1;
+	panes[Left].watcher.descriptor = -1;
 	panes[Left].watcher.signal = SIGUSR1;
+	panes[Left].matched_indices = NULL;
 	panes[Left].offset = 0;
 
 	strncpy(panes[Right].path, home, PATH_MAX - 1);
@@ -220,7 +222,9 @@ set_panes(void)
 	panes[Right].start_index = 0;
 	panes[Right].current_index = 0;
 	panes[Right].watcher.fd = -1;
+	panes[Right].watcher.descriptor = -1;
 	panes[Right].watcher.signal = SIGUSR2;
+	panes[Right].matched_indices = NULL;
 	panes[Right].offset = term.cols / 2;
 
 	pane_idx = Left; /* cursor pane */
@@ -1372,6 +1376,10 @@ quit(const Arg *arg)
 		free(panes[Left].entries);
 	if (panes[Right].entries != NULL)
 		free(panes[Right].entries);
+	if (panes[Left].matched_indices != NULL)
+		free(panes[Left].matched_indices);
+	if (panes[Right].matched_indices != NULL)
+		free(panes[Right].matched_indices);
 	disable_raw_mode();
 	exit(EXIT_SUCCESS);
 }
@@ -1520,8 +1528,8 @@ add_watch(Pane *pane)
 void
 remove_watch(Pane *pane)
 {
-	if (inotify_rm_watch(pane->watcher.fd, pane->watcher.descriptor) < 0)
-		die("inotify_rm_watch:");
+	if (pane->watcher.descriptor >= 0)
+		inotify_rm_watch(pane->watcher.fd, pane->watcher.descriptor);
 }
 
 void
@@ -1535,8 +1543,10 @@ cleanup_filesystem_events(void)
 	pthread_cancel(panes[Right].watcher.thread);
 	pthread_join(panes[Right].watcher.thread, NULL);
 
-	close(panes[Left].watcher.fd);
-	close(panes[Right].watcher.fd);
+	if (panes[Left].watcher.fd >= 0)
+		close(panes[Left].watcher.fd);
+	if (panes[Right].watcher.fd >= 0)
+		close(panes[Right].watcher.fd);
 }
 
 void
