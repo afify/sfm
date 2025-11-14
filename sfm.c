@@ -20,7 +20,9 @@
 	#define M_TIME st_mtimespec
 
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+	#ifndef __BSD_VISIBLE
 	#define __BSD_VISIBLE 1
+	#endif
 	#include <sys/types.h>
 	#include <sys/time.h>
 	#include <sys/event.h>
@@ -69,9 +71,9 @@ static Terminal term;
 static Pane *current_pane;
 static Pane panes[2];
 static int pane_idx;
-char *editor[2] = { "vi", NULL };
-char *shell[2] = { "/bin/sh", NULL };
-char *home = "/";
+static const char *editor[2] = { "vi", NULL };
+static const char *shell[2] = { "/bin/sh", NULL };
+static const char *home = "/";
 static pid_t fork_pid, main_pid;
 static char **selected_entries = NULL;
 static int selected_count = 0;
@@ -779,13 +781,13 @@ open_file(char *file)
 	}
 
 	if (rule_index < 0) {
-		cmd.cmdv = editor;
+		cmd.cmdv = (const char * const *)editor;
 		cmd.cmdc = 1;
 		cmd.argv = &file;
 		cmd.argc = 1;
 		cmd.wait_exec = Wait;
 	} else {
-		cmd.cmdv = (char **)rules[rule_index].v;
+		cmd.cmdv = rules[rule_index].v;
 		cmd.cmdc = rules[rule_index].vlen;
 		cmd.argv = &file;
 		cmd.argc = 1;
@@ -809,9 +811,9 @@ get_file_extension(const char *str)
 	if (!dot || dot == str)
 		return NULL;
 
-	ext = ecalloc(EXTENTION_MAX + 1, sizeof(char));
-	strncpy(ext, dot + 1, EXTENTION_MAX);
-	ext[EXTENTION_MAX] = '\0';
+	ext = ecalloc(MAX_EXTENSION + 1, sizeof(char));
+	strncpy(ext, dot + 1, MAX_EXTENSION);
+	ext[MAX_EXTENSION] = '\0';
 
 	for (p = ext; *p; p++)
 		*p = tolower((unsigned char)*p);
@@ -826,7 +828,7 @@ check_rule(const char *ex)
 
 	for (c = 0; c < LEN(rules); c++)
 		for (d = 0; d < rules[c].exlen; d++)
-			if (strncmp(rules[c].ext[d], ex, EXTENTION_MAX) == 0)
+			if (strncmp(rules[c].ext[d], ex, MAX_EXTENSION) == 0)
 				return c;
 	return -1;
 }
@@ -1054,6 +1056,8 @@ cd_to_parent(const Arg *arg)
 	char parent_path[PATH_MAX];
 	char *last_slash;
 
+	(void)arg;
+
 	if (current_pane->path[0] == '/' && current_pane->path[1] == '\0')
 		return;
 
@@ -1087,6 +1091,8 @@ create_new_file(const Arg *arg)
 	char full_path[PATH_MAX];
 	int fd;
 
+	(void)arg;
+
 	if (get_user_input(file_name, NAME_MAX, "new file: ") != 0)
 		return;
 
@@ -1108,6 +1114,8 @@ create_new_dir(const Arg *arg)
 	char dir_name[NAME_MAX];
 	char full_path[PATH_MAX];
 
+	(void)arg;
+
 	if (get_user_input(dir_name, sizeof(dir_name), "new directory: ") != 0)
 		return;
 
@@ -1120,6 +1128,8 @@ create_new_dir(const Arg *arg)
 static void
 copy_entries(const Arg *arg)
 {
+	(void)arg;
+
 	selected_entries = ecalloc((size_t)current_pane->entry_count, sizeof(char *));
 	selected_count = get_selected_paths(current_pane, selected_entries);
 
@@ -1144,6 +1154,8 @@ delete_entry(const Arg *arg)
 {
 	Command cmd;
 	char confirmation[4];
+
+	(void)arg;
 
 	if (current_pane->entry_count <= 0 ||
 		current_pane->current_index >= current_pane->entry_count) {
@@ -1180,7 +1192,7 @@ delete_entry(const Arg *arg)
 		return;
 	}
 
-	cmd.cmdv = (char **)rm_cmd;
+	cmd.cmdv = rm_cmd;
 	cmd.cmdc = rm_cmd_len;
 	cmd.argv = selected_entries;
 	cmd.argc = (size_t)selected_count;
@@ -1197,6 +1209,8 @@ delete_entry(const Arg *arg)
 static void
 move_bottom(const Arg *arg)
 {
+	(void)arg;
+
 	current_pane->current_index = current_pane->entry_count - 1;
 	current_pane->start_index = current_pane->entry_count - (term.rows - 2);
 	if (current_pane->start_index < 0) {
@@ -1288,6 +1302,8 @@ move_cursor(const Arg *arg)
 static void
 move_top(const Arg *arg)
 {
+	(void)arg;
+
 	current_pane->current_index = 0;
 	current_pane->start_index = 0;
 	update_screen();
@@ -1298,6 +1314,8 @@ move_entries(const Arg *arg)
 {
 	int i;
 	char **argv;
+
+	(void)arg;
 
 	if (selected_count <= 0) {
 		print_status(color_warn, "No entries copied.");
@@ -1313,7 +1331,7 @@ move_entries(const Arg *arg)
 	argv[selected_count + 1] = NULL;
 
 	Command cmd;
-	cmd.cmdv = (char **)mv_cmd;
+	cmd.cmdv = mv_cmd;
 	cmd.cmdc = mv_cmd_len;
 	cmd.argv = argv;
 	cmd.argc = (size_t)(selected_count + 1);
@@ -1333,6 +1351,8 @@ move_entries(const Arg *arg)
 static void
 open_entry(const Arg *arg)
 {
+	(void)arg;
+
 	if (current_pane->entry_count < 1)
 		return;
 
@@ -1367,6 +1387,8 @@ paste_entries(const Arg *arg)
 	int i;
 	char **argv;
 
+	(void)arg;
+
 	if (selected_count <= 0) {
 		print_status(color_warn, "No entries copied");
 		log_to_file(__func__, __LINE__, "No entries copied.");
@@ -1381,7 +1403,7 @@ paste_entries(const Arg *arg)
 	argv[selected_count + 1] = NULL;
 
 	Command cmd;
-	cmd.cmdv = (char **)cp_cmd;
+	cmd.cmdv = cp_cmd;
 	cmd.cmdc = cp_cmd_len;
 	cmd.argv = argv;
 	cmd.argc = (size_t)(selected_count + 1);
@@ -1401,6 +1423,8 @@ paste_entries(const Arg *arg)
 static void
 quit(const Arg *arg)
 {
+	(void)arg;
+
 	cancel_search_highlight();
 	cleanup_filesystem_events();
 	if (selected_entries != NULL)
@@ -1422,12 +1446,16 @@ quit(const Arg *arg)
 static void
 refresh(const Arg *arg)
 {
+	(void)arg;
+
 	kill(main_pid, SIGWINCH);
 }
 
 static void
 switch_pane(const Arg *arg)
 {
+	(void)arg;
+
 	current_pane = &panes[pane_idx ^= 1];
 	update_screen();
 }
@@ -1450,6 +1478,8 @@ select_cur_entry(const Arg *arg)
 static void
 toggle_dotfiles(const Arg *arg)
 {
+	(void)arg;
+
 	show_dotfiles ^= 1;
 	set_pane_entries(&panes[Left]);
 	set_pane_entries(&panes[Right]);
@@ -1737,6 +1767,8 @@ visual_mode(const Arg *arg)
 	Arg zero_arg = {0};
 	Arg select_arg;
 
+	(void)arg;
+
 	if (current_pane->entry_count <= 0) {
 		print_status(color_warn, "No entries to select.");
 		return;
@@ -1757,6 +1789,8 @@ visual_mode(const Arg *arg)
 static void
 normal_mode(const Arg *arg)
 {
+	(void)arg;
+
 	if (mode == SearchMode)
 		cancel_search_highlight();
 	mode = NormalMode;
@@ -1783,6 +1817,8 @@ select_all(const Arg *arg)
 static void
 start_search(const Arg *arg)
 {
+	(void)arg;
+
 	if (mode == SearchMode) {
 		cancel_search_highlight();
 		mode = NormalMode;

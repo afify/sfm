@@ -36,7 +36,7 @@
 #define GROUP_MAX      32
 #define USER_MAX       32
 #define DATETIME_MAX   20
-#define EXTENTION_MAX  4
+#define MAX_EXTENSION  4
 #define PROMPT_MAX     64
 #define PERMISSION_MAX 10
 #define FSIZE_MAX      32
@@ -139,15 +139,15 @@ typedef struct {
 } Key;
 
 typedef struct {
-	const char **ext;
+	const char * const *ext;
 	size_t exlen;
-	const void *v;
+	const char * const *v;
 	size_t vlen;
 	int wait_exec;
 } Rule;
 
 typedef struct {
-	char **cmdv;
+	const char * const *cmdv;
 	size_t cmdc;
 	char **argv;
 	size_t argc;
