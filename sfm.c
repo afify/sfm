@@ -1102,6 +1102,13 @@ create_new_dir(const Arg *arg)
 static void
 copy_entries(const Arg *arg)
 {
+	if (current_pane->entries == NULL || current_pane->entry_count <= 0 ||
+		current_pane->current_index < 0 ||
+		current_pane->current_index >= current_pane->entry_count) {
+		print_status(color_warn, "No entries to copy.");
+		return;
+	}
+
 	selected_entries = ecalloc(current_pane->entry_count, sizeof(char *));
 	selected_count = get_selected_paths(current_pane, selected_entries);
 
@@ -1409,6 +1416,13 @@ select_entry(Entry *entry, int s)
 static void
 select_cur_entry(const Arg *arg)
 {
+	if (current_pane->entries == NULL || current_pane->entry_count <= 0 ||
+		current_pane->current_index < 0 ||
+		current_pane->current_index >= current_pane->entry_count) {
+		print_status(color_warn, "No entries to select.");
+		return;
+	}
+
 	select_entry(
 		&current_pane->entries[current_pane->current_index], arg->i);
 	update_entry(current_pane, current_pane->current_index);
